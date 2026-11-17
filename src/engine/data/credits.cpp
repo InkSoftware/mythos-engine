@@ -7,26 +7,26 @@ namespace mythos {
 bool loadCredits(const json::Value& root, const std::string& file, std::vector<CreditSection>& out, std::string* error) {
     json::Reader r(root, file);
     const json::Value* all = r.at("sections");
-    if (all && !all->isArray()) r.fail("\"sections\" must be an array");
-    if (all && all->isArray()) {
+    if (all && !all->is_array()) r.fail("\"sections\" must be an array");
+    if (all && all->is_array()) {
         auto text = [&](const json::Value& obj, const char* key, const std::string& where, std::string& dst) {
-            const json::Value* v = obj.isObject() ? obj.find(key) : nullptr;
-            if (!v || !v->isString()) {
+            const json::Value* v = json::find(obj, key);
+            if (!v || !v->is_string()) {
                 r.fail(where + ": missing or bad \"" + key + "\"");
                 return false;
             }
-            dst = v->asString();
+            dst = v->get<std::string>();
             return true;
         };
-        for (const auto& sv : all->items()) {
+        for (const auto& sv : *all) {
             CreditSection sec;
             if (!text(sv, "title", "credits section", sec.title)) break;
-            const json::Value* entries = sv.find("entries");
-            if (!entries || !entries->isArray()) {
+            const json::Value* entries = json::find(sv, "entries");
+            if (!entries || !entries->is_array()) {
                 r.fail("credits section \"" + sec.title + "\": \"entries\" must be an array");
                 break;
             }
-            for (const auto& ev : entries->items()) {
+            for (const auto& ev : *entries) {
                 CreditEntry e;
                 const std::string where = "credits section \"" + sec.title + "\", entry";
                 if (!text(ev, "name", where, e.name) || !text(ev, "by", where, e.by) ||

@@ -4,6 +4,9 @@ mythos-engine is MIT-licensed (see LICENSE). Third-party code:
 
 - `third_party/stb/stb_truetype.h`: [stb_truetype](https://github.com/nothings/stb) by Sean Barrett,
   public domain (or MIT).
+- `third_party/stb/stb_image.h`: [stb_image](https://github.com/nothings/stb) by Sean Barrett, public domain (or MIT).
+- [nlohmann/json](https://github.com/nlohmann/json) (MIT) and [GLM](https://github.com/g-truc/glm) (MIT) are fetched
+  at configure time when no installed copy is found.
 - SDL3 is fetched at configure time when no installed copy is found: [libsdl.org](https://libsdl.org),
   zlib licence.
 

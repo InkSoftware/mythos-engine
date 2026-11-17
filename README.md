@@ -15,7 +15,7 @@ listen to and pick up, menus, and a bit of procedural art.
 
 | Target | Needs | Holds |
 | --- | --- | --- |
-| `mythos::engine` | the standard library, `third_party/stb` | levels, tiles, movement, the player, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
+| `mythos::engine` | the standard library, `third_party/stb`, nlohmann/json, GLM | levels, tiles, movement, the player, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
 | `mythos::engine_platform` | `mythos::engine`, SDL3 | window (vsync, fullscreen), the GL 4.1 renderer (RAII GL wrappers, shadow cube maps, multisampled scene target, composite pass, SDF text), the audio mixer, keyboard and mouse input, user files, frame clock and frame pacer, menu pointer, `applySettings` |
 | `mythos::sdl_main` | SDL3 | link into an executable so SDL is linked; include `<SDL3/SDL_main.h>` in the file defining `main` |
 | `mythos_pack` | `mythos::engine` | a tool that packs a game's assets folder into one file for the virtual file system (see Tools) |
@@ -31,7 +31,7 @@ src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures that games share
 tools/        mythos_assets.py, map_editor.html, pack/ (mythos_pack)
 tests/        test_main.cpp
-third_party/  stb_truetype
+third_party/  stb_truetype, stb_image
 ```
 
 The sources are in folders by kind: `core/` (math, matrices, JSON, files, packed assets), `world/` (levels, tiles,
@@ -127,4 +127,4 @@ be CC0 or OFL and credited in [CREDITS.md](CREDITS.md). `third_party/stb/stb_tru
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Bundled `stb_truetype` is public domain; SDL3 (fetched at configure time) is zlib-licensed; see [CREDITS.md](CREDITS.md).
+MIT, see [LICENSE](LICENSE). Bundled `stb_truetype` and `stb_image` are public domain; SDL3, nlohmann/json (MIT) and GLM (MIT) are fetched at configure time (SDL3 is zlib-licensed); see [CREDITS.md](CREDITS.md).

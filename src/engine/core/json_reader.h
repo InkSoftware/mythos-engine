@@ -20,7 +20,7 @@ public:
         while (v && start <= path.size()) {
             const size_t dot = path.find('.', start);
             const std::string key = path.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
-            v = v->find(key);
+            v = find(*v, key);
             if (dot == std::string::npos) break;
             start = dot + 1;
         }
@@ -29,8 +29,8 @@ public:
     }
     double number(const std::string& path) {
         const Value* v = at(path);
-        if (v && !v->isNumber()) fail("\"" + path + "\" must be a number");
-        return v && v->isNumber() ? v->asNumber() : 0.0;
+        if (v && !v->is_number()) fail("\"" + path + "\" must be a number");
+        return v && v->is_number() ? v->get<double>() : 0.0;
     }
     int integer(const std::string& path) {
         const double d = number(path);
@@ -41,18 +41,18 @@ public:
     double angle(const std::string& path) { return number(path) / 180.0 * kPi; }
     std::string string(const std::string& path) {
         const Value* v = at(path);
-        if (v && !v->isString()) fail("\"" + path + "\" must be a string");
-        return v && v->isString() ? v->asString() : std::string();
+        if (v && !v->is_string()) fail("\"" + path + "\" must be a string");
+        return v && v->is_string() ? v->get<std::string>() : std::string();
     }
     void cell(const std::string& path, double& x, double& y) {
         const Value* v = at(path);
-        if (v && (!v->isArray() || v->items().size() != 2 || !v->items()[0].isNumber() || !v->items()[1].isNumber())) {
+        if (v && (!v->is_array() || v->size() != 2 || !(*v)[0].is_number() || !(*v)[1].is_number())) {
             fail("\"" + path + "\" must be [x, y]");
             return;
         }
         if (v) {
-            x = v->items()[0].asNumber();
-            y = v->items()[1].asNumber();
+            x = (*v)[0].get<double>();
+            y = (*v)[1].get<double>();
         }
     }
     void cell(const std::string& path, int& x, int& y) {

@@ -1,50 +1,27 @@
 #pragma once
-// A small JSON reader (RFC 8259): objects keep their key order, numbers are doubles,
-// strings are UTF-8 (\u escapes, surrogate pairs included). No dependencies. Writing is left
-// to the caller, with quote() for strings.
+// JSON through nlohmann/json: Value is nlohmann::ordered_json (objects keep their key order,
+// numbers read as doubles, strings are UTF-8), plus the strict loader every data file goes through.
 
+#include <nlohmann/json.hpp>
 #include <string>
-#include <utility>
-#include <vector>
 
 namespace mythos::json {
 
-class Value {
-public:
-    enum class Type { Null, Bool, Number, String, Array, Object };
+using Value = nlohmann::ordered_json;
 
-    Type type() const { return type_; }
-    bool isNull() const { return type_ == Type::Null; }
-    bool isBool() const { return type_ == Type::Bool; }
-    bool isNumber() const { return type_ == Type::Number; }
-    bool isString() const { return type_ == Type::String; }
-    bool isArray() const { return type_ == Type::Array; }
-    bool isObject() const { return type_ == Type::Object; }
-
-    bool asBool() const { return bool_; }
-    double asNumber() const { return number_; }
-    const std::string& asString() const { return string_; }
-    const std::vector<Value>& items() const { return items_; }                         // array
-    const std::vector<std::pair<std::string, Value>>& members() const { return members_; }  // object
-
-    // Object member by key, or nullptr (also when this is not an object).
-    const Value* find(const std::string& key) const;
-
-private:
-    friend class Parser;
-    Type type_ = Type::Null;
-    bool bool_ = false;
-    double number_ = 0;
-    std::string string_;
-    std::vector<Value> items_;
-    std::vector<std::pair<std::string, Value>> members_;
-};
-
-// Parses text. On failure returns false and sets *error to "line L: what went wrong".
+// Parses text (RFC 8259, a UTF-8 byte order mark is skipped). Unlike nlohmann's default, a duplicate
+// key in an object is an error. On failure returns false and sets *error to "line L: what went wrong".
 bool parse(const std::string& text, Value& out, std::string* error = nullptr);
 
-// Reads and parses a file; errors are prefixed with the path.
+// Reads and parses a file through the vfs; errors are prefixed with the path.
 bool parseFile(const std::string& path, Value& out, std::string* error = nullptr);
+
+// The member of an object, or nullptr (also when v is not an object).
+inline const Value* find(const Value& v, const std::string& key) {
+    if (!v.is_object()) return nullptr;
+    const auto it = v.find(key);
+    return it == v.end() ? nullptr : &*it;
+}
 
 // A JSON string literal for s, with quotes and escapes ("a\"b"). UTF-8 passes through.
 std::string quote(const std::string& s);

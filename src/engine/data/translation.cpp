@@ -7,13 +7,13 @@ namespace {
 
 // Flattens nested sections to dotted keys: { "hud": { "house": "..." } } -> "hud.house".
 bool flatten(const json::Value& v, const std::string& prefix, TranslationTable& out, std::string& error) {
-    for (const auto& [key, value] : v.members()) {
+    for (const auto& [key, value] : v.items()) {
         if (!key.empty() && key[0] == '_') continue;
         const std::string path = prefix.empty() ? key : prefix + "." + key;
-        if (value.isObject()) {
+        if (value.is_object()) {
             if (!flatten(value, path, out, error)) return false;
-        } else if (value.isString()) {
-            if (!out.emplace(path, value.asString()).second) {
+        } else if (value.is_string()) {
+            if (!out.emplace(path, value.get<std::string>()).second) {
                 error = "\"" + path + "\" is defined twice";
                 return false;
             }
@@ -33,7 +33,7 @@ bool loadTranslation(const json::Value& root, const std::string& file, Translati
     t.name = r.string("name");
     if (const json::Value* strings = r.at("strings")) {
         std::string err;
-        if (!strings->isObject() || !flatten(*strings, "", t.strings, err))
+        if (!strings->is_object() || !flatten(*strings, "", t.strings, err))
             r.fail(err.empty() ? "\"strings\" must be an object" : err);
     }
     if (!r.ok() && error) *error = r.error();

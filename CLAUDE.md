@@ -18,7 +18,7 @@ cmake -S . -B build -DMYTHOS_BUILD_PLATFORM=OFF  # headless: no SDL, no display 
 
 - `mythos_pack` (the asset packer, `tools/pack/`) is built with everything else; `mythos_engine_tests` only with `MYTHOS_BUILD_TESTS`.
 - CI (`.github/workflows/ci.yml`) builds and runs the tests on ubuntu-22.04, macos-26 and windows-2022, each with `MYTHOS_PORTABLE` ON and OFF; Dependabot keeps the actions current (weekly).
-- Defaults to Release when top level. There is no linter; warnings (`-Wall -Wextra -Wpedantic`, `/W4`) must stay clean. `stb_truetype_impl.cpp` has warnings suppressed on purpose.
+- Defaults to Release when top level. There is no linter; warnings (`-Wall -Wextra -Wpedantic`, `/W4`) must stay clean. `stb_truetype_impl.cpp` and `stb_image_impl.cpp` have warnings suppressed on purpose.
 - `.editorconfig` pins the style (4 spaces, LF, final newline); there is no formatter.
 - Options: `MYTHOS_BUILD_PLATFORM`, `MYTHOS_BUILD_TESTS`, `MYTHOS_FETCH_SDL`, `MYTHOS_PORTABLE`, `MYTHOS_LTO`, `MYTHOS_SDL_VERSION`.
 - Tests are a single home-made harness in `tests/test_main.cpp`: `TEST(name) { CHECK(...); CHECK_EQ(a, b); }`. It links only `mythos_engine`, so tests can never touch SDL/GL code.
@@ -38,11 +38,12 @@ Two layers, with a hard dependency boundary:
   - Settings: `settings.h` (values, pages, persistence), `settings_ui.h` (`drawSettingsPage`, `MenuTheme` holds every layout number), `platform/apply_settings.h` (applies them to window, renderer, mixer, camera), and built-in English and Greek strings in `engine_strings.cpp`, which `tr()` falls back to. A new setting is added here only; the game just picks up the row.
   - JSON loaders for shared formats: `loadAchievementDefs`, `loadPlayerParams`, `loadSoundBank`, `loadTranslation`, `loadCredits`, `loadFontFiles`.
   - The context is OpenGL 4.1 core with `#version 410 core` shaders: the ceiling on macOS. Don't use 4.2+ features (compute, SSBOs, `glBufferStorage`, DSA) without a fallback.
+- Third-party code: `stb_truetype` (fonts) and `stb_image` (texture overrides: PNG, BMP, TGA, JPG; vendored in `third_party/stb`), plus nlohmann/json and GLM, which CMake takes from an installed copy or fetches. nlohmann/json is a public dependency of `mythos::engine` (it is in `json.h`); GLM is private.
 - **`mythos::sdl_main`**: interface target for SDL_main.h; `MYTHOS_EXE_KIND` (set to the parent scope) picks WIN32 / MACOSX_BUNDLE / plain for game executables.
 
 Folders of `src/engine/` (include as `"engine/<folder>/<file>.h"`); a folder may include only the ones to its left in this order, so there are no cycles:
 
-- `core/`: `math`, `mat4` (matrices, frustum, cube-face views), `noise`, `json` and `json_reader`, `fileio`, `vfs`.
+- `core/`: `math`, `mat4` (matrices through GLM, frustum, cube-face views), `noise`, `json` (nlohmann `ordered_json` as `json::Value`, plus a strict `parse` that rejects duplicate keys) and `json_reader`, `fileio`, `vfs`.
 - `world/`, `audio/`, `data/` (each depends on `core/` only): `world/` is the grid world and first-person rules (`level`, `tiles`, `movement`, `player`, `room_doors`, `interact`); `audio/` the sound arithmetic and the sound bank (`audio_math`, `sound_bank`); `data/` the shared data formats and localisation (`achievements`, `credits`, `i18n`, `translation`, `engine_strings`).
 - `gfx/` (core, world): the CPU side of graphics (`surface`, `textures`, `materials`, `mesh`, `model`, `normalmap`, `font` (the 5x7 bitmap font), `text` (SDF text layout), `flicker`).
 - `ui/` (data, gfx): `ui` (overlay boxes, text, hotspots), `menu`, `settings`, `settings_ui`.
