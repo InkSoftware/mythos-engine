@@ -44,7 +44,7 @@ before it in that list (`gfx/` also on `world/`), apart from `platform/`, which 
 
 ```cmake
 include(FetchContent)
-FetchContent_Declare(mythos_engine GIT_REPOSITORY <url> GIT_TAG v1.0.0-alpha)
+FetchContent_Declare(mythos_engine GIT_REPOSITORY <url> GIT_TAG v1.0.0-alpha.2)
 FetchContent_MakeAvailable(mythos_engine)
 
 add_executable(my_game ${MYTHOS_EXE_KIND} src/main.cpp)   # WIN32 / MACOSX_BUNDLE / plain, set by the engine
