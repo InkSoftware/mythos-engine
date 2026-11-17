@@ -288,7 +288,7 @@ void SceneRenderer::drawWorld(const CameraState& cam, const Frame& f) {
     UniformMatrix4fv(u.view, 1, FALSE_, f.view);
     UniformMatrix4fv(u.proj, 1, FALSE_, f.proj);
     Uniform3f(u.cam, f.eye[0], f.eye[1], f.eye[2]);
-    Uniform3f(u.flashDir, f.dir[0], f.dir[1], f.dir[2]);
+    Uniform3f(u.flashDir, f.flash[0], f.flash[1], f.flash[2]);
     Uniform1f(u.flashOn, cam.flashOn ? 1.0f : 0.0f);
     Uniform1f(u.lighter, cam.lighter ? 1.0f : 0.0f);
     Uniform1i(u.outdoor, cam.outdoor ? 1 : 0);
@@ -432,6 +432,12 @@ void SceneRenderer::render(const CameraState& cam, int windowW, int windowH, con
     f.dir[0] = static_cast<float>(std::cos(cam.yaw) * std::cos(cam.pitch));
     f.dir[1] = static_cast<float>(std::sin(cam.pitch));
     f.dir[2] = static_cast<float>(std::sin(cam.yaw) * std::cos(cam.pitch));
+    {   // the hand light's own aim: the view's, turned by the hand's lag
+        const double fy = cam.yaw + cam.handYaw, fp = std::clamp(cam.pitch + cam.handPitch, -1.5, 1.5);
+        f.flash[0] = static_cast<float>(std::cos(fy) * std::cos(fp));
+        f.flash[1] = static_cast<float>(std::sin(fp));
+        f.flash[2] = static_cast<float>(std::sin(fy) * std::cos(fp));
+    }
     std::copy(std::begin(kMoonDir), std::end(kMoonDir), f.moon);
     // Fog: a cold blue night outdoors, a near-black warm murk indoors (linear-space colours).
     f.fog[0] = cam.outdoor ? 0.012f : 0.006f;

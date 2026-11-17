@@ -62,6 +62,8 @@ struct CameraState {
     int antiAlias = 1;         // 0 off, 1 FXAA, 2 / 3 / 4 = MSAA 2x / 4x / 8x (what the GPU lacks is lowered)
     bool lensEffect = true;    // colour fringing that grows towards the edges of the picture
     bool flashOn = false;      // torch beam
+    double handYaw = 0, handPitch = 0;  // where the hand light points, relative to the view (radians): it lags and sways
+    double handSide = 0, handDown = 0;  // and how far the hand has moved from its rest place (metres)
     bool lighter = false;      // the hand light is a lighter: wide, short, warm and restless
     double scrollZ = 0;        // the world (not the cab) is drawn this far along z: the road going by
     bool outdoor = false;      // night sky and moonlight instead of a ceiling
@@ -108,7 +110,7 @@ private:
 
     // Everything the frame's passes share, worked out once in render().
     struct Frame {
-        float eye[3], dir[3], moon[3], fog[3];
+        float eye[3], dir[3], flash[3], moon[3], fog[3];
         float fogDensity, fovY, aspect, grain;
         float view[16], proj[16];
         Frustum planes;  // the view frustum, world space

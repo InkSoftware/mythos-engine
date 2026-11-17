@@ -45,9 +45,10 @@ void SceneRenderer::chooseLamps(const CameraState& cam, const Frame& f) {
     handShadowOn_ = cam.flashOn && handShadow_.valid();
     if (handShadowOn_) {
         const float rx = -std::sin(static_cast<float>(cam.yaw)), rz = std::cos(static_cast<float>(cam.yaw));
-        handPos_[0] = f.eye[0] + rx * 0.14f + f.dir[0] * 0.05f;
-        handPos_[1] = f.eye[1] - 0.20f;
-        handPos_[2] = f.eye[2] + rz * 0.14f + f.dir[2] * 0.05f;
+        const float side = 0.14f + static_cast<float>(cam.handSide);
+        handPos_[0] = f.eye[0] + rx * side + f.dir[0] * 0.05f;
+        handPos_[1] = f.eye[1] - 0.20f - static_cast<float>(cam.handDown);
+        handPos_[2] = f.eye[2] + rz * side + f.dir[2] * 0.05f;
         handReach_ = cam.lighter ? 7.0f : 14.0f;  // as far as its light is worth anything
     }
     if (shadowLimit_ == 0 || !shadow_[0].valid()) return;

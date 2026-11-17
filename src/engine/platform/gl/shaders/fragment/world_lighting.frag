@@ -125,8 +125,8 @@ void main() {
         // small flame at the fist - wide, short, orange, and never quite steady.
         if (uFlashOn > 0.5) {
             vec3 viewDir = normalize(vWorld - uCam);
-            float cone = smoothstep(mix(0.80, 0.30, uLighter), mix(0.96, 0.85, uLighter), dot(viewDir, normalize(uFlashDir)));
-            float falloff = 1.0 / (1.0 + mix(0.30, 0.95, uLighter) * dist + mix(0.10, 0.55, uLighter) * dist * dist);
+            float cone = smoothstep(mix(0.91, 0.30, uLighter), mix(0.985, 0.85, uLighter), dot(viewDir, normalize(uFlashDir)));
+            float falloff = 1.0 / (1.0 + mix(0.38, 0.95, uLighter) * dist + mix(0.10, 0.55, uLighter) * dist * dist);
             float wave = sin(uTime * 23.0) * sin(uTime * 7.1);
             float flicker = mix(0.96 + 0.04 * wave, 0.82 + 0.18 * wave * sin(uTime * 31.0), uLighter);
             vec3 tint = mix(vec3(1.00, 0.80, 0.55), vec3(1.00, 0.62, 0.30), uLighter);
