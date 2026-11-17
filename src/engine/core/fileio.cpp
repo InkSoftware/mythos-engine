@@ -1,6 +1,6 @@
 #include "engine/core/fileio.h"
 
-#include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 
@@ -17,7 +17,8 @@ std::string readTextFile(const std::string& path) {
 bool writeFileAtomic(const std::string& path, const std::string& text, bool removeIfEmpty) {
     if (path.empty()) return false;
     if (text.empty() && removeIfEmpty) {
-        std::remove(path.c_str());
+        std::error_code ec;
+        std::filesystem::remove(path, ec);
         return true;
     }
     const std::string tmp = path + ".tmp";
@@ -26,8 +27,10 @@ bool writeFileAtomic(const std::string& path, const std::string& text, bool remo
         out << text;
         if (!out) return false;
     }
-    std::remove(path.c_str());
-    return std::rename(tmp.c_str(), path.c_str()) == 0;
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec);  // replaces an existing file in one step (POSIX; MoveFileEx on Windows)
+    if (ec) std::filesystem::remove(tmp, ec);
+    return !ec;
 }
 
 }  // namespace mythos

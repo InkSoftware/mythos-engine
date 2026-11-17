@@ -7,6 +7,8 @@
 #include <memory>
 #include <string>
 
+#include "engine/core/json.h"
+
 namespace mythos {
 
 enum class DoorKind { None, Closed, Open };
@@ -56,10 +58,6 @@ using TileSetPtr = std::shared_ptr<const TileSet>;
 
 // A legend in which only '#' is solid. Levels use it until they are given another.
 const TileSetPtr& defaultTileSet();
-
-namespace json {
-class Value;
-}
 
 // Reads a legend from JSON:
 //   { "defaultWall": "brick", "defaultFloor": "wood",

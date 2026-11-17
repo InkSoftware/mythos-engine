@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "engine/core/vfs.h"
+#include "stb_image.h"
 
 namespace mythos {
 namespace {
@@ -31,10 +32,16 @@ void TextureLibrary::add(const std::string& name, Surface surface, bool placehol
 int TextureLibrary::loadOverrides(const std::string& dir) {
     int replaced = 0;
     for (const auto& name : names_) {
-        const std::string path = dir + "/" + name + ".bmp";
-        if (!vfs::exists(path)) continue;
         Surface loaded;
-        if (!loadBmp(path, loaded)) continue;
+        bool found = false;
+        for (const char* ext : {".png", ".bmp", ".tga", ".jpg"}) {  // first format that exists wins
+            const std::string path = dir + "/" + name + ext;
+            if (vfs::exists(path) && loadImage(path, loaded)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) continue;
         // Overrides keep their own resolution (capped so a stray huge file cannot eat memory).
         constexpr int kMaxSide = 1024;
         if (loaded.w > kMaxSide || loaded.h > kMaxSide) loaded = resample(loaded, kMaxSide, kMaxSide);
@@ -50,36 +57,16 @@ const Surface& TextureLibrary::get(const std::string& name) const {
     return it != textures_.end() ? it->second : textures_.at("missing");
 }
 
-bool loadBmp(const std::string& path, Surface& out) {
+bool loadImage(const std::string& path, Surface& out) {
     std::string bytes;
-    if (!vfs::readFile(path, bytes) || bytes.size() < 54) return false;
-    const std::vector<uint8_t> d(bytes.begin(), bytes.end());
-    if (d.size() < 54 || d[0] != 'B' || d[1] != 'M') return false;
-
-    auto u16 = [&](size_t o) { return static_cast<uint32_t>(d[o]) | (static_cast<uint32_t>(d[o + 1]) << 8); };
-    auto u32 = [&](size_t o) { return u16(o) | (u16(o + 2) << 16); };
-
-    const uint32_t offset = u32(10);
-    const int32_t w = static_cast<int32_t>(u32(18));
-    int32_t h = static_cast<int32_t>(u32(22));
-    const uint32_t bpp = u16(28);
-    const uint32_t compression = u32(30);
-    if (compression != 0 || (bpp != 24 && bpp != 32) || w <= 0 || h == 0) return false;
-
-    const bool topDown = h < 0;
-    h = h < 0 ? -h : h;
-    const size_t rowBytes = ((static_cast<size_t>(w) * bpp / 8) + 3) & ~static_cast<size_t>(3);
-    if (offset + rowBytes * static_cast<size_t>(h) > d.size()) return false;
-
+    if (!vfs::readFile(path, bytes) || bytes.empty()) return false;
+    int w = 0, h = 0, channels = 0;
+    unsigned char* data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(bytes.data()),
+                                                static_cast<int>(bytes.size()), &w, &h, &channels, 4);
+    if (!data) return false;
     out = Surface(w, h);
-    const size_t bytesPer = bpp / 8;
-    for (int y = 0; y < h; ++y) {
-        const int srcRow = topDown ? y : h - 1 - y;
-        for (int x = 0; x < w; ++x) {
-            const size_t p = offset + static_cast<size_t>(srcRow) * rowBytes + static_cast<size_t>(x) * bytesPer;
-            out.at(x, y) = rgba(d[p + 2], d[p + 1], d[p]);
-        }
-    }
+    for (size_t i = 0; i < out.px.size(); ++i) out.px[i] = rgba(data[i * 4], data[i * 4 + 1], data[i * 4 + 2], data[i * 4 + 3]);
+    stbi_image_free(data);
     return true;
 }
 

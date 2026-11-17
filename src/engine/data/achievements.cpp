@@ -12,9 +12,9 @@ bool loadAchievementDefs(const json::Value& root, const std::string& file, std::
                          std::string* error) {
     json::Reader r(root, file);
     const json::Value* all = r.at("achievements");
-    if (all && !all->isObject()) r.fail("\"achievements\" must be an object");
-    if (all && all->isObject()) {
-        for (const auto& [id, v] : all->members()) {
+    if (all && !all->is_object()) r.fail("\"achievements\" must be an object");
+    if (all && all->is_object()) {
+        for (const auto& [id, v] : all->items()) {
             if (!id.empty() && id[0] == '_') continue;
             const std::string at = "achievements." + id;
             AchievementDef a;
@@ -74,18 +74,18 @@ bool Achievements::fromJson(const std::string& text, std::string* error) {
     json::Value root;
     std::string err;
     if (!json::parse(text, root, &err)) return fail(err);
-    const json::Value* list = root.isObject() ? root.find("unlocked") : nullptr;
-    const json::Value* stats = root.isObject() ? root.find("stats") : nullptr;
-    if (!list || !list->isArray() || !stats || !stats->isObject()) return fail("needs \"unlocked\" and \"stats\"");
+    const json::Value* list = json::find(root, "unlocked");
+    const json::Value* stats = json::find(root, "stats");
+    if (!list || !list->is_array() || !stats || !stats->is_object()) return fail("needs \"unlocked\" and \"stats\"");
     std::vector<std::string> unlocked;
     std::map<std::string, int> counters;
-    for (const auto& v : list->items()) {
-        if (!v.isString()) return fail("\"unlocked\" must hold strings");
-        unlocked.push_back(v.asString());
+    for (const auto& v : *list) {
+        if (!v.is_string()) return fail("\"unlocked\" must hold strings");
+        unlocked.push_back(v.get<std::string>());
     }
-    for (const auto& [k, v] : stats->members()) {
-        if (!v.isNumber() || v.asNumber() != std::floor(v.asNumber())) return fail("stat \"" + k + "\" must be a whole number");
-        counters[k] = static_cast<int>(v.asNumber());
+    for (const auto& [k, v] : stats->items()) {
+        if (!v.is_number() || v.get<double>() != std::floor(v.get<double>())) return fail("stat \"" + k + "\" must be a whole number");
+        counters[k] = static_cast<int>(v.get<double>());
     }
     unlocked_ = std::move(unlocked);
     stats_ = std::move(counters);

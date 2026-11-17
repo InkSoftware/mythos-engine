@@ -168,16 +168,16 @@ TEST(engine_json_parses_values_and_reports_errors) {
     // (The text is kept out of the CHECK: MSVC cannot stringize a raw string with quotes in a macro argument.)
     const std::string text = R"({"a": [1, -2.5e1, true, null], "s": "\u0393\u03b5 \"q\" \ud83d\ude00", "o": {}})";
     CHECK(json::parse(text, v, &err));
-    CHECK(v.isObject());
-    const json::Value* a = v.find("a");
-    CHECK(a && a->isArray() && a->items().size() == 4);
-    if (a && a->items().size() == 4) {
-        CHECK(a->items()[1].asNumber() == -25.0);
-        CHECK(a->items()[2].asBool());
-        CHECK(a->items()[3].isNull());
+    CHECK(v.is_object());
+    const json::Value* a = json::find(v, "a");
+    CHECK(a && a->is_array() && a->size() == 4);
+    if (a && a->size() == 4) {
+        CHECK((*a)[1].get<double>() == -25.0);
+        CHECK((*a)[2].get<bool>());
+        CHECK((*a)[3].is_null());
     }
-    CHECK(v.find("s") && v.find("s")->asString() == "Γε \"q\" \xF0\x9F\x98\x80");
-    CHECK(v.members().size() == 3 && v.members()[2].first == "o");  // key order is kept
+    CHECK(json::find(v, "s") && json::find(v, "s")->get<std::string>() == "Γε \"q\" \xF0\x9F\x98\x80");
+    CHECK(v.size() == 3 && std::prev(v.end()).key() == "o");  // key order is kept
     CHECK(!json::parse("{\"a\": 1,\n \"a\": 2}", v, &err));      // duplicate key
     CHECK(err.find("line 2") == 0);
     CHECK(!json::parse("[1, 2", v, &err));
@@ -268,6 +268,30 @@ TEST(engine_file_io_round_trip) {
     CHECK(readTextFile(path) == std::string("hello"));
     CHECK(writeFileAtomic(path, "", true));  // empty removes it
     CHECK(readTextFile(path) == std::string());
+}
+
+TEST(engine_load_image_decodes_bmp_and_overrides_textures) {
+    // A 2x1 24-bit BMP: a red pixel then a blue one (BMP stores BGR, rows padded to 4 bytes).
+    const unsigned char bmp[] = {'B', 'M', 62, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0, 40, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0, 1, 0, 24, 0,
+                                 0, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                 0, 0, 255, 255, 0, 0, 0, 0};
+    const auto dir = std::filesystem::temp_directory_path() / "mythos_image_test";
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream f(dir / "brick.bmp", std::ios::binary);
+        f.write(reinterpret_cast<const char*>(bmp), sizeof bmp);
+    }
+    Surface s;
+    CHECK(loadImage((dir / "brick.bmp").string(), s));
+    CHECK(s.w == 2 && s.h == 1);
+    CHECK_EQ(s.at(0, 0), rgba(255, 0, 0));
+    CHECK_EQ(s.at(1, 0), rgba(0, 0, 255));
+    CHECK(!loadImage((dir / "none.png").string(), s));
+    TextureLibrary lib;
+    lib.add("brick", Surface(4, 4, 0xFF00FF00));
+    CHECK_EQ(lib.loadOverrides(dir.string()), 1);
+    CHECK(lib.get("brick").w == 2);
+    std::filesystem::remove_all(dir);
 }
 
 TEST(engine_json_reader_reports_first_error) {

@@ -15,7 +15,7 @@ listen to and pick up, menus, and a bit of procedural art.
 
 | Target | Needs | Holds |
 | --- | --- | --- |
-| `mythos::engine` | the standard library, `third_party/stb` | levels, tiles, movement, the player, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
+| `mythos::engine` | the standard library, `third_party/stb`, nlohmann/json, GLM | levels, tiles, movement, the player, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
 | `mythos::engine_platform` | `mythos::engine`, SDL3 | window (vsync, fullscreen), the GL 4.1 renderer (RAII GL wrappers, shadow cube maps, multisampled scene target, composite pass, SDF text), the audio mixer, keyboard and mouse input, user files, frame clock and frame pacer, menu pointer, `applySettings` |
 | `mythos::sdl_main` | SDL3 | link into an executable so SDL is linked; include `<SDL3/SDL_main.h>` in the file defining `main` |
 | `mythos_pack` | `mythos::engine` | a tool that packs a game's assets folder into one file for the virtual file system (see Tools) |
@@ -31,7 +31,7 @@ src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures that games share
 tools/        mythos_assets.py, map_editor.html, pack/ (mythos_pack)
 tests/        test_main.cpp
-third_party/  stb_truetype
+third_party/  stb_truetype, stb_image
 ```
 
 The sources are in folders by kind: `core/` (math, matrices, JSON, files, packed assets), `world/` (levels, tiles,
@@ -64,6 +64,11 @@ Targets Ubuntu 22.04+ (GCC 11+), macOS and Windows 10+ (MSVC 2022), with CMake 3
 all three, each with `MYTHOS_PORTABLE` on and off (`.github/workflows/ci.yml`). SDL3 is fetched and built from source when no
 installed copy is found.
 
+Dependencies: SDL3 (3.2.28), [nlohmann/json](https://github.com/nlohmann/json) 3.12.0 and [GLM](https://github.com/g-truc/glm)
+1.0.3, each used from an installed copy when CMake finds one and downloaded otherwise (no other setup), plus
+`stb_truetype` and `stb_image`, which are bundled in `third_party/stb`. nlohmann/json is part of the engine's public
+headers (`json::Value` is an `nlohmann::ordered_json`), so games get it through `mythos::engine`; GLM stays private.
+
 OpenGL 4.1 core is the highest version macOS offers, so the renderer targets it on every platform.
 
 ## What a game supplies
@@ -81,7 +86,8 @@ The engine gives mechanisms; a game gives meaning.
 - **Assets**: `assets/` holds fonts, common sounds (steps, doors, torch, battery, tick, static, wind) and eight
   common textures. A game merges it under its own assets (the game's file of the same name wins);
   `MYTHOS_ENGINE_ASSET_DIR` names the folder for CMake.
-- **Art**: `addCommonMaterials()` first, then its own textures; models as OBJ (`tools/mythos_assets.py`
+- **Art**: `addCommonMaterials()` first, then its own textures (PNG, BMP, TGA or JPG files named after the texture
+  override the built-in ones); models as OBJ (`tools/mythos_assets.py`
   builds them and the level files from Python).
 - **A front end**: build the camera and lights each frame (`CameraState`, then `applySettings(settings, camera)`),
   poll input with `pollInput`, play cues with `playCue`, upload geometry to `SceneRenderer`.
@@ -122,9 +128,9 @@ style (4 spaces, LF, final newline).
 ## Assets and credits
 
 The engine ships only what games share: fonts, common sounds and a few textures in `assets/`. Anything new must
-be CC0 or OFL and credited in [CREDITS.md](CREDITS.md). `third_party/stb/stb_truetype.h` is public domain
-(Sean Barrett).
+be CC0 or OFL and credited in [CREDITS.md](CREDITS.md). `third_party/stb/stb_truetype.h` and `stb_image.h` are
+public domain (Sean Barrett).
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Bundled `stb_truetype` is public domain; SDL3 (fetched at configure time) is zlib-licensed; see [CREDITS.md](CREDITS.md).
+MIT, see [LICENSE](LICENSE). Bundled `stb_truetype` and `stb_image` are public domain; SDL3 (zlib), nlohmann/json (MIT) and GLM (MIT) are fetched at configure time; see [CREDITS.md](CREDITS.md).

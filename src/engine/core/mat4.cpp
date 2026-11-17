@@ -1,55 +1,32 @@
 #include "engine/core/mat4.h"
 
+#include <algorithm>
 #include <cmath>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
 
 namespace mythos {
 
-void mat4Identity(float* m) {
-    for (int i = 0; i < 16; ++i) m[i] = (i % 5 == 0) ? 1.0f : 0.0f;
-}
+namespace {
+// float[16] <-> glm::mat4: both are column-major, so it is a plain copy.
+glm::mat4 load(const float* m) { return glm::make_mat4(m); }
+void store(const glm::mat4& g, float* m) { std::copy_n(glm::value_ptr(g), 16, m); }
+}  // namespace
+
+void mat4Identity(float* m) { store(glm::mat4(1.0f), m); }
 
 void mat4Perspective(float fovy, float aspect, float zn, float zf, float* m) {
-    const float f = 1.0f / std::tan(fovy * 0.5f);
-    for (int i = 0; i < 16; ++i) m[i] = 0.0f;
-    m[0] = f / aspect;
-    m[5] = f;
-    m[10] = (zf + zn) / (zn - zf);
-    m[11] = -1.0f;
-    m[14] = 2.0f * zf * zn / (zn - zf);
+    store(glm::perspectiveRH_NO(fovy, aspect, zn, zf), m);  // OpenGL clip space: depth -1..1
 }
 
 void mat4LookAt(const float* eye, const float* center, const float* up, float* m) {
-    float f[3] = {center[0] - eye[0], center[1] - eye[1], center[2] - eye[2]};
-    float fl = std::sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
-    for (float& v : f) v /= fl;
-    float s[3] = {f[1] * up[2] - f[2] * up[1], f[2] * up[0] - f[0] * up[2], f[0] * up[1] - f[1] * up[0]};
-    float sl = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
-    for (float& v : s) v /= sl;
-    float u[3] = {s[1] * f[2] - s[2] * f[1], s[2] * f[0] - s[0] * f[2], s[0] * f[1] - s[1] * f[0]};
-    mat4Identity(m);
-    m[0] = s[0];
-    m[4] = s[1];
-    m[8] = s[2];
-    m[1] = u[0];
-    m[5] = u[1];
-    m[9] = u[2];
-    m[2] = -f[0];
-    m[6] = -f[1];
-    m[10] = -f[2];
-    m[12] = -(s[0] * eye[0] + s[1] * eye[1] + s[2] * eye[2]);
-    m[13] = -(u[0] * eye[0] + u[1] * eye[1] + u[2] * eye[2]);
-    m[14] = f[0] * eye[0] + f[1] * eye[1] + f[2] * eye[2];
+    store(glm::lookAtRH(glm::make_vec3(eye), glm::make_vec3(center), glm::make_vec3(up)), m);
 }
 
-
-void mat4Multiply(const float* a, const float* b, float* out) {
-    for (int c = 0; c < 4; ++c)
-        for (int r = 0; r < 4; ++r) {
-            float sum = 0.0f;
-            for (int k = 0; k < 4; ++k) sum += a[k * 4 + r] * b[c * 4 + k];
-            out[c * 4 + r] = sum;
-        }
-}
+void mat4Multiply(const float* a, const float* b, float* out) { store(load(a) * load(b), out); }
 
 void frustumPlanes(const float* m, Frustum& out) {
     float (&planes)[6][4] = out.plane;

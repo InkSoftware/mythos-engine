@@ -208,12 +208,12 @@ std::vector<std::string> SdfFont::wrap(const std::string& text, float size, floa
 bool loadFontFiles(const json::Value& root, const std::string& file, const std::string& assetDir,
                    const std::vector<std::pair<const char*, SdfFont*>>& roles, std::string* error) {
     for (const auto& [key, font] : roles) {
-        const json::Value* path = root.find(key);
-        if (!path || !path->isString()) {
+        const json::Value* path = json::find(root, key);
+        if (!path || !path->is_string()) {
             if (error) *error = file + ": missing \"" + key + "\" (a font file under assets/)";
             return false;
         }
-        if (!font->loadFile(assetDir + "/" + path->asString(), error)) return false;
+        if (!font->loadFile(assetDir + "/" + path->get<std::string>(), error)) return false;
     }
     return true;
 }

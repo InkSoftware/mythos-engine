@@ -48,6 +48,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/mesh.cpp
     src/engine/gfx/model.cpp
     src/engine/gfx/normalmap.cpp
+    src/engine/gfx/stb_image_impl.cpp
     src/engine/gfx/stb_truetype_impl.cpp
     src/engine/gfx/text.cpp
     src/engine/gfx/textures.cpp
@@ -73,12 +74,41 @@ if(MYTHOS_LTO)
     endif()
 endif()
 target_include_directories(mythos_engine PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
-# stb_truetype (public domain) rasterises the TrueType fonts.
+
+# URL downloads: extracted files get the time of extraction (CMP0135's NEW behaviour; the option needs CMake 3.24).
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.24)
+    set(MYTHOS_FETCH_TIMESTAMP DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+else()
+    set(MYTHOS_FETCH_TIMESTAMP "")
+endif()
+
+# nlohmann/json: the JSON value type (an installed copy is used when there is one).
+find_package(nlohmann_json 3.12 CONFIG QUIET)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+    message(STATUS "fetching nlohmann/json")
+    include(FetchContent)
+    set(JSON_BuildTests OFF CACHE INTERNAL "")
+    set(JSON_Install OFF CACHE INTERNAL "")
+    FetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz ${MYTHOS_FETCH_TIMESTAMP})
+    FetchContent_MakeAvailable(nlohmann_json)
+endif()
+target_link_libraries(mythos_engine PUBLIC nlohmann_json::nlohmann_json)
+
+# GLM: the generic matrix maths behind core/mat4 (header-only).
+find_package(glm 1.0.3 CONFIG QUIET)
+if(NOT TARGET glm::glm)
+    message(STATUS "fetching glm")
+    include(FetchContent)
+    FetchContent_Declare(glm URL https://github.com/g-truc/glm/archive/refs/tags/1.0.3.tar.gz ${MYTHOS_FETCH_TIMESTAMP})
+    FetchContent_MakeAvailable(glm)
+endif()
+target_link_libraries(mythos_engine PRIVATE glm::glm)
+# stb_truetype (public domain) rasterises the TrueType fonts; stb_image decodes texture overrides.
 target_include_directories(mythos_engine PRIVATE third_party/stb)
 if(MSVC)
-    set_source_files_properties(src/engine/gfx/stb_truetype_impl.cpp PROPERTIES COMPILE_OPTIONS "/w")
+    set_source_files_properties(src/engine/gfx/stb_truetype_impl.cpp src/engine/gfx/stb_image_impl.cpp PROPERTIES COMPILE_OPTIONS "/w")
 else()
-    set_source_files_properties(src/engine/gfx/stb_truetype_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
+    set_source_files_properties(src/engine/gfx/stb_truetype_impl.cpp src/engine/gfx/stb_image_impl.cpp PROPERTIES COMPILE_OPTIONS "-w")
 endif()
 target_compile_features(mythos_engine PUBLIC cxx_std_20)
 if(MSVC)
@@ -177,7 +207,9 @@ if(MYTHOS_BUILD_PLATFORM)
     elseif(APPLE)
         set(MYTHOS_EXE_KIND MACOSX_BUNDLE)
     endif()
-    set(MYTHOS_EXE_KIND "${MYTHOS_EXE_KIND}" PARENT_SCOPE)
+    if(NOT PROJECT_IS_TOP_LEVEL)  # a top-level build has no parent scope to hand it to
+        set(MYTHOS_EXE_KIND "${MYTHOS_EXE_KIND}" PARENT_SCOPE)
+    endif()
 endif()
 
 # ---------------------------------------------------------------- mythos_pack
