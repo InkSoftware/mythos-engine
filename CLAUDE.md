@@ -38,7 +38,7 @@ Two layers, with a hard dependency boundary:
   - Settings: `settings.h` (values, pages, persistence), `settings_ui.h` (`drawSettingsPage`, `MenuTheme` holds every layout number), `platform/apply_settings.h` (applies them to window, renderer, mixer, camera), and built-in English and Greek strings in `engine_strings.cpp`, which `tr()` falls back to. A new setting is added here only; the game just picks up the row.
   - JSON loaders for shared formats: `loadAchievementDefs`, `loadPlayerParams`, `loadSoundBank`, `loadTranslation`, `loadCredits`, `loadFontFiles`.
   - The context is OpenGL 4.1 core with `#version 410 core` shaders: the ceiling on macOS. Don't use 4.2+ features (compute, SSBOs, `glBufferStorage`, DSA) without a fallback.
-- Third-party code: `stb_truetype` (fonts) and `stb_image` (texture overrides: PNG, BMP, TGA, JPG; vendored in `third_party/stb`), plus nlohmann/json and GLM, which CMake takes from an installed copy or fetches. nlohmann/json is a public dependency of `mythos::engine` (it is in `json.h`); GLM is private.
+- Third-party code: `stb_truetype` (fonts) and `stb_image` (texture overrides: PNG, BMP, TGA, JPG; vendored in `third_party/stb`), plus nlohmann/json 3.12.0 and GLM 1.0.3, which CMake takes from an installed copy or fetches (`FetchContent` in `CMakeLists.txt`; bump the version there and in the `find_package` line). nlohmann/json is a public dependency of `mythos::engine` (it is in `json.h`); GLM is private.
 - **`mythos::sdl_main`**: interface target for SDL_main.h; `MYTHOS_EXE_KIND` (set to the parent scope) picks WIN32 / MACOSX_BUNDLE / plain for game executables.
 
 Folders of `src/engine/` (include as `"engine/<folder>/<file>.h"`); a folder may include only the ones to its left in this order, so there are no cycles:
