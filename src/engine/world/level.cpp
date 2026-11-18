@@ -17,11 +17,14 @@ uint64_t nextRevision() {
     return ++counter;
 }
 
-std::string trimmed(const std::string& s) {
-    const size_t a = s.find_first_not_of(" \t\r");
-    if (a == std::string::npos) return "";
-    const size_t b = s.find_last_not_of(" \t\r");
-    return s.substr(a, b - a + 1);
+// Line-of-sight samples the segment every this many cells (metres): fine enough not to skip over a one-cell wall.
+constexpr double kSightStep = 0.15;
+
+std::string trimmed(const std::string& text) {
+    const size_t first = text.find_first_not_of(" \t\r");
+    if (first == std::string::npos) return "";
+    const size_t last = text.find_last_not_of(" \t\r");
+    return text.substr(first, last - first + 1);
 }
 
 bool readFile(const std::string& path, std::string& out) {
@@ -46,7 +49,7 @@ bool Level::parse(const std::vector<std::string>& rows, std::string* error) {
     h_ = static_cast<int>(rows.size());
     cells_.clear();
     cells_.reserve(static_cast<size_t>(w_) * static_cast<size_t>(h_));
-    for (const auto& r : rows) cells_.insert(cells_.end(), r.begin(), r.end());
+    for (const auto& row : rows) cells_.insert(cells_.end(), row.begin(), row.end());
     solid_.assign(cells_.size(), 0);
     furniture_.clear();
     revision_ = nextRevision();
@@ -69,37 +72,37 @@ bool Level::parseText(const std::string& text, std::string* error) {
         if (section == "[map]") {
             rows.push_back(line);
         } else if (section == "[furniture]") {
-            std::istringstream ls(line);
-            Placement p;
-            if (!(ls >> p.x >> p.y >> p.model >> p.yawDeg)) {
+            std::istringstream fields(line);
+            Placement placement;
+            if (!(fields >> placement.x >> placement.y >> placement.model >> placement.yawDeg)) {
                 if (error) *error = "bad furniture line: " + line;
                 return false;
             }
-            furniture.push_back(p);
+            furniture.push_back(placement);
         } else if (section == "[decor]") {
             // A small object that blocks nothing: x y model yaw [offX offZ lift] (metres from the cell centre; lift above the floor).
-            std::istringstream ls(line);
-            Placement p;
-            p.solid = false;
-            if (!(ls >> p.x >> p.y >> p.model >> p.yawDeg)) {
+            std::istringstream fields(line);
+            Placement placement;
+            placement.solid = false;
+            if (!(fields >> placement.x >> placement.y >> placement.model >> placement.yawDeg)) {
                 if (error) *error = "bad decor line: " + line;
                 return false;
             }
-            ls >> p.offX >> p.offZ >> p.lift;  // optional
-            decor.push_back(p);
+            fields >> placement.offX >> placement.offZ >> placement.lift;  // optional
+            decor.push_back(placement);
         }
     }
     if (!parse(rows, error)) return false;
-    for (const auto& p : furniture) {
-        if (!inBounds(p.x, p.y)) {
-            if (error) *error = "furniture outside the map: " + p.model;
+    for (const auto& placement : furniture) {
+        if (!inBounds(placement.x, placement.y)) {
+            if (error) *error = "furniture outside the map: " + placement.model;
             return false;
         }
-        solid_[static_cast<size_t>(p.y) * w_ + p.x] = 1;
+        solid_[static_cast<size_t>(placement.y) * w_ + placement.x] = 1;
     }
-    for (const auto& p : decor) {
-        if (!inBounds(p.x, p.y)) {
-            if (error) *error = "decor outside the map: " + p.model;
+    for (const auto& placement : decor) {
+        if (!inBounds(placement.x, placement.y)) {
+            if (error) *error = "decor outside the map: " + placement.model;
             return false;
         }
     }
@@ -112,11 +115,11 @@ char Level::at(int x, int y) const {
     return inBounds(x, y) ? cells_[static_cast<size_t>(y) * w_ + x] : '#';
 }
 
-void Level::set(int x, int y, char c) {
+void Level::set(int x, int y, char glyph) {
     if (!inBounds(x, y)) return;
     char& cell = cells_[static_cast<size_t>(y) * w_ + x];
-    if (cell == c) return;
-    cell = c;
+    if (cell == glyph) return;
+    cell = glyph;
     revision_ = nextRevision();
 }
 
@@ -125,17 +128,17 @@ bool Level::passable(int x, int y) const {
     return !tiles_->solid(at(x, y)) && solid_[static_cast<size_t>(y) * w_ + x] == 0;
 }
 
-bool Level::addFurniture(const Placement& p) {
-    if (!inBounds(p.x, p.y) || (p.solid && !passable(p.x, p.y))) return false;
-    furniture_.push_back(p);
-    if (p.solid) solid_[static_cast<size_t>(p.y) * w_ + p.x] = 1;
+bool Level::addFurniture(const Placement& placement) {
+    if (!inBounds(placement.x, placement.y) || (placement.solid && !passable(placement.x, placement.y))) return false;
+    furniture_.push_back(placement);
+    if (placement.solid) solid_[static_cast<size_t>(placement.y) * w_ + placement.x] = 1;
     revision_ = nextRevision();
     return true;
 }
 
 bool Level::removePlacement(const std::string& id) {
     if (id.empty()) return false;
-    const auto it = std::find_if(furniture_.begin(), furniture_.end(), [&](const Placement& p) { return p.id == id; });
+    const auto it = std::find_if(furniture_.begin(), furniture_.end(), [&](const Placement& placement) { return placement.id == id; });
     if (it == furniture_.end()) return false;
     const int x = it->x, y = it->y;
     furniture_.erase(it);
@@ -146,27 +149,27 @@ bool Level::removePlacement(const std::string& id) {
 }
 
 const Placement* Level::furnitureAt(int x, int y) const {
-    for (const auto& p : furniture_)
-        if (p.solid && p.x == x && p.y == y) return &p;
+    for (const auto& placement : furniture_)
+        if (placement.solid && placement.x == x && placement.y == y) return &placement;
     return nullptr;
 }
 
-bool Level::find(char c, int& x, int& y) const {
-    for (int j = 0; j < h_; ++j)
-        for (int i = 0; i < w_; ++i)
-            if (at(i, j) == c) {
-                x = i;
-                y = j;
+bool Level::find(char glyph, int& x, int& y) const {
+    for (int row = 0; row < h_; ++row)
+        for (int col = 0; col < w_; ++col)
+            if (at(col, row) == glyph) {
+                x = col;
+                y = row;
                 return true;
             }
     return false;
 }
 
-std::vector<std::pair<int, int>> Level::findAll(char c) const {
+std::vector<std::pair<int, int>> Level::findAll(char glyph) const {
     std::vector<std::pair<int, int>> out;
-    for (int j = 0; j < h_; ++j)
-        for (int i = 0; i < w_; ++i)
-            if (at(i, j) == c) out.emplace_back(i, j);
+    for (int row = 0; row < h_; ++row)
+        for (int col = 0; col < w_; ++col)
+            if (at(col, row) == glyph) out.emplace_back(col, row);
     return out;
 }
 
@@ -180,20 +183,20 @@ std::vector<int> Level::distanceField(int gx, int gy) const {
     dist[start] = 0;
     queue.push_back(start);
 
-    const int dx[4] = {1, -1, 0, 0};
-    const int dy[4] = {0, 0, 1, -1};
+    const int stepX[4] = {1, -1, 0, 0};
+    const int stepY[4] = {0, 0, 1, -1};
     for (size_t head = 0; head < queue.size(); ++head) {
-        const int cur = queue[head];
-        const int cx = cur % w_;
-        const int cy = cur / w_;
-        for (int k = 0; k < 4; ++k) {
-            const int nx = cx + dx[k];
-            const int ny = cy + dy[k];
-            if (!passable(nx, ny)) continue;
-            const int idx = ny * w_ + nx;
-            if (dist[idx] != -1) continue;
-            dist[idx] = dist[cur] + 1;
-            queue.push_back(idx);
+        const int current = queue[head];
+        const int cellX = current % w_;
+        const int cellY = current / w_;
+        for (int dir = 0; dir < 4; ++dir) {
+            const int nextX = cellX + stepX[dir];
+            const int nextY = cellY + stepY[dir];
+            if (!passable(nextX, nextY)) continue;
+            const int next = nextY * w_ + nextX;
+            if (dist[next] != -1) continue;
+            dist[next] = dist[current] + 1;
+            queue.push_back(next);
         }
     }
     return dist;
@@ -202,13 +205,13 @@ std::vector<int> Level::distanceField(int gx, int gy) const {
 bool Level::lineOfSight(double x0, double y0, double x1, double y1) const {
     const double dx = x1 - x0;
     const double dy = y1 - y0;
-    const double len = std::sqrt(dx * dx + dy * dy);
-    const int steps = std::max(1, static_cast<int>(len / 0.15));
-    for (int i = 1; i < steps; ++i) {
-        const double t = static_cast<double>(i) / steps;
-        const int cx = static_cast<int>(std::floor(x0 + dx * t));
-        const int cy = static_cast<int>(std::floor(y0 + dy * t));
-        if (!passable(cx, cy)) return false;  // walls and furniture block sight
+    const double length = std::sqrt(dx * dx + dy * dy);
+    const int steps = std::max(1, static_cast<int>(length / kSightStep));
+    for (int step = 1; step < steps; ++step) {
+        const double along = static_cast<double>(step) / steps;
+        const int cellX = static_cast<int>(std::floor(x0 + dx * along));
+        const int cellY = static_cast<int>(std::floor(y0 + dy * along));
+        if (!passable(cellX, cellY)) return false;  // walls and furniture block sight
     }
     return true;
 }

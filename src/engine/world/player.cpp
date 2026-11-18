@@ -17,48 +17,51 @@ bool loadPlayerParams(json::Reader& r, const std::string& path, PlayerParams& ou
     return r.ok();
 }
 
-void applyLook(Player& p, const MoveInput& in, const PlayerParams& params) {
-    p.angle += in.mouseDx * params.mouseSensitivity;
-    p.pitch = clampd(p.pitch - in.mouseDy * params.mouseSensitivity, -params.maxPitch, params.maxPitch);
+void applyLook(Player& player, const MoveInput& in, const PlayerParams& params) {
+    player.angle += in.mouseDx * params.mouseSensitivity;
+    player.pitch = clampd(player.pitch - in.mouseDy * params.mouseSensitivity, -params.maxPitch, params.maxPitch);
 }
 
-std::optional<char> PlayerWalker::update(const Level& level, Player& p, double dt, const MoveInput& in,
+std::optional<char> PlayerWalker::update(const Level& level, Player& player, double dt, const MoveInput& in,
                                          const PlayerParams& params) {
     const double turn = params.turnSpeed * dt;
-    if (in.turnLeft) p.angle -= turn;
-    if (in.turnRight) p.angle += turn;
+    if (in.turnLeft) player.angle -= turn;
+    if (in.turnRight) player.angle += turn;
 
-    const double fwd = (in.forward ? 1.0 : 0.0) - (in.back ? 1.0 : 0.0);
+    const double forward = (in.forward ? 1.0 : 0.0) - (in.back ? 1.0 : 0.0);
     const double side = (in.strafeRight ? 1.0 : 0.0) - (in.strafeLeft ? 1.0 : 0.0);
-    if (fwd == 0 && side == 0) return std::nullopt;
+    if (forward == 0 && side == 0) return std::nullopt;
 
     const double speed = (in.run ? params.runSpeed : params.walkSpeed) * dt;
-    const Vec2 step = walkStep(p.angle, fwd, side, speed);
-    const Vec2 before = p.pos;
-    moveWithCollision(level, p.pos, step.x, step.y, params.radius);
+    const Vec2 step = walkStep(player.angle, forward, side, speed);
+    const Vec2 before = player.pos;
+    moveWithCollision(level, player.pos, step.x, step.y, params.radius);
 
-    strideAccum_ += std::hypot(p.pos.x - before.x, p.pos.y - before.y);
+    strideAccum_ += std::hypot(player.pos.x - before.x, player.pos.y - before.y);
     if (strideAccum_ < params.strideLength) return std::nullopt;
     strideAccum_ = 0;
-    return level.at(static_cast<int>(std::floor(p.pos.x)), static_cast<int>(std::floor(p.pos.y)));
+    return level.at(static_cast<int>(std::floor(player.pos.x)), static_cast<int>(std::floor(player.pos.y)));
 }
 
-int findAimed(const Level& level, const Player& p, double eyeHeight, double reach, const std::vector<AimCandidate>& candidates) {
-    const double cp = std::cos(p.pitch);
-    const Vec3 dir{std::cos(p.angle) * cp, std::sin(p.pitch), std::sin(p.angle) * cp};
-    const double ex = p.pos.x, ez = p.pos.y;
-    double bestT = reach;
+int findAimed(const Level& level, const Player& player, double eyeHeight, double reach,
+              const std::vector<AimCandidate>& candidates) {
+    const double cosPitch = std::cos(player.pitch);
+    const Vec3 dir{std::cos(player.angle) * cosPitch, std::sin(player.pitch), std::sin(player.angle) * cosPitch};
+    const double eyeX = player.pos.x, eyeZ = player.pos.y;
+    double nearestHit = reach;
     int best = -1;
     for (size_t i = 0; i < candidates.size(); ++i) {
-        const AimCandidate& c = candidates[i];
-        if (!c.enabled) continue;
-        const double t = rayHitsSphere({ex, eyeHeight, ez}, dir, {c.at.x, c.height, c.at.y}, c.radius, bestT);
-        if (t < 0) continue;
-        const double cx = c.at.x - ex, cz = c.at.y - ez;
-        const double flat = std::hypot(cx, cz);
-        const double back = flat > 0.5 ? 0.5 / flat : 1.0;
-        if (!level.lineOfSight(ex, ez, c.at.x - cx * back, c.at.y - cz * back)) continue;
-        bestT = t;
+        const AimCandidate& candidate = candidates[i];
+        if (!candidate.enabled) continue;
+        const double hit = rayHitsSphere({eyeX, eyeHeight, eyeZ}, dir, {candidate.at.x, candidate.height, candidate.at.y},
+                                         candidate.radius, nearestHit);
+        if (hit < 0) continue;
+        // The wall check stops half a metre short of the prop, so an object standing against a wall stays visible.
+        const double toX = candidate.at.x - eyeX, toZ = candidate.at.y - eyeZ;
+        const double flatDistance = std::hypot(toX, toZ);
+        const double backOff = flatDistance > 0.5 ? 0.5 / flatDistance : 1.0;
+        if (!level.lineOfSight(eyeX, eyeZ, candidate.at.x - toX * backOff, candidate.at.y - toZ * backOff)) continue;
+        nearestHit = hit;
         best = static_cast<int>(i);
     }
     return best;
