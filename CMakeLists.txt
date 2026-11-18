@@ -1,4 +1,13 @@
 cmake_minimum_required(VERSION 3.22)
+
+# Oldest macOS the binaries run on: the releases Apple still patches (the current one and the two before it,
+# so 15 while 27 is current; raise it as Apple drops one). Without this the build targets the SDK's own OS, i.e.
+# only the newest macOS. It must be set before project(), so it only applies when the engine is the top-level
+# project: a game sets its own.
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
+endif()
+
 project(mythos_engine VERSION 1.0.0 LANGUAGES C CXX)
 
 # mythos-engine: a small engine for first-person grid games on SDL3 and OpenGL 4.1 core.
