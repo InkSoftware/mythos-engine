@@ -54,6 +54,7 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
     compositeProgram_.build(shaders::kFullscreenQuadVert, shaders::kLensAndFxaaFrag, {{0, "aPos"}, {2, "aUV"}});
     quadProgram_.build(shaders::kFullscreenQuadVert, shaders::kOverlayFrag, {{0, "aPos"}, {2, "aUV"}});
     skyProgram_.build(shaders::kFullscreenQuadVert, shaders::kNightSkyFrag, {{0, "aPos"}, {2, "aUV"}}, shaders::kToneMapAndGrainFrag);
+    mirrorProgram_.build(shaders::kMirrorGlassVert, shaders::kMirrorGlassFrag, {{0, "aPos"}});
     const bool textOk = text_.init();
     if (worldProgram_.valid()) {
         uModel_ = worldProgram_.uniform("uModel");
@@ -85,6 +86,7 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         u.res = worldProgram_.uniform("uRes");
         u.grain = worldProgram_.uniform("uGrain");
         u.materials = worldProgram_.uniform("uMaterials");
+        u.clip = worldProgram_.uniform("uClip");
         // The samplers never change: the texture on unit 0, the shadow cubes on units 1 to 5.
         worldProgram_.use();
         worldProgram_.set("uTex", 0);
@@ -163,6 +165,14 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         defaultMaterial_.allocate(1, 1, open);
         defaultMaterial_.setParams(NEAREST, NEAREST, REPEAT);
     }
+
+    // The mirror: its glass is six vertices rewritten each frame; what it shows is drawn into mirrorTarget_.
+    mirrorVbo_.upload(nullptr, 6 * sizeof(Vertex), DYNAMIC_DRAW);
+    mirrorVao_.create();
+    mirrorVao_.bind();
+    setVertexLayout(mirrorVbo_.id());
+    BindVertexArray(0);
+    mirrorTarget_.create(kInternalW / 2, kInternalH / 2);
 
     // Overlay texture: re-uploaded every frame with nearest filtering.
     overlayTex_.create();
@@ -255,6 +265,13 @@ void SceneRenderer::uploadBatches(BatchList& dst, const std::vector<Batch>& src)
         g.alphaTest = b.alphaTest;
         dst.push_back(std::move(g));
     }
+}
+
+int SceneRenderer::uploadModel(const std::vector<Batch>& batches) {
+    ++sceneRevision_;
+    models_.emplace_back();
+    uploadBatches(models_.back(), batches);
+    return static_cast<int>(models_.size()) - 1;
 }
 
 void SceneRenderer::uploadWorld(const SceneGeometry& geometry) {
@@ -410,15 +427,16 @@ void SceneRenderer::drawWorld(const CameraState& cam, const Frame& f) {
     Uniform2f(u.res, static_cast<float>(target_.width()), static_cast<float>(target_.height()));
     Uniform1f(u.grain, f.grain);
     Uniform1i(u.materials, f.materials);
+    Uniform4f(u.clip, f.clip[0], f.clip[1], f.clip[2], f.clip[3]);
     ActiveTexture(TEXTURE0);
     drawState_ = DrawState{};
 
-    drawScene(cam, f.planes);
+    drawScene(cam, f.planes, f.views);
 }
 
 // Everything that stands in the world this frame, culled against the planes: what the main pass
 // draws and what casts shadows.
-void SceneRenderer::drawScene(const CameraState& cam, const Frustum& cull) {
+void SceneRenderer::drawScene(const CameraState& cam, const Frustum& cull, unsigned views) {
     float model[16];
     mat4Identity(model);
     drawBatches(cab_, model, &cull);
@@ -433,6 +451,95 @@ void SceneRenderer::drawScene(const CameraState& cam, const Frustum& cull) {
         doorModel(d.hingeX, d.hingeZ, d.angle, model);
         drawBatches(door_, model);
     }
+    if (views == 0) return;
+    for (const ModelInstance& inst : cam.instances) {
+        if ((inst.views & views) == 0 || inst.model < 0 || inst.model >= static_cast<int>(models_.size())) continue;
+        drawBatches(models_[static_cast<size_t>(inst.model)], inst.matrix);
+    }
+}
+
+// Whether the glass can be seen from here: the eye is on its front, and it is inside the view.
+bool SceneRenderer::mirrorVisible(const CameraState& cam, const Frame& f) const {
+    const MirrorState& m = cam.mirror;
+    if (!m.on || !mirrorProgram_.valid() || !mirrorTarget_.width()) return false;
+    const double front = (cam.x - m.x) * m.nx + (cam.z - m.z) * m.nz;
+    if (front < 0.02) return false;
+    const double r = std::hypot(m.halfW, m.halfH);
+    const float bmin[3] = {static_cast<float>(m.x - r), static_cast<float>(m.y - r), static_cast<float>(m.z - r)};
+    const float bmax[3] = {static_cast<float>(m.x + r), static_cast<float>(m.y + r), static_cast<float>(m.z + r)};
+    return boxInFrustum(f.planes, bmin, bmax);
+}
+
+// The scene as the glass shows it: the view turned about the mirror's plane (so the picture is the room
+// reflected, drawn with the real lights), without what lies behind the glass, into mirrorTarget_.
+void SceneRenderer::drawMirrorView(const CameraState& cam, const Frame& f) {
+    const MirrorState& m = cam.mirror;
+    const int h = std::max(16, target_.height() * 3 / 4), w = std::max(16, target_.width() * 3 / 4);
+    mirrorTarget_.resize(w, h);
+    const float n[3] = {static_cast<float>(m.nx), 0.0f, static_cast<float>(m.nz)};
+    const float d = n[0] * static_cast<float>(m.x) + n[2] * static_cast<float>(m.z);
+    float r[16];  // p' = p - 2 (n.p - d) n
+    mat4Identity(r);
+    r[0] = 1 - 2 * n[0] * n[0];
+    r[2] = -2 * n[0] * n[2];
+    r[8] = -2 * n[2] * n[0];
+    r[10] = 1 - 2 * n[2] * n[2];
+    r[12] = 2 * d * n[0];
+    r[14] = 2 * d * n[2];
+    Frame fm = f;
+    mat4Multiply(f.view, r, fm.view);
+    float viewProj[16];
+    mat4Multiply(f.proj, fm.view, viewProj);
+    frustumPlanes(viewProj, fm.planes);
+    // Keep what is in front of the glass: the frame and the picture of the mirror prop itself (which lie on the plane)
+    // and the wall it hangs on go, or they would hide the whole reflection.
+    fm.clip[0] = n[0];
+    fm.clip[1] = 0.0f;
+    fm.clip[2] = n[2];
+    fm.clip[3] = -d - 0.015f;
+    fm.views = ModelInstance::kMirror;
+    mirrorTarget_.bind();
+    Viewport(0, 0, w, h);
+    ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
+    Disable(BLEND);
+    drawWorld(cam, fm);
+}
+
+// The glass: a quad a finger in front of the mirror prop's own face, showing what drawMirrorView made.
+void SceneRenderer::drawMirrorGlass(const CameraState& cam, const Frame& f) {
+    const MirrorState& m = cam.mirror;
+    const float nx = static_cast<float>(m.nx), nz = static_cast<float>(m.nz);
+    const float rx = nz, rz = -nx;  // along the glass
+    const float cx = static_cast<float>(m.x) + nx * 0.004f, cz = static_cast<float>(m.z) + nz * 0.004f;
+    const float w = static_cast<float>(m.halfW), h = static_cast<float>(m.halfH), cy = static_cast<float>(m.y);
+    auto corner = [&](float sx, float sy) {
+        Vertex v{};
+        v.px = cx + rx * w * sx;
+        v.py = cy + h * sy;
+        v.pz = cz + rz * w * sx;
+        v.nx = nx;
+        v.nz = nz;
+        return v;
+    };
+    const Vertex quad[6] = {corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, -1), corner(1, 1), corner(-1, 1)};
+    mirrorVbo_.upload(quad, sizeof(quad), DYNAMIC_DRAW);
+    mirrorProgram_.use();
+    UniformMatrix4fv(mirrorProgram_.uniform("uView"), 1, FALSE_, f.view);
+    UniformMatrix4fv(mirrorProgram_.uniform("uProj"), 1, FALSE_, f.proj);
+    mirrorProgram_.set("uTex", 0);
+    mirrorProgram_.set("uRes", static_cast<float>(target_.width()), static_cast<float>(target_.height()));
+    mirrorProgram_.set("uTint", static_cast<float>(m.tint[0]), static_cast<float>(m.tint[1]), static_cast<float>(m.tint[2]));
+    mirrorProgram_.set("uAlpha", static_cast<float>(m.alpha));
+    ActiveTexture(TEXTURE0);
+    mirrorTarget_.color().bind();
+    Enable(DEPTH_TEST);
+    DepthFunc(LEQUAL);
+    Enable(BLEND);
+    BlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
+    mirrorVao_.bind();
+    DrawArrays(TRIANGLES, 0, 6);
+    Disable(BLEND);
 }
 
 // Composite the scene to the window (linear upscale keeps it soft, PS2-like), with the blur and lens.
@@ -529,6 +636,7 @@ void SceneRenderer::render(const CameraState& cam, int windowW, int windowH, con
     f.fog[2] = cam.outdoor ? 0.034f : 0.005f;
     f.fogDensity = cam.outdoor ? 0.040f : 0.075f;
     f.fovY = kFovY;
+    f.views = ModelInstance::kMain;
     f.aspect = static_cast<float>(target_.width()) / static_cast<float>(target_.height());
     f.grain = cam.grain ? 1.0f : 0.0f;
     f.materials = std::clamp(cam.materials, 0, 2);
@@ -543,6 +651,8 @@ void SceneRenderer::render(const CameraState& cam, int windowW, int windowH, con
     // 1) The lamps' shadow maps, 2) the world into the internal target.
     chooseLamps(cam, f);
     drawShadows(cam);
+    const bool mirrored = mirrorVisible(cam, f);
+    if (mirrored) drawMirrorView(cam, f);  // before the main pass: it has its own target
     target_.bind();
     Viewport(0, 0, target_.width(), target_.height());
     ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -550,6 +660,7 @@ void SceneRenderer::render(const CameraState& cam, int windowW, int windowH, con
     Disable(BLEND);
     if (cam.outdoor) drawSky(cam, f);
     drawWorld(cam, f);
+    if (mirrored) drawMirrorGlass(cam, f);
     target_.resolve();  // a multisampled picture becomes the texture the composite reads
 
     // 3) The scene to the window, 4) the 2D overlay on top.

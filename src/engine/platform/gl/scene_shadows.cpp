@@ -170,7 +170,7 @@ void SceneRenderer::drawShadowCube(const CameraState& cam, ShadowCube& cube, con
         ClearColor(1e4f, 0.0f, 0.0f, 1.0f);
         Clear(COLOR_BUFFER_BIT | DEPTH_BUFFER_BIT);
         drawState_ = DrawState{};
-        drawScene(cam, frustum);
+        drawScene(cam, frustum, 0);
     }
 }
 

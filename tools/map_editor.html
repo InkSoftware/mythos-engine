@@ -102,7 +102,7 @@ const STAMP = "; Edited by tools/map_editor.html. A game's asset generator shoul
 const FORMAT_NOTE = "; [map]: one character per cell. [furniture]: x y model yaw_degrees (solid, one cell each).";
 
 function parseLevel(text) {
-  const rows = [], furniture = [];
+  const rows = [], furniture = [], decor = [];
   let section = "";
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
@@ -113,12 +113,12 @@ function parseLevel(text) {
       const p = line.split(/\s+/);
       if (p.length < 4) throw new Error("bad furniture line: " + line);
       furniture.push({ x: +p[0], y: +p[1], model: p[2], yaw: +p[3] });
-    }
+    } else if (section === "[decor]") decor.push(line);  // non-solid small objects: kept as they are
   }
   if (!rows.length) throw new Error("no [map] rows");
   const w = rows[0].length;
   for (const r of rows) if (r.length !== w) throw new Error("ragged map rows");
-  return { w, h: rows.length, cells: rows.map(r => r.split("")), furniture };
+  return { w, h: rows.length, cells: rows.map(r => r.split("")), furniture, decor };
 }
 
 function serializeLevel(lv, title) {
@@ -126,6 +126,7 @@ function serializeLevel(lv, title) {
   for (const r of lv.cells) out.push(r.join(""));
   out.push("[furniture]");
   for (const f of lv.furniture) out.push(`${f.x} ${f.y} ${f.model} ${f.yaw}`);
+  if (lv.decor && lv.decor.length) { out.push("[decor]"); out.push(...lv.decor); }
   return out.join("\n") + "\n";
 }
 

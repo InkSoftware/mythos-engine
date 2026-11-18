@@ -30,6 +30,7 @@ uniform samplerCube uShadow1;
 uniform samplerCube uShadow2;
 uniform samplerCube uShadow3;
 uniform samplerCube uShadowHand;
+uniform vec4 uClip;             // plane: the mirror pass drops what is behind the glass
 uniform int uHandShadow;        // 1: the hand light casts shadows from uHandPos
 uniform vec3 uHandPos;
 uniform int uHandFaces;         // bit i: face i of the hand light's cube was drawn this frame
@@ -138,6 +139,7 @@ vec3 environmentSpecular(vec3 n, vec3 v, vec3 ambient) {
 }
 
 void main() {
+    if (dot(vWorld, uClip.xyz) + uClip.w < 0.0) discard;
     vec4 tex = texture(uTex, vUV);
     if (uAlphaTest == 1 && tex.a < 0.5) discard;
     vec3 albedo = tex.rgb;  // the texture is SRGB8_ALPHA8: sampling already gives linear

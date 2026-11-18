@@ -77,7 +77,7 @@ The engine gives mechanisms; a game gives meaning.
 
 - **Rules**: a class like `Game` that owns a `Level`, a `Player`, a `PlayerWalker`, `RoomDoors`, an
   `Interactor` and a `Progress`-derived state, and turns `Use` outcomes into text, sounds and plot.
-- **Data**: levels (`[map]` + `[furniture]`), a tile legend, props, sounds, translations.
+- **Data**: levels (`[map]` + `[furniture]`, and `[decor]` for pieces that block nothing), a tile legend, props, sounds, translations.
   The engine reads the shared formats for you: `loadSoundBank`, `loadTranslation`, `loadAchievementDefs`,
   `loadCredits`, `loadPlayerParams`, `loadFontFiles`, `parseTileSet`.
 - **Settings**: `GameSettings` with its pages (`updateSettingsPage`), `drawSettingsPage` (give it a `MenuTheme`),
@@ -90,7 +90,7 @@ The engine gives mechanisms; a game gives meaning.
   override the built-in ones); models as OBJ (`tools/mythos_assets.py`
   builds them and the level files from Python).
 - **A front end**: build the camera and lights each frame (`CameraState`, then `applySettings(settings, camera)`),
-  poll input with `pollInput`, play cues with `playCue`, upload geometry to `SceneRenderer`.
+  poll input with `pollInput`, play cues with `playCue`, upload geometry to `SceneRenderer` (and models for things that move, with `uploadModel`; `CameraState::instances` and `CameraState::mirror` draw them and one wall mirror).
 
 ## Tools
 

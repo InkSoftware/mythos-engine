@@ -141,6 +141,23 @@ TEST(zone_parser_rejects_bad_furniture) {
     CHECK(!err.empty());
 }
 
+TEST(a_decor_section_places_non_solid_pieces) {
+    Level l;
+    std::string err;
+    CHECK(l.parseText("[map]\n...\n...\n[furniture]\n0 0 bed 90\n[decor]\n1 1 vase 180 0.25 -0.1 0.78\n2 1 duck 0\n", &err));
+    CHECK_EQ(l.furniture().size(), 3u);
+    CHECK(!l.passable(0, 0));                 // furniture blocks its cell
+    CHECK(l.passable(1, 1) && l.passable(2, 1));  // decor blocks nothing
+    CHECK(l.furnitureAt(1, 1) == nullptr);
+    const Placement& vase = l.furniture()[1];
+    CHECK(!vase.solid && vase.model == "vase");
+    CHECK(vase.offX > 0.249 && vase.offX < 0.251 && vase.offZ < -0.099 && vase.offZ > -0.101);
+    CHECK(vase.lift > 0.779 && vase.lift < 0.781);
+    CHECK(l.furniture()[2].lift == 0.0 && l.furniture()[2].offX == 0.0);  // the offsets are optional
+    CHECK(!l.parseText("[map]\n...\n[decor]\n5 5 vase 0\n", &err));    // outside the map
+    CHECK(!l.parseText("[map]\n...\n[decor]\n1 0 vase\n", &err));      // no yaw
+}
+
 TEST(font_measures_and_wraps_text) {
     CHECK_EQ(textWidth("AB", 1), 11);
     CHECK_EQ(textWidth("AB", 2), 22);

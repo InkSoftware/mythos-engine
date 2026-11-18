@@ -29,7 +29,8 @@ class Level {
 public:
     // Builds the grid from rows. All rows must have the same length. Clears furniture.
     bool parse(const std::vector<std::string>& rows, std::string* error = nullptr);
-    // Parses a zone file: a [map] section of rows and a [furniture] section of "x y model yaw" lines.
+    // Parses a zone file: a [map] section of rows, a [furniture] section of "x y model yaw" lines (solid, one cell each) and
+    // an optional [decor] section of "x y model yaw [offX offZ lift]" lines (non-solid: a vase on a table, a picture on a wall).
     // Lines starting with ';' are comments.
     bool parseText(const std::string& text, std::string* error = nullptr);
 

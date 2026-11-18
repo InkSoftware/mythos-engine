@@ -55,7 +55,7 @@ bool Level::parse(const std::vector<std::string>& rows, std::string* error) {
 
 bool Level::parseText(const std::string& text, std::string* error) {
     std::vector<std::string> rows;
-    std::vector<Placement> furniture;
+    std::vector<Placement> furniture, decor;
     std::string section;
     std::istringstream in(text);
     std::string raw;
@@ -76,6 +76,17 @@ bool Level::parseText(const std::string& text, std::string* error) {
                 return false;
             }
             furniture.push_back(p);
+        } else if (section == "[decor]") {
+            // A small object that blocks nothing: x y model yaw [offX offZ lift] (metres from the cell centre; lift above the floor).
+            std::istringstream ls(line);
+            Placement p;
+            p.solid = false;
+            if (!(ls >> p.x >> p.y >> p.model >> p.yawDeg)) {
+                if (error) *error = "bad decor line: " + line;
+                return false;
+            }
+            ls >> p.offX >> p.offZ >> p.lift;  // optional
+            decor.push_back(p);
         }
     }
     if (!parse(rows, error)) return false;
@@ -86,7 +97,14 @@ bool Level::parseText(const std::string& text, std::string* error) {
         }
         solid_[static_cast<size_t>(p.y) * w_ + p.x] = 1;
     }
+    for (const auto& p : decor) {
+        if (!inBounds(p.x, p.y)) {
+            if (error) *error = "decor outside the map: " + p.model;
+            return false;
+        }
+    }
     furniture_ = furniture;
+    furniture_.insert(furniture_.end(), decor.begin(), decor.end());
     return true;
 }
 

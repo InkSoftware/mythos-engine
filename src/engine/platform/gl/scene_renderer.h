@@ -45,6 +45,29 @@ struct PointLight {
     double radius = 4;  // reach in world units; light fades smoothly to zero there
 };
 
+// A model drawn where the caller says, every frame: what moves (the hand's torch, the player's body). Upload its
+// batches once with SceneRenderer::uploadModel. `matrix` is its model-to-world transform (column-major; rotation and
+// uniform scale only, the lighting turns normals with it). `views` says where it shows.
+struct ModelInstance {
+    static constexpr unsigned kMain = 1;    // in the player's own view
+    static constexpr unsigned kMirror = 2;  // in the mirror
+    int model = -1;                         // the id uploadModel returned
+    float matrix[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    unsigned views = kMain | kMirror;
+};
+
+// A vertical mirror hung on a wall: its glass centre, the horizontal unit normal facing into the room, and its size.
+// The scene is drawn again as it is seen in it (the lamps and the hand light are real, the picture is reflected),
+// then laid over the glass. Only one mirror at a time; the caller sends the one the player can see.
+struct MirrorState {
+    bool on = false;
+    double x = 0, y = 0, z = 0;  // centre of the glass
+    double nx = 0, nz = 1;       // facing (unit, horizontal)
+    double halfW = 0.3, halfH = 0.4;
+    double alpha = 0.94;         // how much of the glass shows the reflection (the rest shows the glass's own texture)
+    double tint[3] = {0.80, 0.84, 0.86};  // the glass dims and cools the picture
+};
+
 struct CameraState {
     double x = 0, z = 0;       // eye position on the map plane (x = column, z = row)
     double eyeHeight = 1.55;
@@ -70,6 +93,8 @@ struct CameraState {
     bool outdoor = false;      // night sky and moonlight instead of a ceiling
     bool grain = true;         // film grain (a graphics setting)
     double time = 0;           // seconds, for grain and flicker
+    std::vector<ModelInstance> instances;  // models drawn this frame (not in the lamps' shadows)
+    MirrorState mirror;
 };
 
 class SceneRenderer {
@@ -81,6 +106,8 @@ public:
     // car). An empty geometry clears it.
     void uploadCab(const SceneGeometry& geometry);
     void uploadDoorPanel(const std::vector<Batch>& batches);
+    // A model for ModelInstance: returns its id (kept until the renderer goes). The batches are in model space.
+    int uploadModel(const std::vector<Batch>& batches);
     // overlay may be null. Its size is taken from the Surface and it is stretched over the window.
     // text (may be null) is laid out in overlay pixels and drawn over it at the window's
     // full resolution; its fonts must have been registered with addFont.
@@ -122,6 +149,8 @@ private:
         int materials;
         float view[16], proj[16];
         Frustum planes;  // the view frustum, world space
+        float clip[4] = {0, 0, 0, 1};  // a plane: what lies on its negative side is not drawn (the mirror's back)
+        unsigned views = ModelInstance::kMain;  // which instances this pass shows
     };
 
     // Splits each batch into spatial chunks (kChunk cells square) so draws can be culled.
@@ -149,7 +178,12 @@ private:
     // What the scene looks like to a shadow map: the geometry, the scroll and the doors. Equal
     // keys (with the same lamp) mean the cube is still right.
     uint64_t sceneKey(const CameraState& cam) const;
-    void drawScene(const CameraState& cam, const Frustum& cull);
+    // views: the ModelInstance::k* bits to show (0 for the shadow passes: nothing held casts a shadow).
+    void drawScene(const CameraState& cam, const Frustum& cull, unsigned views);
+    // The mirror: whether it is in view this frame, the scene as the glass shows it, and the glass itself.
+    bool mirrorVisible(const CameraState& cam, const Frame& f) const;
+    void drawMirrorView(const CameraState& cam, const Frame& f);
+    void drawMirrorGlass(const CameraState& cam, const Frame& f);
     // (Re)creates the shadow cube maps for a level when it changes.
     void ensureShadowMaps(int level);
     void drawSky(const CameraState& cam, const Frame& f);
@@ -157,7 +191,11 @@ private:
     void composite(const CameraState& cam, const Frame& f, int windowW, int windowH);
     void drawOverlay(const Surface& overlay, const TextLayer* text);
 
-    GlProgram worldProgram_, quadProgram_, skyProgram_, shadowProgram_, compositeProgram_;
+    GlProgram worldProgram_, quadProgram_, skyProgram_, shadowProgram_, compositeProgram_, mirrorProgram_;
+    RenderTarget mirrorTarget_;  // what the glass shows
+    GlVertexArray mirrorVao_;
+    GlBuffer mirrorVbo_;
+    std::vector<BatchList> models_;  // by ModelInstance::model
     ShadowCube handShadow_;    // the torch's or lighter's
     // What each cube was last drawn for (0 = nothing): a static lamp in a still scene is not redrawn.
     // Kept per cube face: the hand light only draws the faces its beam can reach.
@@ -204,7 +242,7 @@ private:
         gl::GLint view = -1, proj = -1, cam = -1, flashDir = -1, flashOn = -1, lighter = -1, outdoor = -1, moonDir = -1,
                   fogColor = -1, fogDensity = -1, time = -1, ambientBase = -1, ambientNear = -1, lightCount = -1,
                   lightPos = -1, lightColor = -1, lightRadius = -1, shadowCount = -1, shadowTexel = -1,
-                  handShadow = -1, handPos = -1, handFaces = -1, res = -1, grain = -1, materials = -1;
+                  handShadow = -1, handPos = -1, handFaces = -1, res = -1, grain = -1, materials = -1, clip = -1;
     } world_u_;
 };
 

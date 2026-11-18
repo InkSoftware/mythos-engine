@@ -248,7 +248,7 @@ class Grid:
         return ["".join(r) for r in self.cells]
 
 
-def write_level(directory, name, grid, furniture, title, generator):
+def write_level(directory, name, grid, furniture, title, generator, decor=()):
     os.makedirs(directory, exist_ok=True)
     path = os.path.join(directory, name + ".txt")
     lines = [
@@ -259,5 +259,9 @@ def write_level(directory, name, grid, furniture, title, generator):
     lines += grid.rows()
     lines.append("[furniture]")
     lines += [f"{x} {y} {model} {yaw}" for x, y, model, yaw in furniture]
+    if decor:
+        # non-solid small objects: (x, y, model, yaw, offX, offZ, lift), offsets in metres from the cell centre
+        lines.append("[decor]")
+        lines += [f"{x} {y} {model} {yaw} {ox:g} {oz:g} {lift:g}" for x, y, model, yaw, ox, oz, lift in decor]
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
