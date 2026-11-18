@@ -57,11 +57,17 @@ void main() {
 }
 )GLSL";
 
-void unpackColor(uint32_t c, float* out) {
-    out[0] = ((c >> 16) & 0xFF) / 255.0f;
-    out[1] = ((c >> 8) & 0xFF) / 255.0f;
-    out[2] = (c & 0xFF) / 255.0f;
-    out[3] = ((c >> 24) & 0xFF) / 255.0f;
+// Limits of the distance-field effects, in field units (0.5 is the full reach of the field).
+constexpr float kMaxOutlineField = 0.45f, kMaxBlurField = 0.5f;
+constexpr int kVertsPerGlyph = 6;  // two triangles
+constexpr int kAttribCount = 5;
+
+// 0xAARRGGBB to four floats, r g b a.
+void unpackColor(uint32_t argb, float* rgba) {
+    rgba[0] = ((argb >> 16) & 0xFF) / 255.0f;
+    rgba[1] = ((argb >> 8) & 0xFF) / 255.0f;
+    rgba[2] = (argb & 0xFF) / 255.0f;
+    rgba[3] = ((argb >> 24) & 0xFF) / 255.0f;
 }
 
 }  // namespace
@@ -74,9 +80,10 @@ bool TextRenderer::init() {
     vao_.bind();
     BindBuffer(ARRAY_BUFFER, vbo_.id());
     const GLsizei stride = kFloats * sizeof(float);
-    const GLuint sizes[5] = {2, 2, 4, 4, 2}, locations[5] = {0, 2, 3, 4, 5};
+    // pos, uv, colour, outline colour, params: floats per attribute and its shader location
+    const GLuint sizes[kAttribCount] = {2, 2, 4, 4, 2}, locations[kAttribCount] = {0, 2, 3, 4, 5};
     size_t offset = 0;
-    for (int a = 0; a < 5; ++a) {
+    for (int a = 0; a < kAttribCount; ++a) {
         EnableVertexAttribArray(locations[a]);
         VertexAttribPointer(locations[a], static_cast<GLint>(sizes[a]), FLOAT, FALSE_, stride,
                             reinterpret_cast<const void*>(offset * sizeof(float)));
@@ -103,19 +110,19 @@ void TextRenderer::addFont(const SdfFont& font) {
 void TextRenderer::appendPass(const TextRun& run, const std::vector<uint32_t>& cps, const SdfFont& font, float sx,
                               float sy, float dx, float dy, uint32_t color, uint32_t outlineColor, float outline,
                               float blur) {
-    const float k = run.size / SdfFont::kBakeSize;  // bake pixels -> overlay pixels
+    const float k = run.size / SdfFont::kBakeSize;  // bake pixels -> overlay pixels (the glyph scale)
     // Overlay pixels -> distance-field units (0.5 = the full reach of the field).
     const float toField = 1.0f / (k * 2.0f * SdfFont::kSdfReach);
     const float iw = 1.0f / font.atlasWidth(), ih = 1.0f / font.atlasHeight();
     float col[4], ocol[4];
     unpackColor(color, col);
     unpackColor(outlineColor, ocol);
-    const float params[2] = {std::min(outline * toField, 0.45f), std::min(blur * toField, 0.5f)};
+    const float params[2] = {std::min(outline * toField, kMaxOutlineField), std::min(blur * toField, kMaxBlurField)};
     float penX = run.x + dx;
     const float baseline = run.y + dy + font.ascent(run.size);
     // Written straight into the vector: room for every glyph, trimmed to what was drawn.
     const size_t base = verts_.size();
-    verts_.resize(base + cps.size() * 6 * kFloats);
+    verts_.resize(base + cps.size() * kVertsPerGlyph * kFloats);
     float* out = verts_.data() + base;
     for (size_t i = 0; i < cps.size(); ++i) {
         const SdfFont::Glyph& g = font.glyph(cps[i]);
@@ -123,7 +130,7 @@ void TextRenderer::appendPass(const TextRun& run, const std::vector<uint32_t>& c
             const float x0 = penX + g.x0 * k, y0 = baseline + g.y0 * k;
             const float x1 = x0 + g.aw * k, y1 = y0 + g.ah * k;
             const float u0 = g.ax * iw, v0 = g.ay * ih, u1 = (g.ax + g.aw) * iw, v1 = (g.ay + g.ah) * ih;
-            const float corners[6][4] = {{x0, y0, u0, v0}, {x1, y0, u1, v0}, {x1, y1, u1, v1},
+            const float corners[kVertsPerGlyph][4] = {{x0, y0, u0, v0}, {x1, y0, u1, v0}, {x1, y1, u1, v1},
                                          {x0, y0, u0, v0}, {x1, y1, u1, v1}, {x0, y1, u0, v1}};
             for (const auto& c : corners) {
                 const float v[kFloats] = {c[0] * sx - 1.0f, 1.0f - c[1] * sy, c[2], c[3],
@@ -147,35 +154,38 @@ void TextRenderer::appendRun(const TextRun& run, const SdfFont& font, float sx, 
     appendPass(run, cps, font, sx, sy, 0.0f, 0.0f, run.color, fx.outlineColor, fx.outline, 0.0f);
 }
 
+// Lays out every run (grouped by font, so each font is one draw) into verts_ and uploads it.
+void TextRenderer::rebuildVertices(const TextLayer& text, int overlayW, int overlayH) {
+    const float sx = 2.0f / overlayW, sy = 2.0f / overlayH;  // overlay pixels -> clip space
+    verts_.clear();
+    ranges_.assign(fonts_.size(), FontRange{});
+    for (size_t fontIndex = 0; fontIndex < fonts_.size(); ++fontIndex) {
+        const SdfFont* font = fonts_[fontIndex].first;
+        const size_t before = verts_.size();
+        for (const TextRun& run : text.runs)
+            if (run.font == font && !run.text.empty()) appendRun(run, *font, sx, sy);
+        ranges_[fontIndex] = {static_cast<int>(before / kFloats), static_cast<int>((verts_.size() - before) / kFloats)};
+    }
+    vbo_.upload(verts_.data(), verts_.size() * sizeof(float), DYNAMIC_DRAW);
+    builtRuns_ = text.runs;
+    builtW_ = overlayW;
+    builtH_ = overlayH;
+    built_ = true;
+}
+
 void TextRenderer::draw(const TextLayer& text, int overlayW, int overlayH) {
     if (!program_.valid() || text.runs.empty()) return;
     program_.use();
     program_.set("uAtlas", 0);
     ActiveTexture(TEXTURE0);
     vao_.bind();
-    if (!built_ || overlayW != builtW_ || overlayH != builtH_ || text.runs != builtRuns_) {
-        const float sx = 2.0f / overlayW, sy = 2.0f / overlayH;
-        verts_.clear();
-        ranges_.assign(fonts_.size(), FontRange{});
-        for (size_t f = 0; f < fonts_.size(); ++f) {
-            const SdfFont* font = fonts_[f].first;
-            const size_t before = verts_.size();
-            for (const TextRun& run : text.runs)
-                if (run.font == font && !run.text.empty()) appendRun(run, *font, sx, sy);
-            ranges_[f] = {static_cast<int>(before / kFloats), static_cast<int>((verts_.size() - before) / kFloats)};
-        }
-        vbo_.upload(verts_.data(), verts_.size() * sizeof(float), DYNAMIC_DRAW);
-        builtRuns_ = text.runs;
-        builtW_ = overlayW;
-        builtH_ = overlayH;
-        built_ = true;
-    }
+    if (!built_ || overlayW != builtW_ || overlayH != builtH_ || text.runs != builtRuns_) rebuildVertices(text, overlayW, overlayH);
     Enable(BLEND);
     BlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
-    for (size_t f = 0; f < fonts_.size(); ++f) {
-        if (ranges_[f].count == 0) continue;
-        fonts_[f].second.bind();
-        DrawArrays(TRIANGLES, ranges_[f].first, ranges_[f].count);
+    for (size_t fontIndex = 0; fontIndex < fonts_.size(); ++fontIndex) {
+        if (ranges_[fontIndex].count == 0) continue;
+        fonts_[fontIndex].second.bind();
+        DrawArrays(TRIANGLES, ranges_[fontIndex].first, ranges_[fontIndex].count);
     }
     Disable(BLEND);
 }

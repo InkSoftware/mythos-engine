@@ -153,8 +153,25 @@ private:
         unsigned views = ModelInstance::kMain;  // which instances this pass shows
     };
 
+    // init() steps.
+    void lookUpWorldUniforms();
+    void buildFullscreenQuad();
+    void uploadTextures(const TextureLibrary& textures);
+    static GlTexture makeMipmappedTexture(int w, int h, const void* rgba, gl::GLenum internalFormat = gl::RGBA8);
+
+    // render() steps.
+    Frame makeFrame(const CameraState& cam) const;
+    void drawMainView(const CameraState& cam, const Frame& f, bool mirrored);
+    void motionBlurSmear(const CameraState& cam, const Frame& f, float& smearX, float& smearY);
+    void setLampUniforms();
+    void bindShadowCubes();
+    void drawDoors(const CameraState& cam, const Frustum& cull, float* model);
+    void drawInstances(const CameraState& cam, unsigned views);
+
     // Splits each batch into spatial chunks (kChunk cells square) so draws can be culled.
     void uploadBatches(BatchList& dst, const std::vector<Batch>& src);
+    // Binds a batch's textures, flags and VAO, skipping what drawState_ says is already set.
+    void bindBatchState(const GpuBatch& batch);
     // Draws the batches. With a Frame, chunks outside its frustum (shifted by offsetZ) are skipped.
     void drawBatches(const BatchList& batches, const float* model, const Frustum* cull = nullptr,
                      float offsetZ = 0.0f);
@@ -168,6 +185,8 @@ private:
 
     // Picks the lamps for this frame (shadow casters first) into lamps_ / shadowCount_.
     void chooseLamps(const CameraState& cam, const Frame& f);
+    // Hand light: its position and reach, and the cube faces its beam can reach (handPos_, handReach_, handFaces_).
+    void placeHandShadow(const CameraState& cam, const Frame& f);
     // Renders the distance cube maps of each shadow-casting lamp and of the hand light.
     void drawShadows(const CameraState& cam);
     // One lamp's cube map: the scene's distance from `pos` out to `reach`, six faces.

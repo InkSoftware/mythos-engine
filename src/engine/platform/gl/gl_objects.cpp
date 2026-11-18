@@ -9,6 +9,12 @@ namespace mythos {
 
 using namespace gl;
 
+namespace {
+constexpr int kCubeFaces = 6;
+constexpr GLenum kDepthFormat = DEPTH_COMPONENT24;  // every depth buffer here
+constexpr size_t kInfoLogBytes = 1024;  // room for a shader / program build log
+}  // namespace
+
 // ---- GlBuffer
 void GlBuffer::create() {
     if (!id_) GenBuffers(1, &id_);
@@ -79,7 +85,7 @@ void RenderTarget::create(int w, int h) {
     color_.setParams(LINEAR, LINEAR, CLAMP_TO_EDGE);
     GenRenderbuffers(1, &depth_);
     BindRenderbuffer(RENDERBUFFER, depth_);
-    RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT24, w, h);
+    RenderbufferStorage(RENDERBUFFER, kDepthFormat, w, h);
     GenFramebuffers(1, &fbo_);
     BindFramebuffer(FRAMEBUFFER, fbo_);
     FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, color_.id(), 0);
@@ -111,7 +117,7 @@ void RenderTarget::rebuildMultisample() {
     RenderbufferStorageMultisample(RENDERBUFFER, samples_, RGBA8, w_, h_);
     GenRenderbuffers(1, &msDepth_);
     BindRenderbuffer(RENDERBUFFER, msDepth_);
-    RenderbufferStorageMultisample(RENDERBUFFER, samples_, DEPTH_COMPONENT24, w_, h_);
+    RenderbufferStorageMultisample(RENDERBUFFER, samples_, kDepthFormat, w_, h_);
     GenFramebuffers(1, &msFbo_);
     BindFramebuffer(FRAMEBUFFER, msFbo_);
     FramebufferRenderbuffer(FRAMEBUFFER, COLOR_ATTACHMENT0, RENDERBUFFER, msColor_);
@@ -155,7 +161,7 @@ void RenderTarget::resize(int w, int h) {
     h_ = h;
     color_.allocate(w, h);
     BindRenderbuffer(RENDERBUFFER, depth_);
-    RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT24, w, h);
+    RenderbufferStorage(RENDERBUFFER, kDepthFormat, w, h);
     rebuildMultisample();
 }
 void RenderTarget::bind() const { BindFramebuffer(FRAMEBUFFER, msFbo_ ? msFbo_ : fbo_); }
@@ -165,7 +171,7 @@ void RenderTarget::bindWindow() { BindFramebuffer(FRAMEBUFFER, 0); }
 void DepthBuffer::create(int w, int h) {
     if (!id_) GenRenderbuffers(1, &id_);
     BindRenderbuffer(RENDERBUFFER, id_);
-    RenderbufferStorage(RENDERBUFFER, DEPTH_COMPONENT24, w, h);
+    RenderbufferStorage(RENDERBUFFER, kDepthFormat, w, h);
 }
 void DepthBuffer::reset() {
     if (id_ && gl::loaded()) DeleteRenderbuffers(1, &id_);
@@ -178,8 +184,8 @@ void ShadowCube::create(int size, const DepthBuffer& depth) {
     size_ = size;
     GenTextures(1, &tex_);
     BindTexture(TEXTURE_CUBE_MAP, tex_);
-    for (int f = 0; f < 6; ++f)
-        TexImage2D(TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(f), 0, R32F, size, size, 0, RED, FLOAT, nullptr);
+    for (int face = 0; face < kCubeFaces; ++face)
+        TexImage2D(TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(face), 0, R32F, size, size, 0, RED, FLOAT, nullptr);
     TexParameteri(TEXTURE_CUBE_MAP, TEXTURE_MIN_FILTER, NEAREST);
     TexParameteri(TEXTURE_CUBE_MAP, TEXTURE_MAG_FILTER, NEAREST);
     TexParameteri(TEXTURE_CUBE_MAP, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
@@ -215,40 +221,40 @@ bool GlProgram::build(const char* vertexSrc, const char* fragmentSrc, std::initi
                       const char* fragmentExtra) {
     reset();
     auto compile = [](GLenum type, const char* src, const char* extra) -> GLuint {
-        GLuint s = CreateShader(type);
-        const char* sources[2] = {src, extra};
-        ShaderSource(s, extra ? 2 : 1, sources, nullptr);
-        CompileShader(s);
+        const GLuint shader = CreateShader(type);
+        const char* sources[2] = {src, extra};  // `extra` is appended to the main source
+        ShaderSource(shader, extra ? 2 : 1, sources, nullptr);
+        CompileShader(shader);
         GLint ok = 0;
-        GetShaderiv(s, COMPILE_STATUS, &ok);
+        GetShaderiv(shader, COMPILE_STATUS, &ok);
         if (!ok) {
-            char log[1024] = {0};
-            GetShaderInfoLog(s, sizeof(log), nullptr, log);
+            char log[kInfoLogBytes] = {0};
+            GetShaderInfoLog(shader, sizeof(log), nullptr, log);
             SDL_Log("shader compile error: %s", log);
         }
-        return s;
+        return shader;
     };
-    GLuint vs = compile(VERTEX_SHADER, vertexSrc, nullptr);
-    GLuint fs = compile(FRAGMENT_SHADER, fragmentSrc, fragmentExtra);
-    GLuint p = CreateProgram();
-    AttachShader(p, vs);
-    AttachShader(p, fs);
-    for (const Attrib& a : attribs) BindAttribLocation(p, a.first, a.second);  // unused names are ignored
-    LinkProgram(p);
-    GLint ok = 0;
-    GetProgramiv(p, LINK_STATUS, &ok);
-    if (!ok) {
-        char log[1024] = {0};
-        GetProgramInfoLog(p, sizeof(log), nullptr, log);
+    const GLuint vertexShader = compile(VERTEX_SHADER, vertexSrc, nullptr);
+    const GLuint fragmentShader = compile(FRAGMENT_SHADER, fragmentSrc, fragmentExtra);
+    const GLuint program = CreateProgram();
+    AttachShader(program, vertexShader);
+    AttachShader(program, fragmentShader);
+    for (const Attrib& a : attribs) BindAttribLocation(program, a.first, a.second);  // unused names are ignored
+    LinkProgram(program);
+    GLint linked = 0;
+    GetProgramiv(program, LINK_STATUS, &linked);
+    if (!linked) {
+        char log[kInfoLogBytes] = {0};
+        GetProgramInfoLog(program, sizeof(log), nullptr, log);
         SDL_Log("program link error: %s", log);
     }
-    DeleteShader(vs);
-    DeleteShader(fs);
-    if (!ok) {
-        DeleteProgram(p);
+    DeleteShader(vertexShader);
+    DeleteShader(fragmentShader);
+    if (!linked) {
+        DeleteProgram(program);
         return false;
     }
-    id_ = p;
+    id_ = program;
     return true;
 }
 void GlProgram::reset() {

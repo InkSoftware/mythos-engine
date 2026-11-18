@@ -22,6 +22,7 @@ public:
 private:
     static constexpr int kFloats = 14;  // pos 2, uv 2, colour 4, outline colour 4, params 2
 
+    void rebuildVertices(const TextLayer& text, int overlayW, int overlayH);
     void appendRun(const TextRun& run, const SdfFont& font, float sx, float sy);
     void appendPass(const TextRun& run, const std::vector<uint32_t>& cps, const SdfFont& font, float sx, float sy,
                     float dx, float dy, uint32_t color, uint32_t outlineColor, float outline, float blur);
