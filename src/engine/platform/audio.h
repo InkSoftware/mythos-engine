@@ -77,7 +77,7 @@ private:
         bool voice = false;     // the voice-over line
         float fade = 1.0f;      // current fade multiplier
         float fadeRate = 0.0f;  // per-sample change; a fading-out loop is removed at 0
-        float panL = 0.7071f, panR = 0.7071f;  // stereo placement (one-shots sit centre)
+        float panL = 0.7071f, panR = 0.7071f;  // stereo placement (one-shots sit centre: 1/sqrt(2) each)
         bool spatial = false;       // a voice line placed in the world: gains follow tgtL / tgtR
         bool placed = false;        // ...once setVoicePlacement has been called for it
         float curL = 0, curR = 0;   // current spatial gains, eased towards the targets
@@ -92,6 +92,16 @@ private:
 
     static void SDLCALL callback(void* userdata, SDL_AudioStream* stream, int additional, int total);
     void mix(float* out, int frames);
+
+    // Pieces of mix(), in the order it runs them.
+    float updateDuck(int frames);  // returns the duck level the chunk started at (duckLevel_ is its end)
+    void mixVoices(float* out, int frames, float duckStart, float duckEnd);
+    void mixSources(float* out, int frames);
+    void removeFinishedVoices();
+    // Adds a voice under the stream lock (ignored when the mixer is full).
+    void startVoice(const Voice& voice);
+    // The clip called `name`, or nullptr.
+    const Clip* findClip(const std::string& name) const;
 
     SDL_AudioStream* stream_ = nullptr;
     int rate_ = 44100;

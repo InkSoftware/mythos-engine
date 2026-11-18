@@ -9,18 +9,26 @@
 #include "engine/platform/gl/gl_api.h"
 
 namespace mythos {
+namespace {
+
+constexpr int kMinWindowWidth = 640;   // below this the menus no longer fit
+constexpr int kMinWindowHeight = 400;
+constexpr int kDepthBits = 24;
+constexpr int kGlMajor = 4, kGlMinor = 1;  // the ceiling on macOS (see CLAUDE.md)
+
+}  // namespace
 
 bool Window::open(const std::string& title, int width, int height, bool vsync) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return false;
     }
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, kGlMajor);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, kGlMinor);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);  // required on macOS
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, kDepthBits);
 
     title_ = title;
     window_ = SDL_CreateWindow(title.c_str(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -29,7 +37,7 @@ bool Window::open(const std::string& title, int width, int height, bool vsync) {
         close();
         return false;
     }
-    SDL_SetWindowMinimumSize(window_, 640, 400);
+    SDL_SetWindowMinimumSize(window_, kMinWindowWidth, kMinWindowHeight);
     context_ = SDL_GL_CreateContext(window_);
     if (!context_) {
         SDL_Log("OpenGL 4.1 core context unavailable: %s", SDL_GetError());
@@ -83,12 +91,12 @@ void Window::applyMode(bool fullscreen, int w, int h) {
 
 void Window::usableDisplaySize(int& w, int& h) const {
     w = h = 0;
-    SDL_Rect r{};
+    SDL_Rect bounds{};
     SDL_DisplayID display = window_ ? SDL_GetDisplayForWindow(window_) : 0;
     if (display == 0) display = SDL_GetPrimaryDisplay();
-    if (SDL_GetDisplayUsableBounds(display, &r)) {
-        w = r.w;
-        h = r.h;
+    if (SDL_GetDisplayUsableBounds(display, &bounds)) {
+        w = bounds.w;
+        h = bounds.h;
     }
 }
 
@@ -108,14 +116,15 @@ void Window::swap() {
 }
 
 bool writeFramebufferPpm(const std::string& path, int w, int h) {
-    std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * 4);
+    constexpr size_t kRgbaBytes = 4, kRgbBytes = 3;
+    std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * kRgbaBytes);
     gl::ReadPixels(0, 0, w, h, gl::RGBA, gl::UNSIGNED_BYTE, rgba.data());
     std::string ppm = "P6\n" + std::to_string(w) + " " + std::to_string(h) + "\n255\n";
-    ppm.reserve(ppm.size() + static_cast<size_t>(w) * h * 3);
-    for (int y = h - 1; y >= 0; --y)  // GL rows start at the bottom
-        for (int x = 0; x < w; ++x) {
-            const uint8_t* p = &rgba[(static_cast<size_t>(y) * w + x) * 4];
-            ppm.append(reinterpret_cast<const char*>(p), 3);
+    ppm.reserve(ppm.size() + static_cast<size_t>(w) * h * kRgbBytes);
+    for (int row = h - 1; row >= 0; --row)  // GL rows start at the bottom
+        for (int col = 0; col < w; ++col) {
+            const uint8_t* pixel = &rgba[(static_cast<size_t>(row) * w + col) * kRgbaBytes];
+            ppm.append(reinterpret_cast<const char*>(pixel), kRgbBytes);  // drop alpha
         }
     std::ofstream out(path, std::ios::binary);
     if (!out) return false;
@@ -124,9 +133,9 @@ bool writeFramebufferPpm(const std::string& path, int w, int h) {
 }
 
 std::string prefFilePath(const std::string& org, const std::string& app, const std::string& file) {
-    if (char* p = SDL_GetPrefPath(org.c_str(), app.c_str())) {
-        const std::string dir = p;
-        SDL_free(p);
+    if (char* prefDir = SDL_GetPrefPath(org.c_str(), app.c_str())) {
+        const std::string dir = prefDir;
+        SDL_free(prefDir);
         return dir + file;
     }
     return file;
@@ -134,9 +143,9 @@ std::string prefFilePath(const std::string& org, const std::string& app, const s
 
 std::map<std::string, std::string> readKeyValueFile(const std::string& path) {
     std::map<std::string, std::string> out;
-    std::ifstream f(path);
+    std::ifstream file(path);
     std::string line;
-    while (std::getline(f, line)) {
+    while (std::getline(file, line)) {
         const size_t eq = line.find('=');
         if (eq == std::string::npos) continue;
         out[line.substr(0, eq)] = line.substr(eq + 1);
@@ -147,7 +156,7 @@ std::map<std::string, std::string> readKeyValueFile(const std::string& path) {
 bool writeKeyValueFile(const std::string& path, const std::map<std::string, std::string>& values) {
     std::ofstream f(path);
     if (!f) return false;
-    for (const auto& [k, v] : values) f << k << '=' << v << '\n';
+    for (const auto& [key, value] : values) f << key << '=' << value << '\n';
     return static_cast<bool>(f);
 }
 

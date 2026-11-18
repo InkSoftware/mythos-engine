@@ -7,6 +7,11 @@
 namespace mythos {
 namespace {
 
+constexpr int kPipCount = 10;   // a volume meter is 0..10
+constexpr int kPipPitch = 6;    // overlay pixels from one pip to the next
+constexpr int kPipSize = 4;
+constexpr float kHintMargin = 20.0f;  // gap kept between the last row and the hint
+
 // One row: what it is called, what it shows at the right (or a 0..10 meter), whether it opens a page.
 struct Row {
     std::string label, value;
@@ -64,7 +69,7 @@ void drawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s, Se
     float y = py + t.firstRowY;
     // A long page squeezes its rows so that Back stays clear of the hint at the bottom.
     const int rows = static_cast<int>(settingsPageItems(page).size());
-    const float pitch = std::min(t.rowPitch, (fb.h - t.hintFromBottom - 20.0f - t.backGap - y) / static_cast<float>(std::max(rows - 1, 1)));
+    const float pitch = std::min(t.rowPitch, (fb.h - t.hintFromBottom - kHintMargin - t.backGap - y) / static_cast<float>(std::max(rows - 1, 1)));
     const float left = px + t.margin, right = px + t.pageW - t.margin;
     for (const int i : settingsPageItems(page)) {
         if (i == kSetBack) y += t.backGap;  // Back stands apart
@@ -80,11 +85,12 @@ void drawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s, Se
         c.text(st, left, y, r.label);
         c.hot(i, left - 12, y - 1, right + 4, y + 10);
         if (r.meter >= 0) {  // a row of pips, lit up to the volume; each one is clickable
-            const int bx = static_cast<int>(right) - 10 * 6 + 2, by = static_cast<int>(y + 3.5f);
-            for (int k = 0; k < 10; ++k) {
-                const uint32_t col = k < r.meter ? (selected ? t.selected : t.pipOn) : t.pipOff;
-                fillRect(fb, bx + k * 6, by, bx + k * 6 + 4, by + 4, col);
-                c.hot(i, bx + k * 6 - 1.0f, by - 4.0f, bx + k * 6 + 5.0f, by + 8.0f, k + 1);
+            const int pipsLeft = static_cast<int>(right) - kPipCount * kPipPitch + 2, pipsTop = static_cast<int>(y + 3.5f);
+            for (int pip = 0; pip < kPipCount; ++pip) {
+                const int pipX = pipsLeft + pip * kPipPitch;
+                const uint32_t color = pip < r.meter ? (selected ? t.selected : t.pipOn) : t.pipOff;
+                fillRect(fb, pipX, pipsTop, pipX + kPipSize, pipsTop + kPipSize, color);
+                c.hot(i, pipX - 1.0f, pipsTop - 4.0f, pipX + 5.0f, pipsTop + 8.0f, pip + 1);
             }
         } else if (i == kSetResolution && !s.fullscreen) {  // lining figures for the window size
             Style digits = st;

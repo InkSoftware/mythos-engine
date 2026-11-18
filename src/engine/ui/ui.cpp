@@ -35,9 +35,9 @@ void drawBox(Surface& s, int x0, int y0, int x1, int y1, uint32_t fill, uint32_t
     fillRect(s, x1 - 1, y0, x1, y1, border);
 }
 
-uint32_t withAlpha(uint32_t c, double k) {
-    const auto a = static_cast<uint32_t>(std::clamp(((c >> 24) & 0xFF) * k, 0.0, 255.0));
-    return (a << 24) | (c & 0x00FFFFFF);
+uint32_t withAlpha(uint32_t color, double factor) {
+    const auto alpha = static_cast<uint32_t>(std::clamp(((color >> 24) & 0xFF) * factor, 0.0, 255.0));
+    return (alpha << 24) | (color & 0x00FFFFFF);
 }
 
 TextEffect dropShadow(float blur) { return {0.0f, 0, 0.5f, 0.7f, blur, 0xE0000000}; }
