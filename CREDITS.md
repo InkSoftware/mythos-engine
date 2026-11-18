@@ -56,3 +56,45 @@ SIL Open Font License 1.1; the licence texts are beside the fonts. Obtained from
 | `AlegreyaSC-Bold.ttf` | [Alegreya SC](https://github.com/huertatipografica/Alegreya) Bold | 2011 The Alegreya Project Authors (designed by Juan Pablo del Peral, Huerta Tipográfica) |
 | `Alegreya.ttf` | [Alegreya](https://github.com/huertatipografica/Alegreya) (variable, regular weight) | 2011 The Alegreya Project Authors (designed by Juan Pablo del Peral, Huerta Tipográfica) |
 | `FiraMono-Medium.ttf` | [Fira Mono](https://github.com/mozilla/Fira) Medium | 2012-2013 The Mozilla Corporation and Telefonica S.A. (designed by Carrois Apostrophe) |
+
+<!-- cc0-models:begin -->
+
+## 3D models — [Poly Haven](https://polyhaven.com) (CC0) and others
+
+Converted to OBJ and BMP by `tools/fetch_cc0_models.py` (textures in `assets/modeltex/`).
+
+| Model | Source model | Author | Licence | Used for |
+| --- | --- | --- | --- | --- |
+| `barrel.obj` | [Wine Barrel 01](https://polyhaven.com/a/wine_barrel_01) | James Ray Cock | CC0 1.0 | wine barrels |
+| `bed.obj` | [Old Bed Frame](https://polyhaven.com/a/old_bed_frame) | Luca B | CC0 1.0 | beds |
+| `bookshelf.obj` | [Wooden Bookshelf Worn](https://polyhaven.com/a/wooden_bookshelf_worn) | Ulan Cabanilla | CC0 1.0 | bookshelves |
+| `boombox.obj` | [Boombox](https://polyhaven.com/a/boombox) | Thomas Paul Mouilleron | CC0 1.0 | a boombox |
+| `bowl.obj` | [Wooden Bowl 01](https://polyhaven.com/a/wooden_bowl_01) | Oliver Harries | CC0 1.0 | wooden bowls |
+| `broom.obj` | [Wooden Broom](https://polyhaven.com/a/wooden_broom) | Balen | CC0 1.0 | brooms |
+| `bucket.obj` | [Wooden Bucket 01](https://polyhaven.com/a/wooden_bucket_01) | James Ray Cock | CC0 1.0 | buckets |
+| `cardbox.obj` | [Cardboard Box 01](https://polyhaven.com/a/cardboard_box_01) | Rahul Chaudhary | CC0 1.0 | cardboard boxes |
+| `cassette.obj` | [Cassette Player](https://polyhaven.com/a/cassette_player) | Oday Abuzaeed | CC0 1.0 | a cassette player |
+| `chair.obj` | [Dining Chair 02](https://polyhaven.com/a/dining_chair_02) | James Ray Cock | CC0 1.0 | chairs |
+| `cuttingboard.obj` | [Wooden Cutting Board](https://polyhaven.com/a/wooden_cutting_board) | Kuutti Siitonen | CC0 1.0 | kitchen counters |
+| `dustpan.obj` | [Dustpan](https://polyhaven.com/a/dustpan) | Balen | CC0 1.0 | a dustpan |
+| `frame_fancy.obj` | [Fancy Picture Frame 01](https://polyhaven.com/a/fancy_picture_frame_01) | Rob Tuytel, Rico Cilliers | CC0 1.0 | pictures on the walls |
+| `frame_stand.obj` | [Standing Picture Frame 01](https://polyhaven.com/a/standing_picture_frame_01) | James Ray Cock | CC0 1.0 | photographs on the tables |
+| `frame_tall.obj` | [Hanging Picture Frame 01](https://polyhaven.com/a/hanging_picture_frame_01) | James Ray Cock | CC0 1.0 | pictures on the walls |
+| `frame_wide.obj` | [Hanging Picture Frame 02](https://polyhaven.com/a/hanging_picture_frame_02) | James Ray Cock | CC0 1.0 | pictures on the walls |
+| `gamepad.obj` | [Gamepad](https://polyhaven.com/a/gamepad) | Josh Dean | CC0 1.0 | a game controller |
+| `jug.obj` | [Jug 01](https://polyhaven.com/a/jug_01) | Kuutti Siitonen | CC0 1.0 | jugs |
+| `kettle.obj` | [Vintage Electric Kettle](https://polyhaven.com/a/vintage_electric_kettle) | SV Garip | CC0 1.0 | kettles |
+| `laptop.obj` | [Classic Laptop](https://polyhaven.com/a/classic_laptop) | Arrangemonk | CC0 1.0 | a laptop |
+| `lighter.obj` | [Vintage Lighter](https://polyhaven.com/a/vintage_lighter) | Slinc | CC0 1.0 | a lighter |
+| `nightstand.obj` | [Painted Wooden Nightstand](https://polyhaven.com/a/painted_wooden_nightstand) | Kirill Sannikov | CC0 1.0 | bedside tables |
+| `oven.obj` | [Electric Stove](https://polyhaven.com/a/electric_stove) | Kuutti Siitonen | CC0 1.0 | ovens |
+| `pot.obj` | [Pot Enamel 01](https://polyhaven.com/a/pot_enamel_01) | Kuutti Siitonen | CC0 1.0 | cooking pots |
+| `sofa.obj` | [Arm Chair 01](https://polyhaven.com/a/ArmChair_01) | Kirill Sannikov | CC0 1.0 | armchairs and sofas |
+| `table.obj` | [Round Wooden Table 02](https://polyhaven.com/a/round_wooden_table_02) | Ulan Cabanilla | CC0 1.0 | tables |
+| `toolbox.obj` | [Metal Toolbox](https://polyhaven.com/a/metal_toolbox) | Mateusz Sadek | CC0 1.0 | toolboxes |
+| `torch.obj` | [Small Plastic Torch](https://polyhaven.com/a/small_plastic_torch) | Abiyyu Panggalih (Abiyyu_xyz) | CC0 1.0 | a torch |
+| `trashbag.obj` | [Trashbag](https://polyhaven.com/a/trashbag) | Benny Weimer | CC0 1.0 | rubbish |
+| `vase.obj` | [Ceramic Vase 01](https://polyhaven.com/a/ceramic_vase_01) | James Ray Cock | CC0 1.0 | vases |
+| `wardrobe.obj` | [Drawer Cabinet](https://polyhaven.com/a/drawer_cabinet) | Ulan Cabanilla | CC0 1.0 | wardrobes and chests of drawers |
+
+<!-- cc0-models:end -->

@@ -32,6 +32,7 @@ COMMON_PROFILES = {
     "wallpaper": (0.70, 0.08, None, 0),    # paper with a faint sheen
     "wallpaper70s": (0.62, 0.08, None, 0),  # vinyl: a little shinier
     "mirror": (0.04, 0.02, None, 0),       # glass
+    "skin": (0.55, 0.08, None, 0),
 }
 
 

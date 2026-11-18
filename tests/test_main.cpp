@@ -23,6 +23,7 @@
 #include "engine/world/interact.h"
 #include "engine/core/json.h"
 #include "engine/core/json_reader.h"
+#include "engine/world/body.h"
 #include "engine/world/level.h"
 #include "engine/core/vfs.h"
 #include "engine/core/mat4.h"
@@ -156,6 +157,85 @@ TEST(a_decor_section_places_non_solid_pieces) {
     CHECK(l.furniture()[2].lift == 0.0 && l.furniture()[2].offX == 0.0);  // the offsets are optional
     CHECK(!l.parseText("[map]\n...\n[decor]\n5 5 vase 0\n", &err));    // outside the map
     CHECK(!l.parseText("[map]\n...\n[decor]\n1 0 vase\n", &err));      // no yaw
+}
+
+//---- the body and the light in the hand
+
+namespace {
+double dist3(const double a[3], const double b[3]) {
+    return std::sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]) + (a[2] - b[2]) * (a[2] - b[2]));
+}
+}  // namespace
+
+TEST(an_arm_keeps_its_bone_lengths_and_reaches_what_is_in_reach) {
+    const BodyParams bt;
+    const double shoulder[3] = {0, 1.4, 0}, bend[3] = {0, -1, 0.3};
+    for (const double target : {0.15, 0.3, 0.5, 0.6, 0.9}) {  // the last is out of reach: the hand stops short
+        const double t[3] = {target * 0.6, 1.2, target * 0.8};
+        const ArmIk ik = solveArm(shoulder, t, bt.upperArm, bt.foreArm, bend);
+        CHECK(std::abs(dist3(shoulder, ik.elbow) - bt.upperArm) < 1e-6);
+        CHECK(std::abs(dist3(ik.elbow, ik.hand) - bt.foreArm) < 1e-6);
+        const double want = dist3(shoulder, t);
+        if (want < bt.upperArm + bt.foreArm - 0.01) CHECK(dist3(ik.hand, t) < 1e-6);
+        else CHECK(dist3(shoulder, ik.hand) <= bt.upperArm + bt.foreArm);
+        CHECK(ik.elbow[1] <= shoulder[1] + 1e-9);          // the elbow bends down, not up
+    }
+}
+
+TEST(the_chest_follows_the_view_but_the_head_may_turn_first) {
+    const BodyParams bt;
+    CHECK(std::abs(turnBody(0.0, bt.turnLimit * 0.5, 0.0, false, bt)) < 1e-9);   // a small turn: the chest stays
+    const double dragged = turnBody(0.0, bt.turnLimit + 0.5, 0.0, false, bt);   // beyond the limit it is pulled along
+    CHECK(std::abs(dragged - 0.5) < 1e-9);
+    double yaw = 0.0;
+    for (int i = 0; i < 300; ++i) yaw = turnBody(yaw, 0.6, 0.02, true, bt);       // walking, it catches up
+    CHECK(std::abs(yaw - 0.6) < 0.01);
+    CHECK(std::abs(turnBody(3.1, -3.1, 0.0, false, bt) - 3.1) < 1e-9 || std::abs(turnBody(3.1, -3.1, 0.0, false, bt)) > 3.0);  // across the wrap
+}
+
+TEST(the_body_stands_behind_the_eye_and_the_hand_holds_the_light_where_the_view_shows_it) {
+    const BodyParams bt;
+    BodyInput in;
+    in.eyeX = 5;
+    in.eyeZ = 7;
+    in.eyeHeight = 1.55;
+    in.yaw = 0.7;
+    in.bodyYaw = 0.7;
+    in.raise = 1.0;
+    const BodyPose p = poseBody(in, bt, HeldParams{});
+    // The torso's feet are on the floor, a little behind the eye along the view.
+    CHECK(std::abs(p.torso.m[13]) < 1e-6);
+    const double dx = p.torso.m[12] - in.eyeX, dz = p.torso.m[14] - in.eyeZ;
+    CHECK(std::abs(std::hypot(dx, dz) - bt.eyeAhead) < 1e-6);
+    CHECK(dx * std::cos(in.yaw) + dz * std::sin(in.yaw) < 0);
+    // The held torch is below the eye and to the right of the view, ahead of it.
+    const double hx = p.handX - in.eyeX, hz = p.handZ - in.eyeZ;
+    CHECK(p.handY < in.eyeHeight);
+    CHECK(hx * std::cos(in.yaw) + hz * std::sin(in.yaw) > 0.1);
+    CHECK(std::abs(p.held.m[12] - p.handX) < 1e-5 && std::abs(p.held.m[14] - p.handZ) < 1e-5);
+    // The raised right forearm ends at the hand.
+    const double wristX = p.foreArmR.m[12] + p.foreArmR.m[8] * bt.foreArm, wristZ = p.foreArmR.m[14] + p.foreArmR.m[10] * bt.foreArm;
+    CHECK(std::hypot(wristX - p.handX, wristZ - p.handZ) < 0.05);
+    // Every part's frame is a rotation (unit columns).
+    for (const PartMatrix* m : {&p.torso, &p.head, &p.legL, &p.legR, &p.upperArmL, &p.foreArmL, &p.upperArmR, &p.foreArmR, &p.held}) {
+        for (int c = 0; c < 3; ++c) {
+            const double len = std::sqrt(double(m->m[c * 4]) * m->m[c * 4] + double(m->m[c * 4 + 1]) * m->m[c * 4 + 1] + double(m->m[c * 4 + 2]) * m->m[c * 4 + 2]);
+            CHECK(std::abs(len - 1.0) < 1e-4);
+        }
+    }
+}
+
+TEST(body_params_load_and_reject_nonsense) {
+    json::Value v;
+    std::string err;
+    CHECK(json::parse(R"({"body": {"neckHeight": 1.5, "eyeAhead": 0.1, "hipHeight": 0.88, "hipHalfSpacing": 0.09, "shoulderHeight": 1.42, "shoulderHalfSpacing": 0.22, "upperArm": 0.3, "foreArm": 0.335, "legSwing": 0.55, "turnLimit": 0.9, "raiseSeconds": 0.25}})", v, &err));
+    json::Reader r(v, "t");
+    BodyParams p;
+    CHECK(loadBodyParams(r, "body", p));
+    CHECK(p.foreArm > 0.33 && p.foreArm < 0.34);
+    json::Reader r2(v, "t");
+    HeldParams h;
+    CHECK(!loadHeldParams(r2, "held", h));  // no \"held\" object: every key is required
 }
 
 TEST(font_measures_and_wraps_text) {
@@ -1008,7 +1088,7 @@ TEST(material_map_packs_metal_and_occlusion_with_open_defaults) {
 TEST(engine_common_materials_stand_alone) {
     TextureLibrary lib;
     addCommonMaterials(lib);
-    for (const char* n : {"brick", "wood", "tile", "carpet", "stone", "grass", "door", "ceiling", "void", "poster"})
+    for (const char* n : {"brick", "wood", "tile", "carpet", "stone", "grass", "door", "ceiling", "void", "poster", "cloth", "skin"})
         CHECK(lib.has(n));
     CHECK(lib.isPlaceholder("poster"));
     CHECK(!lib.has("clockface"));  // story art belongs to a game, not the engine

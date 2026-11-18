@@ -60,6 +60,7 @@ add_library(mythos_engine STATIC
     src/engine/world/interact.cpp
     src/engine/world/level.cpp
     src/engine/world/movement.cpp
+    src/engine/world/body.cpp
     src/engine/world/player.cpp
     src/engine/world/room_doors.cpp
     src/engine/world/tiles.cpp
@@ -176,6 +177,7 @@ if(MYTHOS_BUILD_PLATFORM)
         src/engine/platform/apply_settings.cpp
         src/engine/platform/audio.cpp
         src/engine/platform/gl/gl_api.cpp
+        src/engine/platform/gl/body_instances.cpp
         src/engine/platform/gl/gl_objects.cpp
         src/engine/platform/gl/scene_renderer.cpp
         ${MYTHOS_SHADER_CPP}

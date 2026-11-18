@@ -208,10 +208,69 @@ def m_pine():
     return m
 
 
+
+# ---------------------------------------------------------------- a human figure in parts
+# A plain human figure in parts, for a game to pose (the renderer draws them as model instances: turn the head with
+# the view, the torso with the body, swing the legs, reach the arms).
+# Metric, front +z. The torso stands on the floor; the head's origin is the neck's pivot (1.50 m up, so the eye at
+# 1.55 sits just above it); a leg's is its hip (0.88 m up) and hangs down; an arm's is its shoulder or elbow and
+# points along +z (the game aims it).
+
+def m_body_torso():
+    m = Mesh()
+    m.box("cloth", 0, 0.88, 0, 0.17, 0.09, 0.09)       # hips
+    m.box("cloth", 0, 1.20, 0, 0.20, 0.24, 0.10)       # chest
+    m.box("cloth", 0, 1.41, 0, 0.23, 0.04, 0.10)       # shoulders
+    m.box("paper", 0, 1.44, 0.101, 0.05, 0.07, 0.003)  # the shirt's collar and front
+    m.box("ink", 0, 1.38, 0.104, 0.012, 0.09, 0.002)   # the tie
+    m.box("skin", 0, 1.50, 0, 0.045, 0.06, 0.045)      # neck
+    return m
+
+
+def m_body_head():
+    m = Mesh()
+    m.box("skin", 0, 0.08, 0, 0.085, 0.105, 0.095)      # head
+    m.box("ink", 0, 0.17, -0.01, 0.09, 0.035, 0.10)      # hair, top
+    m.box("ink", 0, 0.10, -0.075, 0.09, 0.085, 0.03)     # and back
+    m.box("skin", 0, 0.05, 0.10, 0.015, 0.025, 0.012)    # nose
+    return m
+
+
+def m_body_leg():
+    m = Mesh()
+    m.box("cloth", 0, -0.22, 0, 0.075, 0.22, 0.08)      # thigh
+    m.box("cloth", 0, -0.63, 0, 0.065, 0.19, 0.07)      # shin
+    m.box("ink", 0, -0.85, 0.05, 0.07, 0.03, 0.12)      # shoe
+    return m
+
+
+def m_body_arm():
+    m = Mesh()
+    m.box("cloth", 0, 0, 0.15, 0.045, 0.045, 0.15)      # upper arm, shoulder to elbow
+    return m
+
+
+def m_body_forearm():
+    m = Mesh()
+    m.box("cloth", 0, 0, 0.12, 0.04, 0.04, 0.12)        # forearm, elbow to wrist
+    m.box("skin", 0, 0, 0.285, 0.035, 0.025, 0.05)      # hand
+    return m
+
+
+def m_flame():
+    """A lighter's flame: a small glowing teardrop, base at the origin."""
+    m = Mesh()
+    m.box("glow_flame", 0, 0.008, 0, 0.004, 0.008, 0.002)
+    m.box("glow_flame", 0, 0.02, 0, 0.0025, 0.007, 0.0015)
+    return m
+
+
 GENERIC_MODELS = {
     "bed": m_bed, "toilet": m_toilet, "shower": m_shower, "fridge": m_fridge, "washer": m_washer,
     "sofa": m_sofa, "table": m_table, "chair": m_chair, "bookshelf": m_bookshelf,
     "wardrobe": m_wardrobe, "sink": m_sink, "pine": m_pine,
+    "body_torso": m_body_torso, "body_head": m_body_head, "body_leg": m_body_leg, "body_arm": m_body_arm,
+    "body_forearm": m_body_forearm, "flame": m_flame,
 }
 
 

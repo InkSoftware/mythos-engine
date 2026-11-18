@@ -1,6 +1,7 @@
 #include "engine/gfx/materials.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 
 #include "engine/gfx/font.h"
@@ -248,6 +249,31 @@ Surface makeCloth() {
     return s;
 }
 
+// Skin, for a figure's face and hands: a warm, slightly mottled tan with a little grain.
+Surface makeSkin() {
+    const int N = 128;
+    Surface s(N, N);
+    for (int y = 0; y < N; ++y)
+        for (int x = 0; x < N; ++x) {
+            const double mottle = hnoise(x / 12, y / 12, 81) * 0.5 + hnoise(x / 4, y / 4, 83) * 0.25;
+            const int base = static_cast<int>(150 + 34 * mottle);
+            const int n = grain(x, y, 85, 5);
+            s.at(x, y) = rgba(base + n, base * 3 / 4 + n, base * 3 / 5 + n);
+        }
+    return s;
+}
+
+// A flame: yellow-white at the heart, orange at the edge (drawn glowing: "glow_flame").
+Surface makeFlame() {
+    Surface s(16, 16);
+    for (int y = 0; y < 16; ++y)
+        for (int x = 0; x < 16; ++x) {
+            const int d = std::abs(x - 8) + std::abs(y - 8);
+            s.at(x, y) = d < 5 ? rgba(255, 210, 110) : rgba(255, 150, 50);
+        }
+    return s;
+}
+
 // Wet asphalt at night: near-black, a worn centre line picking up the headlights.
 Surface makeAsphalt() {
     Surface s(64, 64);
@@ -353,6 +379,8 @@ void addCommonMaterials(TextureLibrary& lib) {
     lib.add("paper", makePaper());
     lib.add("ink", makeInk());
     lib.add("cloth", makeCloth());
+    lib.add("skin", makeSkin());
+    lib.add("flame", makeFlame());
     lib.add("sheet", makeSheet());
     lib.add("wallpaper70s", makeWallpaper70s());
     lib.add("asphalt", makeAsphalt());
