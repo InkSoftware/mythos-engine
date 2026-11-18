@@ -3,8 +3,16 @@
 #include <cctype>
 #include <cstdint>
 
+#include "engine/gfx/text.h"
+
 namespace mythos {
 namespace {
+
+// The bitmap table starts at the space character and ends at '_' (ASCII 95).
+constexpr int kFirstGlyphChar = 32;
+constexpr int kLastGlyphChar = 95;
+// Pixels from one character to the next at scale 1: the glyph plus one pixel of spacing.
+constexpr int kCellAdvance = kGlyphW + 1;
 
 // Column-major 5x7 glyphs, bit 0 = top row. Index = ASCII code - 32.
 constexpr uint8_t kGlyphs[64][5] = {
@@ -139,63 +147,37 @@ const uint8_t* glyphFor(uint32_t cp) {
             default: break;
         }
     }
-    int c = cp < 128 ? std::toupper(static_cast<int>(cp)) : '?';
-    if (c < 32 || c > 95) c = '?';
-    return kGlyphs[c - 32];
-}
-
-// Decodes UTF-8 (anything malformed becomes '?'). ASCII passes straight through.
-std::vector<uint32_t> codepoints(const std::string& text) {
-    std::vector<uint32_t> out;
-    out.reserve(text.size());
-    for (size_t i = 0; i < text.size();) {
-        const auto b0 = static_cast<unsigned char>(text[i]);
-        uint32_t cp = '?';
-        size_t len = 1;
-        if (b0 < 0x80) {
-            cp = b0;
-        } else if ((b0 & 0xE0) == 0xC0 && i + 1 < text.size()) {
-            cp = (static_cast<uint32_t>(b0 & 0x1F) << 6) | (static_cast<unsigned char>(text[i + 1]) & 0x3F);
-            len = 2;
-        } else if ((b0 & 0xF0) == 0xE0 && i + 2 < text.size()) {
-            cp = (static_cast<uint32_t>(b0 & 0x0F) << 12) |
-                 ((static_cast<unsigned char>(text[i + 1]) & 0x3F) << 6) |
-                 (static_cast<unsigned char>(text[i + 2]) & 0x3F);
-            len = 3;
-        } else if ((b0 & 0xF8) == 0xF0 && i + 3 < text.size()) {
-            len = 4;  // outside the font's range anyway
-        }
-        out.push_back(cp);
-        i += len;
-    }
-    return out;
+    int ascii = cp < 128 ? std::toupper(static_cast<int>(cp)) : '?';
+    if (ascii < kFirstGlyphChar || ascii > kLastGlyphChar) ascii = '?';
+    return kGlyphs[ascii - kFirstGlyphChar];
 }
 
 }  // namespace
 
 void drawText(Surface& s, int x, int y, const std::string& text, uint32_t color, int scale) {
     if (scale < 1) scale = 1;
-    int cx = x;
-    for (uint32_t cp : codepoints(text)) {
-        const uint8_t* g = glyphFor(cp);
+    int penX = x;
+    for (uint32_t cp : utf8Codepoints(text)) {
+        const uint8_t* columns = glyphFor(cp);
         for (int col = 0; col < kGlyphW; ++col) {
             for (int row = 0; row < kGlyphH; ++row) {
-                if (!((g[col] >> row) & 1)) continue;
+                if (!((columns[col] >> row) & 1)) continue;
+                // Each lit bit becomes a scale x scale block of pixels.
                 for (int dy = 0; dy < scale; ++dy)
                     for (int dx = 0; dx < scale; ++dx)
-                        s.put(cx + col * scale + dx, y + row * scale + dy, color);
+                        s.put(penX + col * scale + dx, y + row * scale + dy, color);
             }
         }
-        cx += 6 * scale;
+        penX += kCellAdvance * scale;
     }
 }
 
-int textLength(const std::string& text) { return static_cast<int>(codepoints(text).size()); }
+int textLength(const std::string& text) { return static_cast<int>(utf8Codepoints(text).size()); }
 
 int textWidth(const std::string& text, int scale) {
     const int n = textLength(text);
     if (n == 0) return 0;
-    return n * 6 * scale - scale;
+    return n * kCellAdvance * scale - scale;  // no spacing after the last character
 }
 
 std::vector<std::string> wrapText(const std::string& text, size_t maxChars) {

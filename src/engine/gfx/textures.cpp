@@ -11,11 +11,14 @@
 namespace mythos {
 namespace {
 
+// The magenta and black checkerboard that stands in for any texture name that is not registered.
 Surface makeMissing() {
-    Surface s(16, 16);
-    for (int y = 0; y < 16; ++y)
-        for (int x = 0; x < 16; ++x) s.at(x, y) = ((x / 4 + y / 4) % 2) ? rgba(255, 0, 255) : rgba(0, 0, 0);
-    return s;
+    constexpr int kSize = 16, kSquare = 4;
+    Surface missing(kSize, kSize);
+    for (int y = 0; y < kSize; ++y)
+        for (int x = 0; x < kSize; ++x)
+            missing.at(x, y) = ((x / kSquare + y / kSquare) % 2) ? rgba(255, 0, 255) : rgba(0, 0, 0);
+    return missing;
 }
 
 }  // namespace
@@ -60,22 +63,22 @@ const Surface& TextureLibrary::get(const std::string& name) const {
 bool loadImage(const std::string& path, Surface& out) {
     std::string bytes;
     if (!vfs::readFile(path, bytes) || bytes.empty()) return false;
-    int w = 0, h = 0, channels = 0;
+    int width = 0, height = 0, channels = 0;
     unsigned char* data = stbi_load_from_memory(reinterpret_cast<const unsigned char*>(bytes.data()),
-                                                static_cast<int>(bytes.size()), &w, &h, &channels, 4);
+                                                static_cast<int>(bytes.size()), &width, &height, &channels, 4);
     if (!data) return false;
-    out = Surface(w, h);
+    out = Surface(width, height);
     for (size_t i = 0; i < out.px.size(); ++i) out.px[i] = rgba(data[i * 4], data[i * 4 + 1], data[i * 4 + 2], data[i * 4 + 3]);
     stbi_image_free(data);
     return true;
 }
 
-Surface resample(const Surface& src, int w, int h) {
-    Surface out(w, h);
+Surface resample(const Surface& src, int width, int height) {
+    Surface out(width, height);
     if (src.empty()) return out;
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x)
-            out.at(x, y) = src.at(x * src.w / w, y * src.h / h);
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
+            out.at(x, y) = src.at(x * src.w / width, y * src.h / height);
     return out;
 }
 

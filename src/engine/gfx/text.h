@@ -60,6 +60,9 @@ public:
     const std::vector<uint8_t>& atlas() const { return atlas_; }
 
 private:
+    // Width of a run of codepoints in bake pixels: advances plus the kerning between neighbours.
+    float bakedWidth(const std::vector<uint32_t>& cps) const;
+
     struct Info;
     Info* info_ = nullptr;  // the stb_truetype state and the font file it reads from
     float scale_ = 1.0f;     // font units -> bake pixels

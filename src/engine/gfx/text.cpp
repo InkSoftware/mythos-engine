@@ -4,6 +4,7 @@
 #include <cmath>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <utility>
 
 #include "engine/core/vfs.h"
@@ -30,6 +31,64 @@ std::vector<uint32_t> bakeSet() {
     return cps;
 }
 
+// Atlas layout: glyphs are packed left to right in rows, one pixel apart.
+constexpr int kAtlasWidth = 1024;
+constexpr int kAtlasPadding = 1;
+// stb_truetype's SDF: the value on the outline (the renderer thresholds at 0.5) and its slope.
+constexpr unsigned char kSdfOnEdge = 128;
+constexpr float kSdfByteRange = 128.0f;  // distance values span 128 either side of the edge
+
+// A glyph's metrics and its distance-field pixels, before it has a place in the atlas.
+struct BakedGlyph {
+    uint32_t codepoint;
+    SdfFont::Glyph glyph;
+    std::vector<uint8_t> pixels;
+};
+
+// Bakes every glyph of bakeSet() the font has into a distance field.
+std::vector<BakedGlyph> bakeGlyphs(const stbtt_fontinfo* font, float scale) {
+    std::vector<BakedGlyph> baked;
+    const float distanceScale = kSdfByteRange / SdfFont::kSdfReach;
+    for (uint32_t cp : bakeSet()) {
+        if (!stbtt_FindGlyphIndex(font, static_cast<int>(cp))) continue;
+        BakedGlyph entry{cp, {}, {}};
+        int advance = 0, leftBearing = 0;
+        stbtt_GetCodepointHMetrics(font, static_cast<int>(cp), &advance, &leftBearing);
+        entry.glyph.advance = advance * scale;
+        int width = 0, height = 0, xOffset = 0, yOffset = 0;
+        unsigned char* sdf = stbtt_GetCodepointSDF(font, scale, static_cast<int>(cp), SdfFont::kSdfReach, kSdfOnEdge,
+                                                   distanceScale, &width, &height, &xOffset, &yOffset);
+        if (sdf) {
+            entry.glyph.aw = width;
+            entry.glyph.ah = height;
+            entry.glyph.x0 = static_cast<float>(xOffset);
+            entry.glyph.y0 = static_cast<float>(yOffset);
+            entry.pixels.assign(sdf, sdf + static_cast<size_t>(width) * height);
+            stbtt_FreeSDF(sdf, nullptr);
+        }
+        baked.push_back(std::move(entry));
+    }
+    return baked;
+}
+
+// Gives each glyph its atlas rectangle (rows of kAtlasWidth) and returns the atlas height.
+int packAtlasRows(std::vector<BakedGlyph>& baked) {
+    int penX = kAtlasPadding, penY = kAtlasPadding, rowHeight = 0;
+    for (auto& entry : baked) {
+        if (entry.glyph.aw == 0) continue;  // a space has no pixels
+        if (penX + entry.glyph.aw + kAtlasPadding > kAtlasWidth) {  // start a new row
+            penX = kAtlasPadding;
+            penY += rowHeight + kAtlasPadding;
+            rowHeight = 0;
+        }
+        entry.glyph.ax = penX;
+        entry.glyph.ay = penY;
+        penX += entry.glyph.aw + kAtlasPadding;
+        rowHeight = std::max(rowHeight, entry.glyph.ah);
+    }
+    return penY + rowHeight + kAtlasPadding;
+}
+
 }  // namespace
 
 std::vector<uint32_t> utf8Codepoints(const std::string& text) {
@@ -37,6 +96,7 @@ std::vector<uint32_t> utf8Codepoints(const std::string& text) {
     out.reserve(text.size());
     for (size_t i = 0; i < text.size();) {
         const auto b0 = static_cast<unsigned char>(text[i]);
+        // The low six bits of the k-th continuation byte after the lead byte.
         auto cont = [&](size_t k) { return static_cast<uint32_t>(static_cast<unsigned char>(text[i + k]) & 0x3F); };
         if (b0 < 0x80) {
             out.push_back(b0);
@@ -58,21 +118,21 @@ std::vector<uint32_t> utf8Codepoints(const std::string& text) {
     return out;
 }
 
-SdfFont::SdfFont(SdfFont&& o) noexcept { *this = std::move(o); }
+SdfFont::SdfFont(SdfFont&& other) noexcept { *this = std::move(other); }
 
-SdfFont& SdfFont::operator=(SdfFont&& o) noexcept {
-    if (this == &o) return *this;
+SdfFont& SdfFont::operator=(SdfFont&& other) noexcept {
+    if (this == &other) return *this;
     delete info_;
-    info_ = std::exchange(o.info_, nullptr);
-    scale_ = o.scale_;
-    ascent_ = o.ascent_;
-    glyphs_ = std::move(o.glyphs_);
-    kernCache_ = std::move(o.kernCache_);
-    latin_ = o.latin_;  // points into glyphs_'s nodes, which the move keeps
-    kernAscii_ = std::move(o.kernAscii_);
-    atlasW_ = o.atlasW_;
-    atlasH_ = o.atlasH_;
-    atlas_ = std::move(o.atlas_);
+    info_ = std::exchange(other.info_, nullptr);
+    scale_ = other.scale_;
+    ascent_ = other.ascent_;
+    glyphs_ = std::move(other.glyphs_);
+    kernCache_ = std::move(other.kernCache_);
+    latin_ = other.latin_;  // points into glyphs_'s nodes, which the move keeps
+    kernAscii_ = std::move(other.kernAscii_);
+    atlasW_ = other.atlasW_;
+    atlasH_ = other.atlasH_;
+    atlas_ = std::move(other.atlas_);
     return *this;
 }
 
@@ -105,56 +165,19 @@ bool SdfFont::loadFile(const std::string& path, std::string* error) {
     stbtt_GetFontVMetrics(fi, &asc, &desc, &gap);
     ascent_ = asc * scale_;
 
-    // Bake each glyph's distance field, then pack them into rows of a 1024-wide atlas.
-    struct Baked {
-        uint32_t cp;
-        Glyph g;
-        std::vector<uint8_t> px;
-    };
-    std::vector<Baked> baked;
-    const float distScale = 128.0f / kSdfReach;
-    for (uint32_t cp : bakeSet()) {
-        if (!stbtt_FindGlyphIndex(fi, static_cast<int>(cp))) continue;
-        Baked b{cp, {}, {}};
-        int adv = 0, lsb = 0;
-        stbtt_GetCodepointHMetrics(fi, static_cast<int>(cp), &adv, &lsb);
-        b.g.advance = adv * scale_;
-        int w = 0, h = 0, xoff = 0, yoff = 0;
-        unsigned char* sdf = stbtt_GetCodepointSDF(fi, scale_, static_cast<int>(cp), kSdfReach, 128, distScale, &w,
-                                                   &h, &xoff, &yoff);
-        if (sdf) {
-            b.g.aw = w;
-            b.g.ah = h;
-            b.g.x0 = static_cast<float>(xoff);
-            b.g.y0 = static_cast<float>(yoff);
-            b.px.assign(sdf, sdf + static_cast<size_t>(w) * h);
-            stbtt_FreeSDF(sdf, nullptr);
-        }
-        baked.push_back(std::move(b));
-    }
+    // Bake each glyph's distance field, then pack them into rows of the atlas.
+    std::vector<BakedGlyph> baked = bakeGlyphs(fi, scale_);
     if (baked.empty()) return fail("has none of the game's characters");
 
-    atlasW_ = 1024;
-    int penX = 1, penY = 1, rowH = 0;
-    for (auto& b : baked) {
-        if (b.g.aw == 0) continue;
-        if (penX + b.g.aw + 1 > atlasW_) {
-            penX = 1;
-            penY += rowH + 1;
-            rowH = 0;
-        }
-        b.g.ax = penX;
-        b.g.ay = penY;
-        penX += b.g.aw + 1;
-        rowH = std::max(rowH, b.g.ah);
-    }
-    atlasH_ = penY + rowH + 1;
+    atlasW_ = kAtlasWidth;
+    atlasH_ = packAtlasRows(baked);
     atlas_.assign(static_cast<size_t>(atlasW_) * atlasH_, 0);
-    for (auto& b : baked) {
-        for (int y = 0; y < b.g.ah; ++y)
-            std::copy_n(b.px.begin() + static_cast<std::ptrdiff_t>(y) * b.g.aw, b.g.aw,
-                        atlas_.begin() + static_cast<std::ptrdiff_t>(b.g.ay + y) * atlasW_ + b.g.ax);
-        glyphs_[b.cp] = b.g;
+    for (auto& entry : baked) {
+        const Glyph& g = entry.glyph;
+        for (int y = 0; y < g.ah; ++y)
+            std::copy_n(entry.pixels.begin() + static_cast<std::ptrdiff_t>(y) * g.aw, g.aw,
+                        atlas_.begin() + static_cast<std::ptrdiff_t>(g.ay + y) * atlasW_ + g.ax);
+        glyphs_[entry.codepoint] = g;
     }
     static const Glyph none{};
     const auto fallback = glyphs_.find('?');
@@ -176,28 +199,32 @@ const SdfFont::Glyph& SdfFont::glyph(uint32_t cp) const {
 float SdfFont::kerning(uint32_t a, uint32_t b) const {
     if (!info_) return 0.0f;
     float* slot = nullptr;
-    if (a < 128 && b < 128) {
-        if (kernAscii_.empty()) kernAscii_.assign(128 * 128, std::nanf(""));
-        slot = &kernAscii_[a * 128 + b];
+    constexpr uint32_t kAscii = 128;
+    if (a < kAscii && b < kAscii) {
+        if (kernAscii_.empty()) kernAscii_.assign(kAscii * kAscii, std::nanf(""));
+        slot = &kernAscii_[a * kAscii + b];
         if (!std::isnan(*slot)) return *slot;
     }
     const uint64_t key = (static_cast<uint64_t>(a) << 32) | b;
     const auto it = kernCache_.find(key);
     if (it != kernCache_.end()) return it->second;
-    const float k = stbtt_GetCodepointKernAdvance(&info_->font, static_cast<int>(a), static_cast<int>(b)) * scale_;
-    kernCache_.emplace(key, k);
-    if (slot) *slot = k;
-    return k;
+    const float kern = stbtt_GetCodepointKernAdvance(&info_->font, static_cast<int>(a), static_cast<int>(b)) * scale_;
+    kernCache_.emplace(key, kern);
+    if (slot) *slot = kern;
+    return kern;
+}
+
+float SdfFont::bakedWidth(const std::vector<uint32_t>& cps) const {
+    float width = 0.0f;
+    for (size_t i = 0; i < cps.size(); ++i) {
+        width += glyph(cps[i]).advance;
+        if (i + 1 < cps.size()) width += kerning(cps[i], cps[i + 1]);
+    }
+    return width;
 }
 
 float SdfFont::width(const std::string& text, float size) const {
-    const std::vector<uint32_t> cps = utf8Codepoints(text);
-    float w = 0.0f;
-    for (size_t i = 0; i < cps.size(); ++i) {
-        w += glyph(cps[i]).advance;
-        if (i + 1 < cps.size()) w += kerning(cps[i], cps[i + 1]);
-    }
-    return w * size / kBakeSize;
+    return bakedWidth(utf8Codepoints(text)) * size / kBakeSize;
 }
 
 std::vector<std::string> SdfFont::wrap(const std::string& text, float size, float maxWidth) const {
@@ -214,11 +241,7 @@ std::vector<std::string> SdfFont::wrap(const std::string& text, float size, floa
         const std::string word = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
         if (!word.empty()) {
             const std::vector<uint32_t> cps = utf8Codepoints(word);
-            float wordW = 0.0f;
-            for (size_t i = 0; i < cps.size(); ++i) {
-                wordW += glyph(cps[i]).advance;
-                if (i + 1 < cps.size()) wordW += kerning(cps[i], cps[i + 1]);
-            }
+            const float wordW = bakedWidth(cps);
             if (line.empty()) {
                 line = word;
                 lineW = wordW;
