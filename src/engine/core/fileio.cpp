@@ -7,11 +7,11 @@
 namespace mythos {
 
 std::string readTextFile(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return std::string();
-    std::ostringstream ss;
-    ss << in.rdbuf();
-    return ss.str();
+    std::ifstream file(path, std::ios::binary);
+    if (!file) return std::string();
+    std::ostringstream contents;
+    contents << file.rdbuf();
+    return contents.str();
 }
 
 bool writeFileAtomic(const std::string& path, const std::string& text, bool removeIfEmpty) {
@@ -21,15 +21,15 @@ bool writeFileAtomic(const std::string& path, const std::string& text, bool remo
         std::filesystem::remove(path, ec);
         return true;
     }
-    const std::string tmp = path + ".tmp";
+    const std::string tempPath = path + ".tmp";  // written whole, then renamed over the target
     {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+        std::ofstream out(tempPath, std::ios::binary | std::ios::trunc);
         out << text;
         if (!out) return false;
     }
     std::error_code ec;
-    std::filesystem::rename(tmp, path, ec);  // replaces an existing file in one step (POSIX; MoveFileEx on Windows)
-    if (ec) std::filesystem::remove(tmp, ec);
+    std::filesystem::rename(tempPath, path, ec);  // replaces an existing file in one step (POSIX; MoveFileEx on Windows)
+    if (ec) std::filesystem::remove(tempPath, ec);
     return !ec;
 }
 

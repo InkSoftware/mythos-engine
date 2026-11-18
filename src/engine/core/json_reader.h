@@ -15,17 +15,17 @@ public:
     Reader(const Value& root, std::string file) : root_(root), file_(std::move(file)) {}
 
     const Value* at(const std::string& path) {
-        const Value* v = &root_;
+        const Value* node = &root_;
         size_t start = 0;
-        while (v && start <= path.size()) {
+        while (node && start <= path.size()) {
             const size_t dot = path.find('.', start);
             const std::string key = path.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
-            v = find(*v, key);
+            node = find(*node, key);
             if (dot == std::string::npos) break;
             start = dot + 1;
         }
-        if (!v) fail("missing \"" + path + "\"");
-        return v;
+        if (!node) fail("missing \"" + path + "\"");
+        return node;
     }
     double number(const std::string& path) {
         const Value* v = at(path);

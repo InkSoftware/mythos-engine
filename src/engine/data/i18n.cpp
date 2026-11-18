@@ -6,14 +6,15 @@ namespace {
 Lang g_lang = Lang::English;
 const TranslationTable* g_tables[2] = {nullptr, nullptr};
 
-const std::string* lookup(Lang l, const std::string& key) {
-    if (const TranslationTable* t = g_tables[static_cast<int>(l)]) {
-        const auto it = t->find(key);
-        if (it != t->end()) return &it->second;
+// The game's table first, then the engine's built-in strings; null when neither has the key.
+const std::string* lookup(Lang lang, const std::string& key) {
+    if (const TranslationTable* table = g_tables[static_cast<int>(lang)]) {
+        const auto found = table->find(key);
+        if (found != table->end()) return &found->second;
     }
-    const TranslationTable& builtin = engineStrings(l);
-    const auto it = builtin.find(key);
-    return it != builtin.end() ? &it->second : nullptr;
+    const TranslationTable& builtin = engineStrings(lang);
+    const auto found = builtin.find(key);
+    return found != builtin.end() ? &found->second : nullptr;
 }
 
 }  // namespace
@@ -24,9 +25,9 @@ Lang language() { return g_lang; }
 void setTranslations(Lang l, const TranslationTable* table) { g_tables[static_cast<int>(l)] = table; }
 
 std::string tr(const std::string& key) {
-    if (const std::string* s = lookup(g_lang, key)) return *s;
-    if (g_lang != Lang::English)
-        if (const std::string* s = lookup(Lang::English, key)) return *s;
+    if (const std::string* text = lookup(g_lang, key)) return *text;
+    if (g_lang != Lang::English)  // fall back to English, then to the key itself
+        if (const std::string* text = lookup(Lang::English, key)) return *text;
     return key;
 }
 

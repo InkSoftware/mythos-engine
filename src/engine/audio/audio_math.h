@@ -21,13 +21,14 @@ struct StereoGain {
 // hushRadius > 0 falls silent closer than that, and `muted` silences it outright.
 inline StereoGain positionalGain(const Vec2& listener, double facing, const Vec2& source, double hushRadius,
                                  bool muted = false, double volume = 0.75, double falloff = 0.5) {
+    constexpr double kPanWidth = 0.75;  // 1 would pan hard to one side at 90 degrees; less keeps both ears in play
     const double dx = source.x - listener.x, dz = source.y - listener.y;
-    const double dist = std::hypot(dx, dz);
-    double gain = volume / (1.0 + falloff * dist * dist);
-    if (hushRadius > 0 && dist < hushRadius) gain = 0.0;
+    const double distance = std::hypot(dx, dz);
+    double gain = volume / (1.0 + falloff * distance * distance);
+    if (hushRadius > 0 && distance < hushRadius) gain = 0.0;
     if (muted) gain = 0.0;
     const double bearing = std::atan2(dz, dx) - facing;
-    const double right = 0.5 * (1.0 + 0.75 * std::sin(bearing));
+    const double right = 0.5 * (1.0 + kPanWidth * std::sin(bearing));  // 0 all left .. 1 all right; equal-power pan below
     return {static_cast<float>(gain * std::sqrt(1.0 - right)), static_cast<float>(gain * std::sqrt(right))};
 }
 
@@ -44,6 +45,7 @@ class Rng {
 public:
     explicit Rng(uint32_t seed = 0x9E3779B9u) : state_(seed) {}
     float next() {
+        // Numerical Recipes linear congruential generator; the top 24 bits fill a float's mantissa exactly.
         state_ = state_ * 1664525u + 1013904223u;
         return static_cast<float>(state_ >> 8) / 16777216.0f;
     }
@@ -59,7 +61,9 @@ struct CuePick {
     float pitch = 1.0f;
 };
 inline CuePick pickCue(const SoundCue& cue, Rng& rng) {
-    const float jitter = 0.92f + 0.16f * rng.next();
+    constexpr float kJitterMin = 0.92f;   // pitch varies within +-8% of the cue's pitch
+    constexpr float kJitterRange = 0.16f;
+    const float jitter = kJitterMin + kJitterRange * rng.next();
     CuePick out;
     if (cue.clips.size() > 1)
         out.clip = std::min(cue.clips.size() - 1, static_cast<size_t>(rng.next() * static_cast<float>(cue.clips.size())));

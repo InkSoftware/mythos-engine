@@ -6,8 +6,8 @@ namespace mythos {
 namespace {
 
 // Flattens nested sections to dotted keys: { "hud": { "house": "..." } } -> "hud.house".
-bool flatten(const json::Value& v, const std::string& prefix, TranslationTable& out, std::string& error) {
-    for (const auto& [key, value] : v.items()) {
+bool flatten(const json::Value& section, const std::string& prefix, TranslationTable& out, std::string& error) {
+    for (const auto& [key, value] : section.items()) {
         if (!key.empty() && key[0] == '_') continue;
         const std::string path = prefix.empty() ? key : prefix + "." + key;
         if (value.is_object()) {
@@ -27,17 +27,17 @@ bool flatten(const json::Value& v, const std::string& prefix, TranslationTable& 
 
 }  // namespace
 
-bool loadTranslation(const json::Value& root, const std::string& file, Translation& t, std::string* error) {
-    json::Reader r(root, file);
-    t.language = r.string("language");
-    t.name = r.string("name");
-    if (const json::Value* strings = r.at("strings")) {
-        std::string err;
-        if (!strings->is_object() || !flatten(*strings, "", t.strings, err))
-            r.fail(err.empty() ? "\"strings\" must be an object" : err);
+bool loadTranslation(const json::Value& root, const std::string& file, Translation& out, std::string* error) {
+    json::Reader reader(root, file);
+    out.language = reader.string("language");
+    out.name = reader.string("name");
+    if (const json::Value* strings = reader.at("strings")) {
+        std::string flattenError;
+        if (!strings->is_object() || !flatten(*strings, "", out.strings, flattenError))
+            reader.fail(flattenError.empty() ? "\"strings\" must be an object" : flattenError);
     }
-    if (!r.ok() && error) *error = r.error();
-    return r.ok();
+    if (!reader.ok() && error) *error = reader.error();
+    return reader.ok();
 }
 
 void installTranslations(const Translation& english, const Translation& greek) {

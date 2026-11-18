@@ -28,33 +28,35 @@ void mat4LookAt(const float* eye, const float* center, const float* up, float* m
 
 void mat4Multiply(const float* a, const float* b, float* out) { store(load(a) * load(b), out); }
 
-void frustumPlanes(const float* m, Frustum& out) {
+// Gribb-Hartmann: each frustum plane is the last row of the view-projection matrix plus or minus another row.
+void frustumPlanes(const float* viewProj, Frustum& out) {
     float (&planes)[6][4] = out.plane;
-    auto row = [&](int i, float* r) {
-        for (int c = 0; c < 4; ++c) r[c] = m[c * 4 + i];
+    auto readRow = [&](int rowIndex, float* row) {
+        for (int col = 0; col < 4; ++col) row[col] = viewProj[col * 4 + rowIndex];  // column-major
     };
-    float r0[4], r1[4], r2[4], r3[4];
-    row(0, r0);
-    row(1, r1);
-    row(2, r2);
-    row(3, r3);
-    for (int c = 0; c < 4; ++c) {
-        planes[0][c] = r3[c] + r0[c];  // left
-        planes[1][c] = r3[c] - r0[c];  // right
-        planes[2][c] = r3[c] + r1[c];  // bottom
-        planes[3][c] = r3[c] - r1[c];  // top
-        planes[4][c] = r3[c] + r2[c];  // near
-        planes[5][c] = r3[c] - r2[c];  // far
+    float row0[4], row1[4], row2[4], row3[4];
+    readRow(0, row0);
+    readRow(1, row1);
+    readRow(2, row2);
+    readRow(3, row3);
+    for (int i = 0; i < 4; ++i) {
+        planes[0][i] = row3[i] + row0[i];  // left
+        planes[1][i] = row3[i] - row0[i];  // right
+        planes[2][i] = row3[i] + row1[i];  // bottom
+        planes[3][i] = row3[i] - row1[i];  // top
+        planes[4][i] = row3[i] + row2[i];  // near
+        planes[5][i] = row3[i] - row2[i];  // far
     }
 }
 
-bool boxInFrustum(const Frustum& frustum, const float* bmin, const float* bmax, float dz) {
+bool boxInFrustum(const Frustum& frustum, const float* boxMin, const float* boxMax, float dz) {
     for (int i = 0; i < 6; ++i) {
-        const float* p = frustum.plane[i];
-        const float x = p[0] >= 0 ? bmax[0] : bmin[0];
-        const float y = p[1] >= 0 ? bmax[1] : bmin[1];
-        const float z = (p[2] >= 0 ? bmax[2] : bmin[2]) + dz;
-        if (p[0] * x + p[1] * y + p[2] * z + p[3] < 0.0f) return false;
+        const float* plane = frustum.plane[i];
+        // The box corner furthest along the plane normal: if even it is behind the plane, the box is outside.
+        const float x = plane[0] >= 0 ? boxMax[0] : boxMin[0];
+        const float y = plane[1] >= 0 ? boxMax[1] : boxMin[1];
+        const float z = (plane[2] >= 0 ? boxMax[2] : boxMin[2]) + dz;
+        if (plane[0] * x + plane[1] * y + plane[2] * z + plane[3] < 0.0f) return false;
     }
     return true;
 }

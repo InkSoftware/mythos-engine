@@ -31,19 +31,19 @@ bool parse(const std::string& text, Value& out, std::string* error) {
         return true;
     };
     try {
-        Value v = Value::parse(text, watch);
+        Value parsed = Value::parse(text, watch);
         if (duplicate.empty()) {
-            out = std::move(v);
+            out = std::move(parsed);
             return true;
         }
-    } catch (const Value::parse_error& e) {
-        if (error) *error = "line " + std::to_string(lineAt(text, e.byte)) + ": " + e.what();
+    } catch (const Value::parse_error& problem) {
+        if (error) *error = "line " + std::to_string(lineAt(text, problem.byte)) + ": " + problem.what();
         return false;
     }
     if (error) {
         // nlohmann does not say where; the duplicate is the key's last appearance in the text.
-        const size_t at = text.rfind(quote(duplicate));
-        *error = "line " + std::to_string(lineAt(text, at == std::string::npos ? 0 : at)) + ": duplicate key " + quote(duplicate);
+        const size_t where = text.rfind(quote(duplicate));
+        *error = "line " + std::to_string(lineAt(text, where == std::string::npos ? 0 : where)) + ": duplicate key " + quote(duplicate);
     }
     return false;
 }
@@ -54,14 +54,14 @@ bool parseFile(const std::string& path, Value& out, std::string* error) {
         if (error) *error = "missing file " + path;
         return false;
     }
-    std::string err;
-    if (!parse(text, out, &err)) {
-        if (error) *error = path + ": " + err;
+    std::string parseError;
+    if (!parse(text, out, &parseError)) {
+        if (error) *error = path + ": " + parseError;
         return false;
     }
     return true;
 }
 
-std::string quote(const std::string& s) { return Value(s).dump(); }
+std::string quote(const std::string& text) { return Value(text).dump(); }
 
 }  // namespace mythos::json

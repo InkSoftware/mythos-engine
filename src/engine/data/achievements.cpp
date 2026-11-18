@@ -10,26 +10,26 @@ namespace mythos {
 
 bool loadAchievementDefs(const json::Value& root, const std::string& file, std::vector<AchievementDef>& out,
                          std::string* error) {
-    json::Reader r(root, file);
-    const json::Value* all = r.at("achievements");
-    if (all && !all->is_object()) r.fail("\"achievements\" must be an object");
+    json::Reader reader(root, file);
+    const json::Value* all = reader.at("achievements");
+    if (all && !all->is_object()) reader.fail("\"achievements\" must be an object");
     if (all && all->is_object()) {
-        for (const auto& [id, v] : all->items()) {
+        for (const auto& [id, definition] : all->items()) {
             if (!id.empty() && id[0] == '_') continue;
-            const std::string at = "achievements." + id;
-            AchievementDef a;
-            a.id = id;
-            a.event = r.string(at + ".event");
-            a.count = r.integer(at + ".count");
-            a.name = at + ".name";
-            a.desc = at + ".desc";
-            if (r.ok() && (a.event.empty() || a.count < 1))
-                r.fail("\"" + at + "\" needs an event and a count of 1 or more");
-            out.push_back(a);
+            const std::string path = "achievements." + id;
+            AchievementDef def;
+            def.id = id;
+            def.event = reader.string(path + ".event");
+            def.count = reader.integer(path + ".count");
+            def.name = path + ".name";  // translation keys, not the text
+            def.desc = path + ".desc";
+            if (reader.ok() && (def.event.empty() || def.count < 1))
+                reader.fail("\"" + path + "\" needs an event and a count of 1 or more");
+            out.push_back(def);
         }
     }
-    if (!r.ok() && error) *error = r.error();
-    return r.ok();
+    if (!reader.ok() && error) *error = reader.error();
+    return reader.ok();
 }
 
 int Achievements::stat(const std::string& event) const {
@@ -42,14 +42,14 @@ bool Achievements::unlocked(const std::string& id) const {
 }
 
 std::vector<std::string> Achievements::record(const std::string& event, int value, bool absolute) {
-    int& n = stats_[event];
-    n = absolute ? std::max(n, value) : n + value;
+    int& total = stats_[event];
+    total = absolute ? std::max(total, value) : total + value;
     std::vector<std::string> gained;
     if (!defs_) return gained;
-    for (const AchievementDef& d : *defs_)
-        if (d.event == event && n >= d.count && !unlocked(d.id)) {
-            unlocked_.push_back(d.id);
-            gained.push_back(d.id);
+    for (const AchievementDef& def : *defs_)
+        if (def.event == event && total >= def.count && !unlocked(def.id)) {
+            unlocked_.push_back(def.id);
+            gained.push_back(def.id);
         }
     return gained;
 }
@@ -59,8 +59,8 @@ std::string Achievements::toJson() const {
     for (size_t i = 0; i < unlocked_.size(); ++i) out += (i ? ", " : "") + json::quote(unlocked_[i]);
     out += "],\n  \"stats\": {";
     bool first = true;
-    for (const auto& [k, v] : stats_) {
-        out += (first ? "" : ", ") + json::quote(k) + ": " + std::to_string(v);
+    for (const auto& [event, count] : stats_) {
+        out += (first ? "" : ", ") + json::quote(event) + ": " + std::to_string(count);
         first = false;
     }
     return out + "}\n}\n";
@@ -72,20 +72,21 @@ bool Achievements::fromJson(const std::string& text, std::string* error) {
         return false;
     };
     json::Value root;
-    std::string err;
-    if (!json::parse(text, root, &err)) return fail(err);
+    std::string parseError;
+    if (!json::parse(text, root, &parseError)) return fail(parseError);
     const json::Value* list = json::find(root, "unlocked");
     const json::Value* stats = json::find(root, "stats");
     if (!list || !list->is_array() || !stats || !stats->is_object()) return fail("needs \"unlocked\" and \"stats\"");
     std::vector<std::string> unlocked;
     std::map<std::string, int> counters;
-    for (const auto& v : *list) {
-        if (!v.is_string()) return fail("\"unlocked\" must hold strings");
-        unlocked.push_back(v.get<std::string>());
+    for (const auto& entry : *list) {
+        if (!entry.is_string()) return fail("\"unlocked\" must hold strings");
+        unlocked.push_back(entry.get<std::string>());
     }
-    for (const auto& [k, v] : stats->items()) {
-        if (!v.is_number() || v.get<double>() != std::floor(v.get<double>())) return fail("stat \"" + k + "\" must be a whole number");
-        counters[k] = static_cast<int>(v.get<double>());
+    for (const auto& [event, count] : stats->items()) {
+        if (!count.is_number() || count.get<double>() != std::floor(count.get<double>()))
+            return fail("stat \"" + event + "\" must be a whole number");
+        counters[event] = static_cast<int>(count.get<double>());
     }
     unlocked_ = std::move(unlocked);
     stats_ = std::move(counters);
