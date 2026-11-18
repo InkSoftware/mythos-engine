@@ -68,6 +68,8 @@ SdfFont& SdfFont::operator=(SdfFont&& o) noexcept {
     ascent_ = o.ascent_;
     glyphs_ = std::move(o.glyphs_);
     kernCache_ = std::move(o.kernCache_);
+    latin_ = o.latin_;  // points into glyphs_'s nodes, which the move keeps
+    kernAscii_ = std::move(o.kernAscii_);
     atlasW_ = o.atlasW_;
     atlasH_ = o.atlasH_;
     atlas_ = std::move(o.atlas_);
@@ -94,6 +96,8 @@ bool SdfFont::loadFile(const std::string& path, std::string* error) {
     info_ = info;
     glyphs_.clear();
     kernCache_.clear();
+    kernAscii_.clear();
+    latin_.fill(nullptr);
 
     const stbtt_fontinfo* fi = &info_->font;
     scale_ = stbtt_ScaleForPixelHeight(fi, kBakeSize);
@@ -152,10 +156,17 @@ bool SdfFont::loadFile(const std::string& path, std::string* error) {
                         atlas_.begin() + static_cast<std::ptrdiff_t>(b.g.ay + y) * atlasW_ + b.g.ax);
         glyphs_[b.cp] = b.g;
     }
+    static const Glyph none{};
+    const auto fallback = glyphs_.find('?');
+    for (uint32_t cp = 0; cp < 256; ++cp) {
+        const auto it = glyphs_.find(cp);
+        latin_[cp] = it != glyphs_.end() ? &it->second : fallback != glyphs_.end() ? &fallback->second : &none;
+    }
     return true;
 }
 
 const SdfFont::Glyph& SdfFont::glyph(uint32_t cp) const {
+    if (cp < 256 && latin_[cp]) return *latin_[cp];
     auto it = glyphs_.find(cp);
     if (it == glyphs_.end()) it = glyphs_.find('?');
     static const Glyph none{};
@@ -164,11 +175,18 @@ const SdfFont::Glyph& SdfFont::glyph(uint32_t cp) const {
 
 float SdfFont::kerning(uint32_t a, uint32_t b) const {
     if (!info_) return 0.0f;
+    float* slot = nullptr;
+    if (a < 128 && b < 128) {
+        if (kernAscii_.empty()) kernAscii_.assign(128 * 128, std::nanf(""));
+        slot = &kernAscii_[a * 128 + b];
+        if (!std::isnan(*slot)) return *slot;
+    }
     const uint64_t key = (static_cast<uint64_t>(a) << 32) | b;
     const auto it = kernCache_.find(key);
     if (it != kernCache_.end()) return it->second;
     const float k = stbtt_GetCodepointKernAdvance(&info_->font, static_cast<int>(a), static_cast<int>(b)) * scale_;
     kernCache_.emplace(key, k);
+    if (slot) *slot = k;
     return k;
 }
 
@@ -185,18 +203,38 @@ float SdfFont::width(const std::string& text, float size) const {
 std::vector<std::string> SdfFont::wrap(const std::string& text, float size, float maxWidth) const {
     std::vector<std::string> lines;
     std::string line;
+    // The line's width in bake pixels, kept as it grows: a candidate is the line, a space and the
+    // word, so its width is the line's plus the space, the two kerns at the joins and the word's.
+    float lineW = 0.0f;
+    uint32_t lineLast = 0;
+    const float space = glyph(' ').advance;
     size_t start = 0;
     while (start <= text.size()) {
         const size_t end = text.find(' ', start);
         const std::string word = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
         if (!word.empty()) {
-            const std::string candidate = line.empty() ? word : line + " " + word;
-            if (!line.empty() && width(candidate, size) > maxWidth) {
-                lines.push_back(line);
-                line = word;
-            } else {
-                line = candidate;
+            const std::vector<uint32_t> cps = utf8Codepoints(word);
+            float wordW = 0.0f;
+            for (size_t i = 0; i < cps.size(); ++i) {
+                wordW += glyph(cps[i]).advance;
+                if (i + 1 < cps.size()) wordW += kerning(cps[i], cps[i + 1]);
             }
+            if (line.empty()) {
+                line = word;
+                lineW = wordW;
+            } else {
+                const float candidateW = lineW + kerning(lineLast, ' ') + space + kerning(' ', cps.front()) + wordW;
+                if (candidateW * size / kBakeSize > maxWidth) {
+                    lines.push_back(line);
+                    line = word;
+                    lineW = wordW;
+                } else {
+                    line += ' ';
+                    line += word;
+                    lineW = candidateW;
+                }
+            }
+            lineLast = cps.back();
         }
         if (end == std::string::npos) break;
         start = end + 1;

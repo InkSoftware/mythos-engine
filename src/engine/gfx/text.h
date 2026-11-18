@@ -5,6 +5,7 @@
 // kerning and word wrapping in the overlay's logical pixels. The 5x7 bitmap font
 // (font.h) is still used for text painted into textures.
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -65,6 +66,10 @@ private:
     float ascent_ = 0.0f;    // in bake pixels
     std::unordered_map<uint32_t, Glyph> glyphs_;
     mutable std::unordered_map<uint64_t, float> kernCache_;
+    // Flat lookups for the commonest text: the glyph of each Latin-1 codepoint (the fallback already
+    // applied; null before a font is loaded) and the kerning of each ASCII pair (NaN = not yet asked).
+    std::array<const Glyph*, 256> latin_{};
+    mutable std::vector<float> kernAscii_;
     int atlasW_ = 0, atlasH_ = 0;
     std::vector<uint8_t> atlas_;
 };
@@ -79,6 +84,7 @@ struct TextEffect {
     float shadowX = 0.0f, shadowY = 0.0f;
     float shadowBlur = 0.0f;        // 0 = no shadow; larger = softer and wider
     uint32_t shadowColor = 0x00000000;
+    bool operator==(const TextEffect&) const = default;
 };
 
 // One line of text, positioned in overlay pixels: (x, y) is the top-left of the line box.
@@ -89,6 +95,7 @@ struct TextRun {
     float x = 0, y = 0, size = 10;
     uint32_t color = 0xFFFFFFFF;
     TextEffect fx;
+    bool operator==(const TextRun&) const = default;
 };
 
 // Everything the overlay wants written this frame, drawn by the renderer over the overlay.

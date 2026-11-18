@@ -30,7 +30,16 @@ private:
     GlVertexArray vao_;
     GlBuffer vbo_;
     std::vector<std::pair<const SdfFont*, GlTexture>> fonts_;
+    // The vertices of the last layout, one range per font, and what they were built for: an
+    // identical layout (the usual frame) is drawn again without being laid out or uploaded.
+    struct FontRange {
+        int first = 0, count = 0;
+    };
     std::vector<float> verts_;
+    std::vector<FontRange> ranges_;
+    std::vector<TextRun> builtRuns_;
+    int builtW_ = 0, builtH_ = 0;
+    bool built_ = false;
 };
 
 }  // namespace mythos

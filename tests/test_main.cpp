@@ -152,6 +152,52 @@ TEST(font_measures_and_wraps_text) {
     }
 }
 
+// The word wrap as it was first written: every candidate line measured from scratch.
+static std::vector<std::string> wrapByRemeasuring(const SdfFont& font, const std::string& text, float size, float maxWidth) {
+    std::vector<std::string> lines;
+    std::string line;
+    size_t start = 0;
+    while (start <= text.size()) {
+        const size_t end = text.find(' ', start);
+        const std::string word = text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (!word.empty()) {
+            const std::string candidate = line.empty() ? word : line + " " + word;
+            if (!line.empty() && font.width(candidate, size) > maxWidth) {
+                lines.push_back(line);
+                line = word;
+            } else {
+                line = candidate;
+            }
+        }
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
+    if (!line.empty()) lines.push_back(line);
+    return lines;
+}
+
+TEST(sdf_font_wrap_matches_remeasuring_every_candidate) {
+    SdfFont font;
+    std::string err;
+    CHECK(font.loadFile(std::string(MYTHOS_TEST_ASSET_DIR) + "/fonts/Alegreya.ttf", &err));
+    if (!font.loaded()) return;
+    const std::string texts[] = {
+        "The quick brown fox jumps over the lazy dog, and then AVATAR To Wa yo walks home",
+        "  leading and   repeated   spaces  ",
+        "supercalifragilisticexpialidocious is longer than any narrow line",
+        "Η γρήγορη καφέ αλεπού πηδά πάνω από το τεμπέλικο σκυλί",
+        "",
+    };
+    for (const std::string& text : texts)
+        for (float size : {14.0f, 22.0f, 40.0f})
+            for (float maxWidth : {60.0f, 140.0f, 333.0f, 900.0f})
+                CHECK(font.wrap(text, size, maxWidth) == wrapByRemeasuring(font, text, size, maxWidth));
+    // Asking again (kerning now cached) and through the flat glyph table agree with the map.
+    CHECK_EQ(font.kerning('A', 'V'), font.kerning('A', 'V'));
+    CHECK(font.glyph('A').advance > 0.0f);
+    CHECK(font.glyph(0x3B1).advance > 0.0f);
+}
+
 TEST(font_draws_pixels_and_lowercase_matches_uppercase) {
     Surface a(40, 10, 0), b(40, 10, 0);
     drawText(a, 0, 0, "Hi", 0xFFFFFFFF);

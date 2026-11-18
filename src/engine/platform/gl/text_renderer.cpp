@@ -96,6 +96,7 @@ void TextRenderer::addFont(const SdfFont& font) {
     GenerateMipmap(TEXTURE_2D);
     tex.setParams(LINEAR_MIPMAP_LINEAR, LINEAR, CLAMP_TO_EDGE);
     fonts_.emplace_back(&font, std::move(tex));
+    built_ = false;
 }
 
 // One pass over a run (the shadow, then the letters themselves): appends two triangles per glyph.
@@ -112,6 +113,10 @@ void TextRenderer::appendPass(const TextRun& run, const std::vector<uint32_t>& c
     const float params[2] = {std::min(outline * toField, 0.45f), std::min(blur * toField, 0.5f)};
     float penX = run.x + dx;
     const float baseline = run.y + dy + font.ascent(run.size);
+    // Written straight into the vector: room for every glyph, trimmed to what was drawn.
+    const size_t base = verts_.size();
+    verts_.resize(base + cps.size() * 6 * kFloats);
+    float* out = verts_.data() + base;
     for (size_t i = 0; i < cps.size(); ++i) {
         const SdfFont::Glyph& g = font.glyph(cps[i]);
         if (g.aw > 0) {
@@ -124,12 +129,14 @@ void TextRenderer::appendPass(const TextRun& run, const std::vector<uint32_t>& c
                 const float v[kFloats] = {c[0] * sx - 1.0f, 1.0f - c[1] * sy, c[2], c[3],
                                           col[0], col[1], col[2], col[3],
                                           ocol[0], ocol[1], ocol[2], ocol[3], params[0], params[1]};
-                verts_.insert(verts_.end(), v, v + kFloats);
+                std::copy(v, v + kFloats, out);
+                out += kFloats;
             }
         }
         penX += g.advance * k;
         if (i + 1 < cps.size()) penX += font.kerning(cps[i], cps[i + 1]) * k;
     }
+    verts_.resize(static_cast<size_t>(out - verts_.data()));
 }
 
 void TextRenderer::appendRun(const TextRun& run, const SdfFont& font, float sx, float sy) {
@@ -142,21 +149,33 @@ void TextRenderer::appendRun(const TextRun& run, const SdfFont& font, float sx, 
 
 void TextRenderer::draw(const TextLayer& text, int overlayW, int overlayH) {
     if (!program_.valid() || text.runs.empty()) return;
-    const float sx = 2.0f / overlayW, sy = 2.0f / overlayH;
     program_.use();
     program_.set("uAtlas", 0);
     ActiveTexture(TEXTURE0);
     vao_.bind();
+    if (!built_ || overlayW != builtW_ || overlayH != builtH_ || text.runs != builtRuns_) {
+        const float sx = 2.0f / overlayW, sy = 2.0f / overlayH;
+        verts_.clear();
+        ranges_.assign(fonts_.size(), FontRange{});
+        for (size_t f = 0; f < fonts_.size(); ++f) {
+            const SdfFont* font = fonts_[f].first;
+            const size_t before = verts_.size();
+            for (const TextRun& run : text.runs)
+                if (run.font == font && !run.text.empty()) appendRun(run, *font, sx, sy);
+            ranges_[f] = {static_cast<int>(before / kFloats), static_cast<int>((verts_.size() - before) / kFloats)};
+        }
+        vbo_.upload(verts_.data(), verts_.size() * sizeof(float), DYNAMIC_DRAW);
+        builtRuns_ = text.runs;
+        builtW_ = overlayW;
+        builtH_ = overlayH;
+        built_ = true;
+    }
     Enable(BLEND);
     BlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
-    for (const auto& [font, tex] : fonts_) {
-        verts_.clear();
-        for (const TextRun& run : text.runs)
-            if (run.font == font && !run.text.empty()) appendRun(run, *font, sx, sy);
-        if (verts_.empty()) continue;
-        tex.bind();
-        vbo_.upload(verts_.data(), verts_.size() * sizeof(float), DYNAMIC_DRAW);
-        DrawArrays(TRIANGLES, 0, static_cast<GLsizei>(verts_.size() / kFloats));
+    for (size_t f = 0; f < fonts_.size(); ++f) {
+        if (ranges_[f].count == 0) continue;
+        fonts_[f].second.bind();
+        DrawArrays(TRIANGLES, ranges_[f].first, ranges_[f].count);
     }
     Disable(BLEND);
 }
