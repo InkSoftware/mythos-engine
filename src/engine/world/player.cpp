@@ -6,65 +6,79 @@
 
 namespace mythos {
 
-bool loadPlayerParams(json::Reader& r, const std::string& path, PlayerParams& out) {
-    out.radius = r.number(path + ".radius");
-    out.walkSpeed = r.number(path + ".walkSpeed");
-    out.runSpeed = r.number(path + ".runSpeed");
-    out.turnSpeed = r.number(path + ".turnSpeed");
-    out.strideLength = r.number(path + ".strideLength");
-    out.mouseSensitivity = r.number(path + ".mouseSensitivity");
-    out.maxPitch = r.number(path + ".maxPitch");
-    return r.ok();
+bool LoadPlayerParams(json::Reader& r, const std::string& path,
+                      PlayerParams& out) {
+  out.radius = r.Number(path + ".radius");
+  out.walk_speed = r.Number(path + ".walkSpeed");
+  out.run_speed = r.Number(path + ".runSpeed");
+  out.turn_speed = r.Number(path + ".turnSpeed");
+  out.stride_length = r.Number(path + ".strideLength");
+  out.mouse_sensitivity = r.Number(path + ".mouseSensitivity");
+  out.max_pitch = r.Number(path + ".maxPitch");
+  return r.Ok();
 }
 
-void applyLook(Player& player, const MoveInput& in, const PlayerParams& params) {
-    player.angle += in.mouseDx * params.mouseSensitivity;
-    player.pitch = clampd(player.pitch - in.mouseDy * params.mouseSensitivity, -params.maxPitch, params.maxPitch);
+void ApplyLook(Player& player, const MoveInput& in,
+               const PlayerParams& params) {
+  player.angle += in.mouse_dx * params.mouse_sensitivity;
+  player.pitch = Clampd(player.pitch - in.mouse_dy * params.mouse_sensitivity,
+                        -params.max_pitch, params.max_pitch);
 }
 
-std::optional<char> PlayerWalker::update(const Level& level, Player& player, double dt, const MoveInput& in,
+std::optional<char> PlayerWalker::Update(const Level& level, Player& player,
+                                         double dt, const MoveInput& in,
                                          const PlayerParams& params) {
-    const double turn = params.turnSpeed * dt;
-    if (in.turnLeft) player.angle -= turn;
-    if (in.turnRight) player.angle += turn;
+  const double turn = params.turn_speed * dt;
+  if (in.turn_left) player.angle -= turn;
+  if (in.turn_right) player.angle += turn;
 
-    const double forward = (in.forward ? 1.0 : 0.0) - (in.back ? 1.0 : 0.0);
-    const double side = (in.strafeRight ? 1.0 : 0.0) - (in.strafeLeft ? 1.0 : 0.0);
-    if (forward == 0 && side == 0) return std::nullopt;
+  const double forward = (in.forward ? 1.0 : 0.0) - (in.back ? 1.0 : 0.0);
+  const double side =
+      (in.strafe_right ? 1.0 : 0.0) - (in.strafe_left ? 1.0 : 0.0);
+  if (forward == 0 && side == 0) return std::nullopt;
 
-    const double speed = (in.run ? params.runSpeed : params.walkSpeed) * dt;
-    const Vec2 step = walkStep(player.angle, forward, side, speed);
-    const Vec2 before = player.pos;
-    moveWithCollision(level, player.pos, step.x, step.y, params.radius);
+  const double speed = (in.run ? params.run_speed : params.walk_speed) * dt;
+  const Vec2 step = WalkStep(player.angle, forward, side, speed);
+  const Vec2 before = player.pos;
+  MoveWithCollision(level, player.pos, step.x, step.y, params.radius);
 
-    strideAccum_ += std::hypot(player.pos.x - before.x, player.pos.y - before.y);
-    if (strideAccum_ < params.strideLength) return std::nullopt;
-    strideAccum_ = 0;
-    return level.at(static_cast<int>(std::floor(player.pos.x)), static_cast<int>(std::floor(player.pos.y)));
+  stride_accum_ += std::hypot(player.pos.x - before.x, player.pos.y - before.y);
+  if (stride_accum_ < params.stride_length) return std::nullopt;
+  stride_accum_ = 0;
+  return level.At(static_cast<int>(std::floor(player.pos.x)),
+                  static_cast<int>(std::floor(player.pos.y)));
 }
 
-int findAimed(const Level& level, const Player& player, double eyeHeight, double reach,
-              const std::vector<AimCandidate>& candidates) {
-    const double cosPitch = std::cos(player.pitch);
-    const Vec3 dir{std::cos(player.angle) * cosPitch, std::sin(player.pitch), std::sin(player.angle) * cosPitch};
-    const double eyeX = player.pos.x, eyeZ = player.pos.y;
-    double nearestHit = reach;
-    int best = -1;
-    for (size_t i = 0; i < candidates.size(); ++i) {
-        const AimCandidate& candidate = candidates[i];
-        if (!candidate.enabled) continue;
-        const double hit = rayHitsSphere({eyeX, eyeHeight, eyeZ}, dir, {candidate.at.x, candidate.height, candidate.at.y},
-                                         candidate.radius, nearestHit);
-        if (hit < 0) continue;
-        // The wall check stops half a metre short of the prop, so an object standing against a wall stays visible.
-        const double toX = candidate.at.x - eyeX, toZ = candidate.at.y - eyeZ;
-        const double flatDistance = std::hypot(toX, toZ);
-        const double backOff = flatDistance > 0.5 ? 0.5 / flatDistance : 1.0;
-        if (!level.lineOfSight(eyeX, eyeZ, candidate.at.x - toX * backOff, candidate.at.y - toZ * backOff)) continue;
-        nearestHit = hit;
-        best = static_cast<int>(i);
+int FindAimed(const Level& level, const Player& player, double eye_height,
+              double reach, const std::vector<AimCandidate>& candidates) {
+  const double cos_pitch = std::cos(player.pitch);
+  const Vec3 dir{.x = std::cos(player.angle) * cos_pitch,
+                 .y = std::sin(player.pitch),
+                 .z = std::sin(player.angle) * cos_pitch};
+  const double eye_x = player.pos.x, eye_z = player.pos.y;
+  double nearest_hit = reach;
+  int best = -1;
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    const AimCandidate& candidate = candidates[i];
+    if (!candidate.enabled) continue;
+    const double hit = RayHitsSphere(
+        {.x = eye_x, .y = eye_height, .z = eye_z}, dir,
+        {.x = candidate.at.x, .y = candidate.height, .z = candidate.at.y},
+        candidate.radius, nearest_hit);
+    if (hit < 0) continue;
+    // The wall check stops half a metre short of the prop, so an object
+    // standing against a wall stays visible.
+    const double to_x = candidate.at.x - eye_x, to_z = candidate.at.y - eye_z;
+    const double flat_distance = std::hypot(to_x, to_z);
+    const double back_off = flat_distance > 0.5 ? 0.5 / flat_distance : 1.0;
+    if (!level.LineOfSight(eye_x, eye_z, candidate.at.x - to_x * back_off,
+                           candidate.at.y - to_z * back_off)) {
+      continue;
     }
-    return best;
+    nearest_hit = hit;
+    best = static_cast<int>(i);
+  }
+  return best;
 }
 
 }  // namespace mythos

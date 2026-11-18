@@ -2,20 +2,26 @@
 
 namespace mythos {
 
-int menuStep(int& index, int count, const UiInput& in, bool activate, const std::function<bool(int)>& usable) {
-    auto ok = [&](int i) { return !usable || usable(i); };
-    if (in.downPressed) {
-        do index = (index + 1) % count;
-        while (!ok(index));
-    }
-    if (in.upPressed) {
-        do index = (index + count - 1) % count;
-        while (!ok(index));
-    }
-    if (in.hoverItem >= 0 && in.hoverItem < count && ok(in.hoverItem)) index = in.hoverItem;
-    const bool clickedItem = in.clickItem >= 0 && in.clickItem < count && ok(in.clickItem);
-    if (clickedItem) index = in.clickItem;
-    return (activate || clickedItem) ? index : -1;
+int MenuStep(int& index, int count, const UiInput& in, bool activate,
+             const std::function<bool(int)>& usable) {
+  const auto ok = [&](int i) { return !usable || usable(i); };
+  if (in.down_pressed) {
+    do {
+      index = (index + 1) % count;
+    } while (!ok(index));
+  }
+  if (in.up_pressed) {
+    do {
+      index = (index + count - 1) % count;
+    } while (!ok(index));
+  }
+  if (in.hover_item >= 0 && in.hover_item < count && ok(in.hover_item)) {
+    index = in.hover_item;
+  }
+  const bool clicked_item =
+      in.click_item >= 0 && in.click_item < count && ok(in.click_item);
+  if (clicked_item) index = in.click_item;
+  return (activate || clicked_item) ? index : -1;
 }
 
 }  // namespace mythos

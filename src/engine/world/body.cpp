@@ -7,57 +7,78 @@ namespace mythos {
 namespace {
 
 struct Vector {
-    double x = 0, y = 0, z = 0;
+  double x = 0, y = 0, z = 0;
 };
-Vector operator+(Vector a, Vector b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
-Vector operator-(Vector a, Vector b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
-Vector operator*(Vector a, double s) { return {a.x * s, a.y * s, a.z * s}; }
-double dot(Vector a, Vector b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-Vector cross(Vector a, Vector b) { return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x}; }
-double length(Vector a) { return std::sqrt(dot(a, a)); }
-Vector unit(Vector a, Vector fallback = {0, 0, 1}) {
-    const double len = length(a);
-    return len > 1e-9 ? a * (1.0 / len) : fallback;
+Vector operator+(Vector a, Vector b) {
+  return {.x = a.x + b.x, .y = a.y + b.y, .z = a.z + b.z};
+}
+Vector operator-(Vector a, Vector b) {
+  return {.x = a.x - b.x, .y = a.y - b.y, .z = a.z - b.z};
+}
+Vector operator*(Vector a, double s) {
+  return {.x = a.x * s, .y = a.y * s, .z = a.z * s};
+}
+double Dot(Vector a, Vector b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+Vector Cross(Vector a, Vector b) {
+  return {.x = a.y * b.z - a.z * b.y,
+          .y = a.z * b.x - a.x * b.z,
+          .z = a.x * b.y - a.y * b.x};
+}
+double Length(Vector a) { return std::sqrt(Dot(a, a)); }
+Vector Unit(Vector a, Vector fallback = {.x = 0, .y = 0, .z = 1}) {
+  const double len = Length(a);
+  return len > 1e-9 ? a * (1.0 / len) : fallback;
 }
 
-constexpr Vector kUp{0, 1, 0};
+constexpr Vector kUp{.x = 0, .y = 1, .z = 0};
 
-// A model's frame: +z along `fwd`, +y as upright as that allows, +x the model's left (cross(up, fwd)).
-PartMatrix frame(Vector pos, Vector fwd, Vector up = kUp, double scale = 1.0) {
-    fwd = unit(fwd);
-    Vector x = cross(up, fwd);
-    if (length(x) < 1e-6) x = cross({0, 0, 1}, fwd);  // looking straight along `up`
-    x = unit(x);
-    const Vector y = cross(fwd, x);
-    PartMatrix p;
-    const Vector cols[4] = {x * scale, y * scale, fwd * scale, pos};
-    for (int col = 0; col < 4; ++col) {
-        p.m[col * 4 + 0] = static_cast<float>(cols[col].x);
-        p.m[col * 4 + 1] = static_cast<float>(cols[col].y);
-        p.m[col * 4 + 2] = static_cast<float>(cols[col].z);
-    }
-    return p;
+// A model's frame: +z along `fwd`, +y as upright as that allows, +x the model's
+// left (cross(up, fwd)).
+PartMatrix Frame(Vector pos, Vector fwd, Vector up = kUp, double scale = 1.0) {
+  fwd = Unit(fwd);
+  Vector x = Cross(up, fwd);
+  if (Length(x) < 1e-6) {
+    x = Cross({.x = 0, .y = 0, .z = 1}, fwd);  // looking straight along `up`
+  }
+  x = Unit(x);
+  const Vector y = Cross(fwd, x);
+  PartMatrix p;
+  const Vector cols[4] = {x * scale, y * scale, fwd * scale, pos};
+  for (int col = 0; col < 4; ++col) {
+    p.m[col * 4 + 0] = static_cast<float>(cols[col].x);
+    p.m[col * 4 + 1] = static_cast<float>(cols[col].y);
+    p.m[col * 4 + 2] = static_cast<float>(cols[col].z);
+  }
+  return p;
 }
 
-Vector dirOf(double yaw, double pitch) { return {std::cos(yaw) * std::cos(pitch), std::sin(pitch), std::sin(yaw) * std::cos(pitch)}; }
+Vector DirOf(double yaw, double pitch) {
+  return {.x = std::cos(yaw) * std::cos(pitch),
+          .y = std::sin(pitch),
+          .z = std::sin(yaw) * std::cos(pitch)};
+}
 
-// HandSway: the shortest step it integrates over, and the gap (a pause or teleport) after which it restarts from the view.
+// HandSway: the shortest step it integrates over, and the gap (a pause or
+// teleport) after which it restarts from the view.
 constexpr double kMinStep = 1e-4;
 constexpr double kResetGap = 0.25;
 
 constexpr double kTwoPi = 6.283185307179586;
 
 // Wraps an angle difference into [-pi, pi].
-double wrapPi(double angle) { return std::remainder(angle, kTwoPi); }
+double WrapPi(double angle) { return std::remainder(angle, kTwoPi); }
 
-// How fast the body yaw eases towards the view yaw (per second): quick while walking, lazy while standing.
+// How fast the body yaw eases towards the view yaw (per second): quick while
+// walking, lazy while standing.
 constexpr double kTurnFollowWalking = 6.0;
 constexpr double kTurnFollowStanding = 1.2;
 
-// Pitch of the hand-held light is kept inside this so the beam never points straight up or down.
+// Pitch of the hand-held light is kept inside this so the beam never points
+// straight up or down.
 constexpr double kMaxHeldPitch = 1.5;
 
-// The relaxed arm hangs this fraction of its full reach below the shoulder and a touch forward; swings half as far as the legs.
+// The relaxed arm hangs this fraction of its full reach below the shoulder and
+// a touch forward; swings half as far as the legs.
 constexpr double kArmHangFraction = 0.93;
 constexpr double kArmHangForward = 0.04;
 constexpr double kArmSwingOfLeg = 0.5;
@@ -66,260 +87,350 @@ constexpr double kElbowOutward = 0.5;
 
 }  // namespace
 
-ArmIk solveArm(const double shoulder[3], const double target[3], double upper, double fore, const double bend[3]) {
-    const Vector shoulderPos{shoulder[0], shoulder[1], shoulder[2]};
-    const Vector targetPos{target[0], target[1], target[2]};
-    const Vector bendDir{bend[0], bend[1], bend[2]};
-    const Vector toTarget = targetPos - shoulderPos;
-    double reach = length(toTarget);
-    const Vector dir = unit(toTarget, {0, -1, 0});
-    // Stay just inside the range the two bones can span (fully folded to fully stretched).
-    reach = std::clamp(reach, std::abs(upper - fore) + 0.01, upper + fore - 0.001);
-    // The elbow sits `along` the line and `off` it, in the plane the bend direction picks.
-    const double along = (upper * upper - fore * fore + reach * reach) / (2.0 * reach);
-    const double outFromLine = std::sqrt(std::max(0.0, upper * upper - along * along));
-    Vector sideways = bendDir - dir * dot(bendDir, dir);
-    sideways = unit(sideways, cross(dir, {1, 0, 0}));
-    const Vector elbowPos = shoulderPos + dir * along + sideways * outFromLine;
-    const Vector handPos = shoulderPos + dir * reach;
-    return {{elbowPos.x, elbowPos.y, elbowPos.z}, {handPos.x, handPos.y, handPos.z}};
+ArmIk SolveArm(const double shoulder[3], const double target[3], double upper,
+               double fore, const double bend[3]) {
+  const Vector shoulder_pos{
+      .x = shoulder[0], .y = shoulder[1], .z = shoulder[2]};
+  const Vector target_pos{.x = target[0], .y = target[1], .z = target[2]};
+  const Vector bend_dir{.x = bend[0], .y = bend[1], .z = bend[2]};
+  const Vector to_target = target_pos - shoulder_pos;
+  double reach = Length(to_target);
+  const Vector dir = Unit(to_target, {.x = 0, .y = -1, .z = 0});
+  // Stay just inside the range the two bones can span (fully folded to fully
+  // stretched).
+  reach =
+      std::clamp(reach, std::abs(upper - fore) + 0.01, upper + fore - 0.001);
+  // The elbow sits `along` the line and `off` it, in the plane the bend
+  // direction picks.
+  const double along =
+      (upper * upper - fore * fore + reach * reach) / (2.0 * reach);
+  const double out_from_line =
+      std::sqrt(std::max(0.0, upper * upper - along * along));
+  Vector sideways = bend_dir - dir * Dot(bend_dir, dir);
+  sideways = Unit(sideways, Cross(dir, {.x = 1, .y = 0, .z = 0}));
+  const Vector elbow_pos =
+      shoulder_pos + dir * along + sideways * out_from_line;
+  const Vector hand_pos = shoulder_pos + dir * reach;
+  return {.elbow = {elbow_pos.x, elbow_pos.y, elbow_pos.z},
+          .hand = {hand_pos.x, hand_pos.y, hand_pos.z}};
 }
 
-double turnBody(double bodyYaw, double viewYaw, double dt, bool walking, const BodyParams& params) {
-    const double diff = wrapPi(viewYaw - bodyYaw);
-    double yaw = bodyYaw;
-    if (std::abs(diff) > params.turnLimit) yaw += diff - std::copysign(params.turnLimit, diff);  // dragged along
-    const double follow = walking ? kTurnFollowWalking : kTurnFollowStanding;
-    yaw += wrapPi(viewYaw - yaw) * std::min(1.0, dt * follow);
-    return yaw;
+double TurnBody(double body_yaw, double view_yaw, double dt, bool walking,
+                const BodyParams& params) {
+  const double diff = WrapPi(view_yaw - body_yaw);
+  double yaw = body_yaw;
+  if (std::abs(diff) > params.turn_limit) {
+    yaw += diff - std::copysign(params.turn_limit, diff);  // dragged along
+  }
+  const double follow = walking ? kTurnFollowWalking : kTurnFollowStanding;
+  yaw += WrapPi(view_yaw - yaw) * std::min(1.0, dt * follow);
+  return yaw;
 }
 
 namespace {
 
 // The camera's axes, as the view shows them.
 struct ViewAxes {
-    Vector forward;  // where he looks
-    Vector right;    // the camera's right: (-sin yaw, 0, cos yaw)
-    Vector up;       // the view's up, which tips with the pitch
+  Vector forward;  // where he looks
+  Vector right;    // the camera's right: (-sin yaw, 0, cos yaw)
+  Vector up;       // the view's up, which tips with the pitch
 };
 
 // The character's own axes on the floor.
 struct BodyAxes {
-    Vector feet;       // on the floor, a little behind the eye
-    Vector chest;      // where the chest faces
-    Vector charRight;  // his right hand (the model's +x is his left)
+  Vector feet;        // on the floor, a little behind the eye
+  Vector chest;       // where the chest faces
+  Vector char_right;  // his right hand (the model's +x is his left)
 };
 
 // Legs swing from the hip, opposite to each other, by `swing` radians at most.
-void poseLegs(BodyPose& pose, const BodyAxes& body, double swing, const BodyParams& bt) {
-    for (int side = 0; side < 2; ++side) {
-        const double sign = side == 0 ? 1.0 : -1.0;  // +1: the model's left
-        const double angle = sign * swing;
-        const Vector hip = body.feet + kUp * bt.hipHeight + body.charRight * (-sign * bt.hipHalfSpacing);
-        const Vector forward = body.chest * std::cos(angle) + kUp * std::sin(angle);
-        const Vector up = kUp * std::cos(angle) - body.chest * std::sin(angle);
-        (side == 0 ? pose.legL : pose.legR) = frame(hip, forward, up);
+void PoseLegs(BodyPose& pose, const BodyAxes& body, double swing,
+              const BodyParams& bt) {
+  for (int side = 0; side < 2; ++side) {
+    const double sign = side == 0 ? 1.0 : -1.0;  // +1: the model's left
+    const double angle = sign * swing;
+    const Vector hip = body.feet + kUp * bt.hip_height +
+                       body.char_right * (-sign * bt.hip_half_spacing);
+    const Vector forward = body.chest * std::cos(angle) + kUp * std::sin(angle);
+    const Vector up = kUp * std::cos(angle) - body.chest * std::sin(angle);
+    (side == 0 ? pose.leg_l : pose.leg_r) = Frame(hip, forward, up);
+  }
+}
+
+// Where the light is held, in the view (it keeps its place on the screen
+// whichever way he looks).
+Vector HeldGrip(const BodyInput& in, const Vector& eye, const ViewAxes& view,
+                const HeldParams& ht) {
+  const double right =
+      (in.lighter ? ht.lighter_right : ht.right) + in.hand_side;
+  const double down = (in.lighter ? ht.lighter_down : ht.down) + in.hand_down;
+  const double forward = in.lighter ? ht.lighter_forward : ht.forward;
+  return eye + view.right * right + view.forward * forward - view.up * down;
+}
+
+// The right hand reaches for the grip (eased by `raise`); the left arm hangs
+// and swings against the legs.
+void PoseArms(BodyPose& pose, const BodyAxes& body, const Vector& grip,
+              double swing, double raise, const BodyParams& bt) {
+  const double reach = bt.upper_arm + bt.fore_arm;
+  for (int side = 0; side < 2; ++side) {
+    const bool right_arm = side == 1;
+    const double side_sign = right_arm ? 1.0 : -1.0;
+    const Vector shoulder =
+        body.feet + kUp * bt.shoulder_height +
+        body.char_right * (side_sign * bt.shoulder_half_spacing);
+    const double arm_swing = (right_arm ? -1.0 : 1.0) * kArmSwingOfLeg *
+                             swing;  // opposite to the leg on its side
+    const Vector hang = shoulder - kUp * (reach * kArmHangFraction) +
+                        body.chest * (kArmHangForward + reach * arm_swing);
+    Vector target = hang;
+    if (right_arm) {
+      const double t = std::clamp(raise, 0.0, 1.0);
+      const double eased = t * t * (3.0 - 2.0 * t);  // smoothstep
+      target = hang * (1.0 - eased) + grip * eased;
     }
+    const Vector bend =
+        (kUp * -1.0) + body.char_right * (side_sign * kElbowOutward);
+    const double shoulder_arr[3] = {shoulder.x, shoulder.y, shoulder.z};
+    const double target_arr[3] = {target.x, target.y, target.z};
+    const double bend_arr[3] = {bend.x, bend.y, bend.z};
+    const ArmIk ik =
+        SolveArm(shoulder_arr, target_arr, bt.upper_arm, bt.fore_arm, bend_arr);
+    const Vector elbow{.x = ik.elbow[0], .y = ik.elbow[1], .z = ik.elbow[2]},
+        hand{.x = ik.hand[0], .y = ik.hand[1], .z = ik.hand[2]};
+    (right_arm ? pose.upper_arm_r : pose.upper_arm_l) =
+        Frame(shoulder, elbow - shoulder);
+    (right_arm ? pose.fore_arm_r : pose.fore_arm_l) =
+        Frame(elbow, hand - elbow);
+  }
 }
 
-// Where the light is held, in the view (it keeps its place on the screen whichever way he looks).
-Vector heldGrip(const BodyInput& in, const Vector& eye, const ViewAxes& view, const HeldParams& ht) {
-    const double right = (in.lighter ? ht.lighterRight : ht.right) + in.handSide;
-    const double down = (in.lighter ? ht.lighterDown : ht.down) + in.handDown;
-    const double forward = in.lighter ? ht.lighterForward : ht.forward;
-    return eye + view.right * right + view.forward * forward - view.up * down;
-}
-
-// The right hand reaches for the grip (eased by `raise`); the left arm hangs and swings against the legs.
-void poseArms(BodyPose& pose, const BodyAxes& body, const Vector& grip, double swing, double raise, const BodyParams& bt) {
-    const double reach = bt.upperArm + bt.foreArm;
-    for (int side = 0; side < 2; ++side) {
-        const bool rightArm = side == 1;
-        const double sideSign = rightArm ? 1.0 : -1.0;
-        const Vector shoulder = body.feet + kUp * bt.shoulderHeight + body.charRight * (sideSign * bt.shoulderHalfSpacing);
-        const double armSwing = (rightArm ? -1.0 : 1.0) * kArmSwingOfLeg * swing;  // opposite to the leg on its side
-        const Vector hang = shoulder - kUp * (reach * kArmHangFraction) + body.chest * (kArmHangForward + reach * armSwing);
-        Vector target = hang;
-        if (rightArm) {
-            const double t = std::clamp(raise, 0.0, 1.0);
-            const double eased = t * t * (3.0 - 2.0 * t);  // smoothstep
-            target = hang * (1.0 - eased) + grip * eased;
-        }
-        const Vector bend = (kUp * -1.0) + body.charRight * (sideSign * kElbowOutward);
-        const double shoulderArr[3] = {shoulder.x, shoulder.y, shoulder.z};
-        const double targetArr[3] = {target.x, target.y, target.z};
-        const double bendArr[3] = {bend.x, bend.y, bend.z};
-        const ArmIk ik = solveArm(shoulderArr, targetArr, bt.upperArm, bt.foreArm, bendArr);
-        const Vector elbow{ik.elbow[0], ik.elbow[1], ik.elbow[2]}, hand{ik.hand[0], ik.hand[1], ik.hand[2]};
-        (rightArm ? pose.upperArmR : pose.upperArmL) = frame(shoulder, elbow - shoulder);
-        (rightArm ? pose.foreArmR : pose.foreArmL) = frame(elbow, hand - elbow);
-    }
-}
-
-// A lighter stands upright, leaning back a little, with the flame on top. Held in the view, not in the world.
-// The model stands upright with its wide face towards +x and its lid hinged to one side (see the lighter model): that
-// face is turned towards him, a little towards the middle of the screen (lighterTurn), and leaned back (lighterTilt).
-void poseLighter(BodyPose& pose, const Vector& grip, const ViewAxes& view, const HeldParams& ht, double time) {
-    const Vector toLeft = view.right * -1.0;
-    const Vector modelZ = toLeft * std::cos(ht.lighterTurn) + view.forward * std::sin(ht.lighterTurn);
-    const double cosTilt = std::cos(ht.lighterTilt), sinTilt = std::sin(ht.lighterTilt);
-    const auto lean = [&](Vector v) {  // about the view's right axis: the top away from him
-        const double alongUp = dot(v, view.up), alongForward = dot(v, view.forward);
-        return v - view.up * alongUp - view.forward * alongForward +
-               (view.up * cosTilt + view.forward * sinTilt) * alongUp +
-               (view.forward * cosTilt - view.up * sinTilt) * alongForward;
-    };
-    const Vector lighterForward = unit(lean(modelZ)), lighterUp = unit(lean(view.up));
-    const Vector lighterX = unit(cross(lighterUp, lighterForward));
-    pose.held = frame(grip, lighterForward, lighterUp * std::cos(ht.lighterRoll) + lighterX * std::sin(ht.lighterRoll));
-    const Vector up = {pose.held.m[4], pose.held.m[5], pose.held.m[6]};
-    const Vector zAxis = {pose.held.m[8], pose.held.m[9], pose.held.m[10]};
-    // The flame's size wobbles with a few unrelated sine waves, so it never repeats visibly.
-    const double flicker = 0.85 + 0.15 * std::sin(time * 23.0) * std::sin(time * 7.1) + 0.1 * std::sin(time * 31.0);
-    pose.flame = frame(grip + up * ht.flameHeight + zAxis * ht.flameShift, view.forward, view.up, flicker);
+// A lighter stands upright, leaning back a little, with the flame on top. Held
+// in the view, not in the world. The model stands upright with its wide face
+// towards +x and its lid hinged to one side (see the lighter model): that face
+// is turned towards him, a little towards the middle of the screen
+// (lighterTurn), and leaned back (lighterTilt).
+void PoseLighter(BodyPose& pose, const Vector& grip, const ViewAxes& view,
+                 const HeldParams& ht, double time) {
+  const Vector to_left = view.right * -1.0;
+  const Vector model_z = to_left * std::cos(ht.lighter_turn) +
+                         view.forward * std::sin(ht.lighter_turn);
+  const double cos_tilt = std::cos(ht.lighter_tilt),
+               sin_tilt = std::sin(ht.lighter_tilt);
+  const auto lean =
+      [&](Vector v) {  // about the view's right axis: the top away from him
+        const double along_up = Dot(v, view.up),
+                     along_forward = Dot(v, view.forward);
+        return v - view.up * along_up - view.forward * along_forward +
+               (view.up * cos_tilt + view.forward * sin_tilt) * along_up +
+               (view.forward * cos_tilt - view.up * sin_tilt) * along_forward;
+      };
+  const Vector lighter_forward = Unit(lean(model_z)),
+               lighter_up = Unit(lean(view.up));
+  const Vector lighter_x = Unit(Cross(lighter_up, lighter_forward));
+  pose.held = Frame(grip, lighter_forward,
+                    lighter_up * std::cos(ht.lighter_roll) +
+                        lighter_x * std::sin(ht.lighter_roll));
+  const Vector up = {
+      .x = pose.held.m[4], .y = pose.held.m[5], .z = pose.held.m[6]};
+  const Vector z_axis = {
+      .x = pose.held.m[8], .y = pose.held.m[9], .z = pose.held.m[10]};
+  // The flame's size wobbles with a few unrelated sine waves, so it never
+  // repeats visibly.
+  const double flicker = 0.85 +
+                         0.15 * std::sin(time * 23.0) * std::sin(time * 7.1) +
+                         0.1 * std::sin(time * 31.0);
+  pose.flame = Frame(grip + up * ht.flame_height + z_axis * ht.flame_shift,
+                     view.forward, view.up, flicker);
 }
 
 }  // namespace
 
-BodyPose poseBody(const BodyInput& in, const BodyParams& bt, const HeldParams& ht) {
-    BodyPose pose;
-    const Vector viewFwd = dirOf(in.yaw, in.pitch);
-    const Vector viewFlat = unit({std::cos(in.yaw), 0, std::sin(in.yaw)});
-    const Vector eye{in.eyeX, in.eyeHeight, in.eyeZ};
+BodyPose PoseBody(const BodyInput& in, const BodyParams& params,
+                  const HeldParams& held) {
+  BodyPose pose;
+  const Vector view_fwd = DirOf(in.yaw, in.pitch);
+  const Vector view_flat =
+      Unit({.x = std::cos(in.yaw), .y = 0, .z = std::sin(in.yaw)});
+  const Vector eye{.x = in.eye_x, .y = in.eye_height, .z = in.eye_z};
 
-    BodyAxes body;
-    body.feet = Vector{in.eyeX, 0, in.eyeZ} - viewFlat * bt.eyeAhead;
-    body.chest = {std::cos(in.bodyYaw), 0, std::sin(in.bodyYaw)};
-    body.charRight = cross(body.chest, kUp);
-    pose.torso = frame(body.feet, body.chest);
-    pose.head = frame(body.feet + kUp * bt.neckHeight, viewFwd);
+  BodyAxes body;
+  body.feet = Vector{.x = in.eye_x, .y = 0, .z = in.eye_z} -
+              view_flat * params.eye_ahead;
+  body.chest = {.x = std::cos(in.body_yaw), .y = 0, .z = std::sin(in.body_yaw)};
+  body.char_right = Cross(body.chest, kUp);
+  pose.torso = Frame(body.feet, body.chest);
+  pose.head = Frame(body.feet + kUp * params.neck_height, view_fwd);
 
-    // Legs (and the arms against them) swing in proportion to how much he walks.
-    const double swing = bt.legSwing * in.walk * std::sin(in.stride);
-    poseLegs(pose, body, swing, bt);
+  // Legs (and the arms against them) swing in proportion to how much he walks.
+  const double swing = params.leg_swing * in.walk * std::sin(in.stride);
+  PoseLegs(pose, body, swing, params);
 
-    // The right hand brings the light up to where it is held in view (the same place the renderer's view shows it).
-    ViewAxes view;
-    view.forward = viewFwd;
-    view.right = cross(viewFlat, kUp);
-    view.up = unit(cross(view.right, viewFwd), kUp);
-    const Vector grip = heldGrip(in, eye, view, ht);
-    pose.handX = grip.x;
-    pose.handY = grip.y;
-    pose.handZ = grip.z;
-    poseArms(pose, body, grip, swing, in.raise, bt);
+  // The right hand brings the light up to where it is held in view (the same
+  // place the renderer's view shows it).
+  ViewAxes view;
+  view.forward = view_fwd;
+  view.right = Cross(view_flat, kUp);
+  view.up = Unit(Cross(view.right, view_fwd), kUp);
+  const Vector grip = HeldGrip(in, eye, view, held);
+  pose.hand_x = grip.x;
+  pose.hand_y = grip.y;
+  pose.hand_z = grip.z;
+  PoseArms(pose, body, grip, swing, in.raise, params);
 
-    // A torch points where the beam goes; a lighter stands upright.
-    if (in.lighter) {
-        poseLighter(pose, grip, view, ht, in.time);
-    } else {
-        const Vector beamDir = dirOf(in.yaw + in.handYaw, std::clamp(in.pitch + in.handPitch, -kMaxHeldPitch, kMaxHeldPitch));
-        pose.held = frame(grip, beamDir);
-    }
-    return pose;
+  // A torch points where the beam goes; a lighter stands upright.
+  if (in.lighter) {
+    PoseLighter(pose, grip, view, held, in.time);
+  } else {
+    const Vector beam_dir = DirOf(
+        in.yaw + in.hand_yaw,
+        std::clamp(in.pitch + in.hand_pitch, -kMaxHeldPitch, kMaxHeldPitch));
+    pose.held = Frame(grip, beam_dir);
+  }
+  return pose;
 }
 
-bool loadBodyParams(json::Reader& r, const std::string& path, BodyParams& out) {
-    out.neckHeight = r.number(path + ".neckHeight");
-    out.eyeAhead = r.number(path + ".eyeAhead");
-    out.hipHeight = r.number(path + ".hipHeight");
-    out.hipHalfSpacing = r.number(path + ".hipHalfSpacing");
-    out.shoulderHeight = r.number(path + ".shoulderHeight");
-    out.shoulderHalfSpacing = r.number(path + ".shoulderHalfSpacing");
-    out.upperArm = r.number(path + ".upperArm");
-    out.foreArm = r.number(path + ".foreArm");
-    out.legSwing = r.number(path + ".legSwing");
-    out.turnLimit = r.number(path + ".turnLimit");
-    out.raiseSeconds = r.number(path + ".raiseSeconds");
-    if (r.ok() && (out.upperArm <= 0 || out.foreArm <= 0 || out.raiseSeconds <= 0 || out.turnLimit <= 0))
-        r.fail(path + ".upperArm, foreArm, raiseSeconds and turnLimit must be positive");
-    return r.ok();
+bool LoadBodyParams(json::Reader& r, const std::string& path, BodyParams& out) {
+  out.neck_height = r.Number(path + ".neckHeight");
+  out.eye_ahead = r.Number(path + ".eyeAhead");
+  out.hip_height = r.Number(path + ".hipHeight");
+  out.hip_half_spacing = r.Number(path + ".hipHalfSpacing");
+  out.shoulder_height = r.Number(path + ".shoulderHeight");
+  out.shoulder_half_spacing = r.Number(path + ".shoulderHalfSpacing");
+  out.upper_arm = r.Number(path + ".upperArm");
+  out.fore_arm = r.Number(path + ".foreArm");
+  out.leg_swing = r.Number(path + ".legSwing");
+  out.turn_limit = r.Number(path + ".turnLimit");
+  out.raise_seconds = r.Number(path + ".raiseSeconds");
+  if (r.Ok() && (out.upper_arm <= 0 || out.fore_arm <= 0 ||
+                 out.raise_seconds <= 0 || out.turn_limit <= 0)) {
+    r.Fail(path +
+           ".upperArm, foreArm, raiseSeconds and turnLimit must be positive");
+  }
+  return r.Ok();
 }
 
-bool loadHandSwayParams(json::Reader& r, const std::string& path, HandSwayParams& out) {
-    const struct {
-        const char* key;
-        double* member;  // the field of `out` that this key fills
-    } fields[] = {{"springK", &out.springK},     {"springDamp", &out.springDamp}, {"turnLag", &out.turnLag},
-                  {"yawLimit", &out.yawLimit},   {"pitchLimit", &out.pitchLimit}, {"walkSpeed", &out.walkSpeed},
-                  {"walkEase", &out.walkEase},   {"strideRate", &out.strideRate}, {"walkYaw", &out.walkYaw},
-                  {"walkPitch", &out.walkPitch}, {"walkSide", &out.walkSide},     {"walkDown", &out.walkDown},
-                  {"idleYaw", &out.idleYaw},     {"idleBreath", &out.idleBreath}, {"idleDrift", &out.idleDrift},
-                  {"idleSide", &out.idleSide},   {"idleDown", &out.idleDown},     {"tremorStill", &out.tremorStill},
-                  {"tremorWalk", &out.tremorWalk}, {"bob", &out.bob}};
-    for (const auto& field : fields) *field.member = r.number(path + "." + field.key);
-    if (r.ok() && (out.springK <= 0 || out.springDamp < 0 || out.walkSpeed <= 0 || out.yawLimit < 0 || out.pitchLimit < 0))
-        r.fail(path + ".springK and walkSpeed must be positive; springDamp and the limits not negative");
-    return r.ok();
+bool LoadHandSwayParams(json::Reader& r, const std::string& path,
+                        HandSwayParams& out) {
+  const struct {
+    const char* key;
+    double* member;  // the field of `out` that this key fills
+  } fields[] = {{.key = "springK", .member = &out.spring_k},
+                {.key = "springDamp", .member = &out.spring_damp},
+                {.key = "turnLag", .member = &out.turn_lag},
+                {.key = "yawLimit", .member = &out.yaw_limit},
+                {.key = "pitchLimit", .member = &out.pitch_limit},
+                {.key = "walkSpeed", .member = &out.walk_speed},
+                {.key = "walkEase", .member = &out.walk_ease},
+                {.key = "strideRate", .member = &out.stride_rate},
+                {.key = "walkYaw", .member = &out.walk_yaw},
+                {.key = "walkPitch", .member = &out.walk_pitch},
+                {.key = "walkSide", .member = &out.walk_side},
+                {.key = "walkDown", .member = &out.walk_down},
+                {.key = "idleYaw", .member = &out.idle_yaw},
+                {.key = "idleBreath", .member = &out.idle_breath},
+                {.key = "idleDrift", .member = &out.idle_drift},
+                {.key = "idleSide", .member = &out.idle_side},
+                {.key = "idleDown", .member = &out.idle_down},
+                {.key = "tremorStill", .member = &out.tremor_still},
+                {.key = "tremorWalk", .member = &out.tremor_walk},
+                {.key = "bob", .member = &out.bob}};
+  for (const auto& field : fields) {
+    *field.member = r.Number(path + "." + field.key);
+  }
+  if (r.Ok() &&
+      (out.spring_k <= 0 || out.spring_damp < 0 || out.walk_speed <= 0 ||
+       out.yaw_limit < 0 || out.pitch_limit < 0)) {
+    r.Fail(path +
+           ".springK and walkSpeed must be positive; springDamp and the limits "
+           "not negative");
+  }
+  return r.Ok();
 }
 
-HandPose HandSway::update(double dt, double time, double x, double z, double viewYaw, double viewPitch,
+HandPose HandSway::Update(double dt, double time, double x, double z,
+                          double view_yaw, double view_pitch,
                           const HandSwayParams& params) {
-    const double step = std::max(dt, kMinStep);
-    if (!primed_ || dt > kResetGap) {
-        lastYaw_ = viewYaw;
-        lastPitch_ = viewPitch;
-        lastX_ = x;
-        lastZ_ = z;
-        primed_ = true;
-    }
-    const double turnYaw = wrapPi(viewYaw - lastYaw_), turnPitch = viewPitch - lastPitch_;
-    const double speed = std::hypot(x - lastX_, z - lastZ_) / step;
-    lastYaw_ = viewYaw;
-    lastPitch_ = viewPitch;
-    lastX_ = x;
-    lastZ_ = z;
-    // Spring-damper: turning the view pulls the beam the other way, then it catches up.
-    yawV_ += (-params.springK * yaw_ - params.springDamp * yawV_) * step;
-    yaw_ -= turnYaw * params.turnLag;
-    pitchV_ += (-params.springK * pitch_ - params.springDamp * pitchV_) * step;
-    pitch_ -= turnPitch * params.turnLag;
-    yaw_ = std::clamp(yaw_ + yawV_ * step, -params.yawLimit, params.yawLimit);
-    pitch_ = std::clamp(pitch_ + pitchV_ * step, -params.pitchLimit, params.pitchLimit);
-    const double moving = std::min(1.0, speed / params.walkSpeed);
-    walk_ += (moving - walk_) * std::min(1.0, step * params.walkEase);
-    stride_ += speed * step * params.strideRate;
+  const double step = std::max(dt, kMinStep);
+  if (!primed_ || dt > kResetGap) {
+    last_yaw_ = view_yaw;
+    last_pitch_ = view_pitch;
+    last_x_ = x;
+    last_z_ = z;
+    primed_ = true;
+  }
+  const double turn_yaw = WrapPi(view_yaw - last_yaw_),
+               turn_pitch = view_pitch - last_pitch_;
+  const double speed = std::hypot(x - last_x_, z - last_z_) / step;
+  last_yaw_ = view_yaw;
+  last_pitch_ = view_pitch;
+  last_x_ = x;
+  last_z_ = z;
+  // Spring-damper: turning the view pulls the beam the other way, then it
+  // catches up.
+  yaw_v_ += (-params.spring_k * yaw_ - params.spring_damp * yaw_v_) * step;
+  yaw_ -= turn_yaw * params.turn_lag;
+  pitch_v_ +=
+      (-params.spring_k * pitch_ - params.spring_damp * pitch_v_) * step;
+  pitch_ -= turn_pitch * params.turn_lag;
+  yaw_ = std::clamp(yaw_ + yaw_v_ * step, -params.yaw_limit, params.yaw_limit);
+  pitch_ = std::clamp(pitch_ + pitch_v_ * step, -params.pitch_limit,
+                      params.pitch_limit);
+  const double moving = std::min(1.0, speed / params.walk_speed);
+  walk_ += (moving - walk_) * std::min(1.0, step * params.walk_ease);
+  stride_ += speed * step * params.stride_rate;
 
-    const double still = 1.0 - walk_;  // idle: breathing and a hand that drifts and re-settles
-    const double tremor = params.tremorStill + params.tremorWalk * walk_;
-    const double breath = std::sin(time * 1.35);  // about one breath every 4.6 s
-    const double drift = std::sin(time * 0.47) + 0.7 * std::sin(time * 0.83 + 1.7) + 0.4 * std::sin(time * 1.9 + 0.4);
-    HandPose pose;
-    pose.stride = stride_;
-    pose.walk = walk_;
-    pose.yaw = yaw_ + walk_ * params.walkYaw * std::sin(stride_ * 0.5) + still * params.idleYaw * drift +
-            tremor * (std::sin(time * 1.7) + 0.6 * std::sin(time * 4.1 + 1.0));
-    pose.pitch = pitch_ + walk_ * params.walkPitch * std::sin(stride_ + 0.6) +
-              still * (params.idleBreath * breath + params.idleDrift * (std::sin(time * 0.61 + 0.9) + 0.6 * std::sin(time * 1.43))) +
-              tremor * (std::sin(time * 1.3 + 2.0) + 0.6 * std::sin(time * 3.7));
-    pose.side = walk_ * params.walkSide * std::sin(stride_ * 0.5) + still * params.idleSide * drift;
-    pose.down = walk_ * params.walkDown * (0.5 - 0.5 * std::cos(stride_ * 2.0)) * 0.5 + params.bob * std::sin(time * 1.1) +
-             still * params.idleDown * breath;
-    return pose;
+  const double still =
+      1.0 - walk_;  // idle: breathing and a hand that drifts and re-settles
+  const double tremor = params.tremor_still + params.tremor_walk * walk_;
+  const double breath = std::sin(time * 1.35);  // about one breath every 4.6 s
+  const double drift = std::sin(time * 0.47) +
+                       0.7 * std::sin(time * 0.83 + 1.7) +
+                       0.4 * std::sin(time * 1.9 + 0.4);
+  HandPose pose;
+  pose.stride = stride_;
+  pose.walk = walk_;
+  pose.yaw = yaw_ + walk_ * params.walk_yaw * std::sin(stride_ * 0.5) +
+             still * params.idle_yaw * drift +
+             tremor * (std::sin(time * 1.7) + 0.6 * std::sin(time * 4.1 + 1.0));
+  pose.pitch =
+      pitch_ + walk_ * params.walk_pitch * std::sin(stride_ + 0.6) +
+      still * (params.idle_breath * breath +
+               params.idle_drift * (std::sin(time * 0.61 + 0.9) +
+                                    0.6 * std::sin(time * 1.43))) +
+      tremor * (std::sin(time * 1.3 + 2.0) + 0.6 * std::sin(time * 3.7));
+  pose.side = walk_ * params.walk_side * std::sin(stride_ * 0.5) +
+              still * params.idle_side * drift;
+  pose.down =
+      walk_ * params.walk_down * (0.5 - 0.5 * std::cos(stride_ * 2.0)) * 0.5 +
+      params.bob * std::sin(time * 1.1) + still * params.idle_down * breath;
+  return pose;
 }
 
-void BodyMotion::update(double dt, double viewYaw, bool walking, bool lightUp, const BodyParams& params) {
-    if (!primed_) {
-        yaw_ = viewYaw;
-        primed_ = true;
-    }
-    yaw_ = turnBody(yaw_, viewYaw, dt, walking, params);
-    raise_ += ((lightUp ? 1.0 : 0.0) - raise_) * std::min(1.0, dt / params.raiseSeconds);
+void BodyMotion::Update(double dt, double view_yaw, bool walking, bool light_up,
+                        const BodyParams& params) {
+  if (!primed_) {
+    yaw_ = view_yaw;
+    primed_ = true;
+  }
+  yaw_ = TurnBody(yaw_, view_yaw, dt, walking, params);
+  raise_ += ((light_up ? 1.0 : 0.0) - raise_) *
+            std::min(1.0, dt / params.raise_seconds);
 }
 
-bool loadHeldParams(json::Reader& r, const std::string& path, HeldParams& out) {
-    out.right = r.number(path + ".right");
-    out.down = r.number(path + ".down");
-    out.forward = r.number(path + ".forward");
-    out.lighterRight = r.number(path + ".lighterRight");
-    out.lighterDown = r.number(path + ".lighterDown");
-    out.lighterForward = r.number(path + ".lighterForward");
-    out.lighterTilt = r.number(path + ".lighterTilt");
-    out.lighterRoll = r.number(path + ".lighterRoll");
-    out.lighterTurn = r.number(path + ".lighterTurn");
-    out.flameHeight = r.number(path + ".flameHeight");
-    out.flameShift = r.number(path + ".flameShift");
-    return r.ok();
+bool LoadHeldParams(json::Reader& r, const std::string& path, HeldParams& out) {
+  out.right = r.Number(path + ".right");
+  out.down = r.Number(path + ".down");
+  out.forward = r.Number(path + ".forward");
+  out.lighter_right = r.Number(path + ".lighterRight");
+  out.lighter_down = r.Number(path + ".lighterDown");
+  out.lighter_forward = r.Number(path + ".lighterForward");
+  out.lighter_tilt = r.Number(path + ".lighterTilt");
+  out.lighter_roll = r.Number(path + ".lighterRoll");
+  out.lighter_turn = r.Number(path + ".lighterTurn");
+  out.flame_height = r.Number(path + ".flameHeight");
+  out.flame_shift = r.Number(path + ".flameShift");
+  return r.Ok();
 }
 
 }  // namespace mythos

@@ -4,57 +4,70 @@
 
 namespace mythos {
 
-std::string UserFiles::read(const std::string& file) const {
-    const std::string fullPath = path(file);
-    return fullPath.empty() ? std::string() : readTextFile(fullPath);
+std::string UserFiles::Read(const std::string& file) const {
+  const std::string full_path = Path(file);
+  return full_path.empty() ? std::string() : ReadTextFile(full_path);
 }
 
-bool UserFiles::write(const std::string& file, const std::string& text, bool removeIfEmpty) const {
-    const std::string fullPath = path(file);
-    if (fullPath.empty()) return false;
-    if (writeFileAtomic(fullPath, text, removeIfEmpty)) return true;
-    SDL_Log("cannot write %s", fullPath.c_str());
-    return false;
+bool UserFiles::Write(const std::string& file, const std::string& text,
+                      bool remove_if_empty) const {
+  const std::string full_path = Path(file);
+  if (full_path.empty()) return false;
+  if (WriteFileAtomic(full_path, text, remove_if_empty)) return true;
+  SDL_Log("cannot write %s", full_path.c_str());
+  return false;
 }
 
 MousePointer::MousePointer()
-    : arrow_(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT)), hand_(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER)) {}
+    : arrow_(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT)),
+      hand_(SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_POINTER)) {}
 
 MousePointer::~MousePointer() {
-    if (arrow_) SDL_DestroyCursor(arrow_);
-    if (hand_) SDL_DestroyCursor(hand_);
+  if (arrow_) SDL_DestroyCursor(arrow_);
+  if (hand_) SDL_DestroyCursor(hand_);
 }
 
-int MousePointer::itemAt(const Window& window, int overlayW, int overlayH, const std::vector<Hotspot>& hotspots,
-                         int mx, int my, int* value) const {
-    int windowW = 0, windowH = 0;
-    SDL_GetWindowSize(window.sdl(), &windowW, &windowH);
-    if (windowW <= 0 || windowH <= 0) return -1;
-    // Window pixels to overlay pixels.
-    const float overlayX = static_cast<float>(mx) * static_cast<float>(overlayW) / static_cast<float>(windowW);
-    const float overlayY = static_cast<float>(my) * static_cast<float>(overlayH) / static_cast<float>(windowH);
-    return hitTest(hotspots, overlayX, overlayY, value);
+int MousePointer::ItemAt(const Window& window, int overlay_w, int overlay_h,
+                         const std::vector<Hotspot>& hotspots, int mx, int my,
+                         int* value) {
+  int window_w = 0, window_h = 0;
+  SDL_GetWindowSize(window.Sdl(), &window_w, &window_h);
+  if (window_w <= 0 || window_h <= 0) return -1;
+  // Window pixels to overlay pixels.
+  const float overlay_x = static_cast<float>(mx) *
+                          static_cast<float>(overlay_w) /
+                          static_cast<float>(window_w);
+  const float overlay_y = static_cast<float>(my) *
+                          static_cast<float>(overlay_h) /
+                          static_cast<float>(window_h);
+  return HitTest(hotspots, overlay_x, overlay_y, value);
 }
 
-void MousePointer::updateCursor(const Window& window, int overlayW, int overlayH, const std::vector<Hotspot>& hotspots) const {
-    float mouseX = 0, mouseY = 0;
-    SDL_GetMouseState(&mouseX, &mouseY);
-    const bool overItem = itemAt(window, overlayW, overlayH, hotspots, static_cast<int>(mouseX), static_cast<int>(mouseY)) >= 0;
-    SDL_Cursor* wanted = overItem ? hand_ : arrow_;
-    if (SDL_GetCursor() != wanted) SDL_SetCursor(wanted);
+void MousePointer::UpdateCursor(const Window& window, int overlay_w,
+                                int overlay_h,
+                                const std::vector<Hotspot>& hotspots) const {
+  float mouse_x = 0, mouse_y = 0;
+  SDL_GetMouseState(&mouse_x, &mouse_y);
+  const bool over_item =
+      ItemAt(window, overlay_w, overlay_h, hotspots, static_cast<int>(mouse_x),
+             static_cast<int>(mouse_y)) >= 0;
+  SDL_Cursor* wanted = over_item ? hand_ : arrow_;
+  if (SDL_GetCursor() != wanted) SDL_SetCursor(wanted);
 }
 
-void playCue(AudioEngine& audio, const SoundCue& cue, Rng& rng) {
-    if (cue.clips.empty()) return;
-    const CuePick pick = pickCue(cue, rng);
-    audio.play(cue.clips[pick.clip], cue.gain, pick.pitch);
+void PlayCue(AudioEngine& audio, const SoundCue& cue, Rng& rng) {
+  if (cue.clips.empty()) return;
+  const CuePick pick = PickCue(cue, rng);
+  audio.Play(cue.clips[pick.clip], cue.gain, pick.pitch);
 }
 
-std::map<std::string, double> clipLengths(const AudioEngine& audio, const std::vector<std::string>& names) {
-    std::map<std::string, double> out;
-    for (const std::string& name : names)
-        if (const double sec = audio.clipSeconds(name); sec > 0) out[name] = sec;
-    return out;
+std::map<std::string, double> ClipLengths(
+    const AudioEngine& audio, const std::vector<std::string>& names) {
+  std::map<std::string, double> out;
+  for (const std::string& name : names) {
+    if (const double sec = audio.ClipSeconds(name); sec > 0) out[name] = sec;
+  }
+  return out;
 }
 
 }  // namespace mythos

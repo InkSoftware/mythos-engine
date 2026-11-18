@@ -6,45 +6,63 @@
 namespace mythos {
 
 namespace {
-bool endsWith(const std::string& text, const std::string& suffix) {
-    return text.size() > suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+bool EndsWith(const std::string& text, const std::string& suffix) {
+  return text.size() > suffix.size() && text.ends_with(suffix);
 }
-bool sameSize(const Surface& a, const Surface& b) { return a.w == b.w && a.h == b.h; }
+bool SameSize(const Surface& a, const Surface& b) {
+  return a.w == b.w && a.h == b.h;
+}
 }  // namespace
 
-bool isPbrCompanion(const std::string& name) {
-    return endsWith(name, kNormalSuffix) || endsWith(name, kRoughSuffix) || endsWith(name, kMetalSuffix) ||
-           endsWith(name, kAoSuffix);
+bool IsPbrCompanion(const std::string& name) {
+  return EndsWith(name, kNormalSuffix) || EndsWith(name, kRoughSuffix) ||
+         EndsWith(name, kMetalSuffix) || EndsWith(name, kAoSuffix);
 }
 
-Surface makeSurfaceMap(const Surface& albedo, const Surface* normal, const Surface* rough, float strength) {
-    if (albedo.empty()) return Surface();
-    const bool haveNormal = normal && !normal->empty();
-    const bool haveRough = rough && !rough->empty();
-    const auto sized = [&](const Surface& map) { return sameSize(map, albedo) ? map : resample(map, albedo.w, albedo.h); };
-    Surface out = haveNormal ? sized(*normal) : makeNormalMap(albedo, strength);
-    const Surface roughness = haveRough ? sized(*rough) : Surface();
-    for (int y = 0; y < albedo.h; ++y)
-        for (int x = 0; x < albedo.w; ++x) {
-            const uint32_t p = out.at(x, y);
-            const int gloss = haveRough ? 255 - static_cast<int>((roughness.at(x, y) >> 8) & 0xFF) : 0;  // green channel
-            out.at(x, y) = rgba(static_cast<int>((p >> 16) & 0xFF), static_cast<int>((p >> 8) & 0xFF),
-                                static_cast<int>(p & 0xFF), gloss);
-        }
-    return out;
+Surface MakeSurfaceMap(const Surface& albedo, const Surface* normal,
+                       const Surface* rough, float strength) {
+  if (albedo.Empty()) return {};
+  const bool have_normal = normal && !normal->Empty();
+  const bool have_rough = rough && !rough->Empty();
+  const auto sized = [&](const Surface& map) {
+    return SameSize(map, albedo) ? map : Resample(map, albedo.w, albedo.h);
+  };
+  Surface out = have_normal ? sized(*normal) : MakeNormalMap(albedo, strength);
+  const Surface roughness = have_rough ? sized(*rough) : Surface();
+  for (int y = 0; y < albedo.h; ++y) {
+    for (int x = 0; x < albedo.w; ++x) {
+      const uint32_t p = out.At(x, y);
+      const int gloss =
+          have_rough ? 255 - static_cast<int>((roughness.At(x, y) >> 8) & 0xFF)
+                     : 0;  // green channel
+      out.At(x, y) = Rgba(static_cast<int>((p >> 16) & 0xFF),
+                          static_cast<int>((p >> 8) & 0xFF),
+                          static_cast<int>(p & 0xFF), gloss);
+    }
+  }
+  return out;
 }
 
-Surface makeMaterialMap(const Surface& albedo, const Surface* metal, const Surface* ao) {
-    const bool haveMetal = metal && !metal->empty(), haveAo = ao && !ao->empty();
-    if (albedo.empty() || (!haveMetal && !haveAo)) return Surface();
-    const auto sized = [&](const Surface& map) { return sameSize(map, albedo) ? map : resample(map, albedo.w, albedo.h); };
-    const Surface metalMap = haveMetal ? sized(*metal) : Surface(), aoMap = haveAo ? sized(*ao) : Surface();
-    Surface out(albedo.w, albedo.h);
-    for (int y = 0; y < albedo.h; ++y)
-        for (int x = 0; x < albedo.w; ++x)
-            out.at(x, y) = rgba(haveMetal ? static_cast<int>((metalMap.at(x, y) >> 8) & 0xFF) : 0,
-                                haveAo ? static_cast<int>((aoMap.at(x, y) >> 8) & 0xFF) : 255, 255, 255);
-    return out;
+Surface MakeMaterialMap(const Surface& albedo, const Surface* metal,
+                        const Surface* ao) {
+  const bool have_metal = metal && !metal->Empty(),
+             have_ao = ao && !ao->Empty();
+  if (albedo.Empty() || (!have_metal && !have_ao)) return {};
+  const auto sized = [&](const Surface& map) {
+    return SameSize(map, albedo) ? map : Resample(map, albedo.w, albedo.h);
+  };
+  const Surface metal_map = have_metal ? sized(*metal) : Surface(),
+                ao_map = have_ao ? sized(*ao) : Surface();
+  Surface out(albedo.w, albedo.h);
+  for (int y = 0; y < albedo.h; ++y) {
+    for (int x = 0; x < albedo.w; ++x) {
+      out.At(x, y) = Rgba(
+          have_metal ? static_cast<int>((metal_map.At(x, y) >> 8) & 0xFF) : 0,
+          have_ao ? static_cast<int>((ao_map.At(x, y) >> 8) & 0xFF) : 255, 255,
+          255);
+    }
+  }
+  return out;
 }
 
 }  // namespace mythos

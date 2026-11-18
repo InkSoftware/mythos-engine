@@ -1,50 +1,74 @@
 #include "engine/ui/ui.h"
 
-#include <cmath>
-
 #include <algorithm>
+#include <cmath>
+#include <ranges>
 
 namespace mythos {
 
-void overlaySize(int windowW, int windowH, int minW, int minH, int& w, int& h) {
-    const int scale = std::max(1, std::min(windowW / minW, windowH / minH));
-    w = std::max(minW, windowW / scale);
-    h = std::max(minH, windowH / scale);
+void OverlaySize(int window_w, int window_h, int min_w, int min_h, int& w,
+                 int& h) {
+  const int scale = std::max(1, std::min(window_w / min_w, window_h / min_h));
+  w = std::max(min_w, window_w / scale);
+  h = std::max(min_h, window_h / scale);
 }
 
-int hitTest(const std::vector<Hotspot>& hotspots, float x, float y, int* value) {
-    for (auto it = hotspots.rbegin(); it != hotspots.rend(); ++it)
-        if (x >= it->x0 && x < it->x1 && y >= it->y0 && y < it->y1) {
-            if (value) *value = it->value;
-            return it->item;
-        }
-    if (value) *value = -1;
-    return -1;
+int HitTest(const std::vector<Hotspot>& hotspots, float x, float y,
+            int* value) {
+  for (const auto& hotspot : std::views::reverse(hotspots)) {
+    if (x >= hotspot.x0 && x < hotspot.x1 && y >= hotspot.y0 &&
+        y < hotspot.y1) {
+      if (value) *value = hotspot.value;
+      return hotspot.item;
+    }
+  }
+  if (value) *value = -1;
+  return -1;
 }
 
-void fillRect(Surface& s, int x0, int y0, int x1, int y1, uint32_t color) {
-    for (int y = std::max(0, y0); y < std::min(s.h, y1); ++y)
-        for (int x = std::max(0, x0); x < std::min(s.w, x1); ++x) s.at(x, y) = color;
+void FillRect(Surface& s, int x0, int y0, int x1, int y1, uint32_t color) {
+  for (int y = std::max(0, y0); y < std::min(s.h, y1); ++y) {
+    for (int x = std::max(0, x0); x < std::min(s.w, x1); ++x) {
+      s.At(x, y) = color;
+    }
+  }
 }
 
-void drawBox(Surface& s, int x0, int y0, int x1, int y1, uint32_t fill, uint32_t border) {
-    fillRect(s, x0, y0, x1, y1, fill);
-    fillRect(s, x0, y0, x1, y0 + 1, border);
-    fillRect(s, x0, y1 - 1, x1, y1, border);
-    fillRect(s, x0, y0, x0 + 1, y1, border);
-    fillRect(s, x1 - 1, y0, x1, y1, border);
+void DrawBox(Surface& s, int x0, int y0, int x1, int y1, uint32_t fill,
+             uint32_t border) {
+  FillRect(s, x0, y0, x1, y1, fill);
+  FillRect(s, x0, y0, x1, y0 + 1, border);
+  FillRect(s, x0, y1 - 1, x1, y1, border);
+  FillRect(s, x0, y0, x0 + 1, y1, border);
+  FillRect(s, x1 - 1, y0, x1, y1, border);
 }
 
-uint32_t withAlpha(uint32_t color, double factor) {
-    const auto alpha = static_cast<uint32_t>(std::clamp(((color >> 24) & 0xFF) * factor, 0.0, 255.0));
-    return (alpha << 24) | (color & 0x00FFFFFF);
+uint32_t WithAlpha(uint32_t color, double factor) {
+  const auto alpha = static_cast<uint32_t>(
+      std::clamp(((color >> 24) & 0xFF) * factor, 0.0, 255.0));
+  return (alpha << 24) | (color & 0x00FFFFFF);
 }
 
-TextEffect dropShadow(float blur) { return {0.0f, 0, 0.5f, 0.7f, blur, 0xE0000000}; }
-TextEffect glow(uint32_t color, float blur, float outline) { return {outline, 0xFF0A0404, 0.0f, 0.0f, blur, color}; }
+TextEffect DropShadow(float blur) {
+  return {.outline = 0.0f,
+          .outline_color = 0,
+          .shadow_x = 0.5f,
+          .shadow_y = 0.7f,
+          .shadow_blur = blur,
+          .shadow_color = 0xE0000000};
+}
+TextEffect Glow(uint32_t color, float blur, float outline) {
+  return {.outline = outline,
+          .outline_color = 0xFF0A0404,
+          .shadow_x = 0.0f,
+          .shadow_y = 0.0f,
+          .shadow_blur = blur,
+          .shadow_color = color};
+}
 
-TextEffect selectionGlow(double timeSec, float blur) {
-    return glow(withAlpha(0xFFB06A10, 0.55 + 0.25 * std::sin(timeSec * 4.0)), blur);
+TextEffect SelectionGlow(double time_sec, float blur) {
+  return Glow(WithAlpha(0xFFB06A10, 0.55 + 0.25 * std::sin(time_sec * 4.0)),
+              blur);
 }
 
 }  // namespace mythos

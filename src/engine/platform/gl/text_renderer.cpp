@@ -5,11 +5,43 @@
 namespace mythos {
 namespace {
 
-using namespace gl;
+using gl::ActiveTexture;
+using gl::BindBuffer;
+using gl::BindVertexArray;
+using gl::BlendFunc;
+using gl::Disable;
+using gl::DrawArrays;
+using gl::Enable;
+using gl::EnableVertexAttribArray;
+using gl::GenerateMipmap;
+using gl::GLint;
+using gl::GLsizei;
+using gl::GLuint;
+using gl::kArrayBuffer;
+using gl::kBlend;
+using gl::kClampToEdge;
+using gl::kDynamicDraw;
+using gl::kFalse;
+using gl::kFloat;
+using gl::kLinear;
+using gl::kLinearMipmapLinear;
+using gl::kOneMinusSrcAlpha;
+using gl::kR8;
+using gl::kRed;
+using gl::kSrcAlpha;
+using gl::kTexture0;
+using gl::kTexture2D;
+using gl::kTriangles;
+using gl::kUnpackAlignment;
+using gl::kUnsignedByte;
+using gl::PixelStorei;
+using gl::TexImage2D;
+using gl::VertexAttribPointer;
 
-// Text from a distance-field atlas: 0.5 is the outline of a letter. vParams.x widens the
-// letter by an outline ring (in field units), vParams.y blurs it outwards (shadows, glows).
-const char* kTextVS = R"GLSL(
+// Text from a distance-field atlas: 0.5 is the outline of a letter. vParams.x
+// widens the letter by an outline ring (in field units), vParams.y blurs it
+// outwards (shadows, glows).
+const char* k_text_vs = R"GLSL(
 #version 410 core
 in vec2 aPos;
 in vec2 aUV;
@@ -29,7 +61,7 @@ void main() {
 }
 )GLSL";
 
-const char* kTextFS = R"GLSL(
+const char* k_text_fs = R"GLSL(
 #version 410 core
 in vec2 vUV;
 in vec4 vColor;
@@ -57,137 +89,173 @@ void main() {
 }
 )GLSL";
 
-// Limits of the distance-field effects, in field units (0.5 is the full reach of the field).
+// Limits of the distance-field effects, in field units (0.5 is the full reach
+// of the field).
 constexpr float kMaxOutlineField = 0.45f, kMaxBlurField = 0.5f;
 constexpr int kVertsPerGlyph = 6;  // two triangles
 constexpr int kAttribCount = 5;
 
 // 0xAARRGGBB to four floats, r g b a.
-void unpackColor(uint32_t argb, float* rgba) {
-    rgba[0] = ((argb >> 16) & 0xFF) / 255.0f;
-    rgba[1] = ((argb >> 8) & 0xFF) / 255.0f;
-    rgba[2] = (argb & 0xFF) / 255.0f;
-    rgba[3] = ((argb >> 24) & 0xFF) / 255.0f;
+void UnpackColor(uint32_t argb, float* rgba) {
+  rgba[0] = ((argb >> 16) & 0xFF) / 255.0f;
+  rgba[1] = ((argb >> 8) & 0xFF) / 255.0f;
+  rgba[2] = (argb & 0xFF) / 255.0f;
+  rgba[3] = ((argb >> 24) & 0xFF) / 255.0f;
 }
 
 }  // namespace
 
-bool TextRenderer::init() {
-    if (!program_.build(kTextVS, kTextFS, {{0, "aPos"}, {2, "aUV"}, {3, "aColor"}, {4, "aOutline"}, {5, "aParams"}}))
-        return false;
-    vbo_.create();
-    vao_.create();
-    vao_.bind();
-    BindBuffer(ARRAY_BUFFER, vbo_.id());
-    const GLsizei stride = kFloats * sizeof(float);
-    // pos, uv, colour, outline colour, params: floats per attribute and its shader location
-    const GLuint sizes[kAttribCount] = {2, 2, 4, 4, 2}, locations[kAttribCount] = {0, 2, 3, 4, 5};
-    size_t offset = 0;
-    for (int a = 0; a < kAttribCount; ++a) {
-        EnableVertexAttribArray(locations[a]);
-        VertexAttribPointer(locations[a], static_cast<GLint>(sizes[a]), FLOAT, FALSE_, stride,
-                            reinterpret_cast<const void*>(offset * sizeof(float)));
-        offset += sizes[a];
+bool TextRenderer::Init() {
+  if (!program_.Build(k_text_vs, k_text_fs,
+                      {{0, "aPos"},
+                       {2, "aUV"},
+                       {3, "aColor"},
+                       {4, "aOutline"},
+                       {5, "aParams"}})) {
+    return false;
+  }
+  vbo_.Create();
+  vao_.Create();
+  vao_.Bind();
+  BindBuffer(kArrayBuffer, vbo_.Id());
+  const GLsizei stride = kFloats * sizeof(float);
+  // pos, uv, colour, outline colour, params: floats per attribute and its
+  // shader location
+  const GLuint sizes[kAttribCount] = {2, 2, 4, 4, 2},
+               locations[kAttribCount] = {0, 2, 3, 4, 5};
+  size_t offset = 0;
+  for (int a = 0; a < kAttribCount; ++a) {
+    EnableVertexAttribArray(locations[a]);
+    VertexAttribPointer(locations[a], static_cast<GLint>(sizes[a]), kFloat,
+                        kFalse, stride,
+                        reinterpret_cast<const void*>(offset * sizeof(float)));
+    offset += sizes[a];
+  }
+  BindVertexArray(0);
+  return true;
+}
+
+void TextRenderer::AddFont(const SdfFont& font) {
+  GlTexture tex;
+  tex.Create();
+  tex.Bind();
+  PixelStorei(kUnpackAlignment, 1);
+  TexImage2D(kTexture2D, 0, kR8, font.AtlasWidth(), font.AtlasHeight(), 0, kRed,
+             kUnsignedByte, font.Atlas().data());
+  PixelStorei(kUnpackAlignment, 4);
+  GenerateMipmap(kTexture2D);
+  tex.SetParams(kLinearMipmapLinear, kLinear, kClampToEdge);
+  fonts_.emplace_back(&font, std::move(tex));
+  built_ = false;
+}
+
+// One pass over a run (the shadow, then the letters themselves): appends two
+// triangles per glyph.
+void TextRenderer::AppendPass(const TextRun& run,
+                              const std::vector<uint32_t>& cps,
+                              const SdfFont& font, float sx, float sy, float dx,
+                              float dy, uint32_t color, uint32_t outline_color,
+                              float outline, float blur) {
+  const float k =
+      run.size /
+      SdfFont::kBakeSize;  // bake pixels -> overlay pixels (the glyph scale)
+  // Overlay pixels -> distance-field units (0.5 = the full reach of the field).
+  const float to_field = 1.0f / (k * 2.0f * SdfFont::kSdfReach);
+  const float iw = 1.0f / font.AtlasWidth(), ih = 1.0f / font.AtlasHeight();
+  float col[4], ocol[4];
+  UnpackColor(color, col);
+  UnpackColor(outline_color, ocol);
+  const float params[2] = {std::min(outline * to_field, kMaxOutlineField),
+                           std::min(blur * to_field, kMaxBlurField)};
+  float pen_x = run.x + dx;
+  const float baseline = run.y + dy + font.Ascent(run.size);
+  // Written straight into the vector: room for every glyph, trimmed to what was
+  // drawn.
+  const size_t base = verts_.size();
+  verts_.resize(base + cps.size() * kVertsPerGlyph * kFloats);
+  float* out = verts_.data() + base;
+  for (size_t i = 0; i < cps.size(); ++i) {
+    const SdfFont::Glyph& g = font.GlyphFor(cps[i]);
+    if (g.aw > 0) {
+      const float x0 = pen_x + g.x0 * k, y0 = baseline + g.y0 * k;
+      const float x1 = x0 + g.aw * k, y1 = y0 + g.ah * k;
+      const float u0 = g.ax * iw, v0 = g.ay * ih, u1 = (g.ax + g.aw) * iw,
+                  v1 = (g.ay + g.ah) * ih;
+      const float corners[kVertsPerGlyph][4] = {
+          {x0, y0, u0, v0}, {x1, y0, u1, v0}, {x1, y1, u1, v1},
+          {x0, y0, u0, v0}, {x1, y1, u1, v1}, {x0, y1, u0, v1}};
+      for (const auto& c : corners) {
+        const float v[kFloats] = {
+            c[0] * sx - 1.0f, 1.0f - c[1] * sy, c[2],      c[3],     col[0],
+            col[1],           col[2],           col[3],    ocol[0],  ocol[1],
+            ocol[2],          ocol[3],          params[0], params[1]};
+        std::copy_n(v, kFloats, out);
+        out += kFloats;
+      }
     }
-    BindVertexArray(0);
-    return true;
+    pen_x += g.advance * k;
+    if (i + 1 < cps.size()) pen_x += font.Kerning(cps[i], cps[i + 1]) * k;
+  }
+  verts_.resize(static_cast<size_t>(out - verts_.data()));
 }
 
-void TextRenderer::addFont(const SdfFont& font) {
-    GlTexture tex;
-    tex.create();
-    tex.bind();
-    PixelStorei(UNPACK_ALIGNMENT, 1);
-    TexImage2D(TEXTURE_2D, 0, R8, font.atlasWidth(), font.atlasHeight(), 0, RED, UNSIGNED_BYTE, font.atlas().data());
-    PixelStorei(UNPACK_ALIGNMENT, 4);
-    GenerateMipmap(TEXTURE_2D);
-    tex.setParams(LINEAR_MIPMAP_LINEAR, LINEAR, CLAMP_TO_EDGE);
-    fonts_.emplace_back(&font, std::move(tex));
-    built_ = false;
+void TextRenderer::AppendRun(const TextRun& run, const SdfFont& font, float sx,
+                             float sy) {
+  const TextEffect& fx = run.fx;
+  const std::vector<uint32_t> cps =
+      Utf8Codepoints(run.text);  // decoded once for both passes
+  if (fx.shadow_blur > 0.0f && (fx.shadow_color >> 24) != 0) {
+    AppendPass(run, cps, font, sx, sy, fx.shadow_x, fx.shadow_y,
+               fx.shadow_color, 0, 0.0f, fx.shadow_blur);
+  }
+  AppendPass(run, cps, font, sx, sy, 0.0f, 0.0f, run.color, fx.outline_color,
+             fx.outline, 0.0f);
 }
 
-// One pass over a run (the shadow, then the letters themselves): appends two triangles per glyph.
-void TextRenderer::appendPass(const TextRun& run, const std::vector<uint32_t>& cps, const SdfFont& font, float sx,
-                              float sy, float dx, float dy, uint32_t color, uint32_t outlineColor, float outline,
-                              float blur) {
-    const float k = run.size / SdfFont::kBakeSize;  // bake pixels -> overlay pixels (the glyph scale)
-    // Overlay pixels -> distance-field units (0.5 = the full reach of the field).
-    const float toField = 1.0f / (k * 2.0f * SdfFont::kSdfReach);
-    const float iw = 1.0f / font.atlasWidth(), ih = 1.0f / font.atlasHeight();
-    float col[4], ocol[4];
-    unpackColor(color, col);
-    unpackColor(outlineColor, ocol);
-    const float params[2] = {std::min(outline * toField, kMaxOutlineField), std::min(blur * toField, kMaxBlurField)};
-    float penX = run.x + dx;
-    const float baseline = run.y + dy + font.ascent(run.size);
-    // Written straight into the vector: room for every glyph, trimmed to what was drawn.
-    const size_t base = verts_.size();
-    verts_.resize(base + cps.size() * kVertsPerGlyph * kFloats);
-    float* out = verts_.data() + base;
-    for (size_t i = 0; i < cps.size(); ++i) {
-        const SdfFont::Glyph& g = font.glyph(cps[i]);
-        if (g.aw > 0) {
-            const float x0 = penX + g.x0 * k, y0 = baseline + g.y0 * k;
-            const float x1 = x0 + g.aw * k, y1 = y0 + g.ah * k;
-            const float u0 = g.ax * iw, v0 = g.ay * ih, u1 = (g.ax + g.aw) * iw, v1 = (g.ay + g.ah) * ih;
-            const float corners[kVertsPerGlyph][4] = {{x0, y0, u0, v0}, {x1, y0, u1, v0}, {x1, y1, u1, v1},
-                                         {x0, y0, u0, v0}, {x1, y1, u1, v1}, {x0, y1, u0, v1}};
-            for (const auto& c : corners) {
-                const float v[kFloats] = {c[0] * sx - 1.0f, 1.0f - c[1] * sy, c[2], c[3],
-                                          col[0], col[1], col[2], col[3],
-                                          ocol[0], ocol[1], ocol[2], ocol[3], params[0], params[1]};
-                std::copy(v, v + kFloats, out);
-                out += kFloats;
-            }
-        }
-        penX += g.advance * k;
-        if (i + 1 < cps.size()) penX += font.kerning(cps[i], cps[i + 1]) * k;
+// Lays out every run (grouped by font, so each font is one draw) into verts_
+// and uploads it.
+void TextRenderer::RebuildVertices(const TextLayer& text, int overlay_w,
+                                   int overlay_h) {
+  const float sx = 2.0f / overlay_w,
+              sy = 2.0f / overlay_h;  // overlay pixels -> clip space
+  verts_.clear();
+  ranges_.assign(fonts_.size(), FontRange{});
+  for (size_t font_index = 0; font_index < fonts_.size(); ++font_index) {
+    const SdfFont* font = fonts_[font_index].first;
+    const size_t before = verts_.size();
+    for (const TextRun& run : text.runs) {
+      if (run.font == font && !run.text.empty()) AppendRun(run, *font, sx, sy);
     }
-    verts_.resize(static_cast<size_t>(out - verts_.data()));
+    ranges_[font_index] = {
+        .first = static_cast<int>(before / kFloats),
+        .count = static_cast<int>((verts_.size() - before) / kFloats)};
+  }
+  vbo_.Upload(verts_.data(), verts_.size() * sizeof(float), kDynamicDraw);
+  built_runs_ = text.runs;
+  built_w_ = overlay_w;
+  built_h_ = overlay_h;
+  built_ = true;
 }
 
-void TextRenderer::appendRun(const TextRun& run, const SdfFont& font, float sx, float sy) {
-    const TextEffect& fx = run.fx;
-    const std::vector<uint32_t> cps = utf8Codepoints(run.text);  // decoded once for both passes
-    if (fx.shadowBlur > 0.0f && (fx.shadowColor >> 24) != 0)
-        appendPass(run, cps, font, sx, sy, fx.shadowX, fx.shadowY, fx.shadowColor, 0, 0.0f, fx.shadowBlur);
-    appendPass(run, cps, font, sx, sy, 0.0f, 0.0f, run.color, fx.outlineColor, fx.outline, 0.0f);
-}
-
-// Lays out every run (grouped by font, so each font is one draw) into verts_ and uploads it.
-void TextRenderer::rebuildVertices(const TextLayer& text, int overlayW, int overlayH) {
-    const float sx = 2.0f / overlayW, sy = 2.0f / overlayH;  // overlay pixels -> clip space
-    verts_.clear();
-    ranges_.assign(fonts_.size(), FontRange{});
-    for (size_t fontIndex = 0; fontIndex < fonts_.size(); ++fontIndex) {
-        const SdfFont* font = fonts_[fontIndex].first;
-        const size_t before = verts_.size();
-        for (const TextRun& run : text.runs)
-            if (run.font == font && !run.text.empty()) appendRun(run, *font, sx, sy);
-        ranges_[fontIndex] = {static_cast<int>(before / kFloats), static_cast<int>((verts_.size() - before) / kFloats)};
-    }
-    vbo_.upload(verts_.data(), verts_.size() * sizeof(float), DYNAMIC_DRAW);
-    builtRuns_ = text.runs;
-    builtW_ = overlayW;
-    builtH_ = overlayH;
-    built_ = true;
-}
-
-void TextRenderer::draw(const TextLayer& text, int overlayW, int overlayH) {
-    if (!program_.valid() || text.runs.empty()) return;
-    program_.use();
-    program_.set("uAtlas", 0);
-    ActiveTexture(TEXTURE0);
-    vao_.bind();
-    if (!built_ || overlayW != builtW_ || overlayH != builtH_ || text.runs != builtRuns_) rebuildVertices(text, overlayW, overlayH);
-    Enable(BLEND);
-    BlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA);
-    for (size_t fontIndex = 0; fontIndex < fonts_.size(); ++fontIndex) {
-        if (ranges_[fontIndex].count == 0) continue;
-        fonts_[fontIndex].second.bind();
-        DrawArrays(TRIANGLES, ranges_[fontIndex].first, ranges_[fontIndex].count);
-    }
-    Disable(BLEND);
+void TextRenderer::Draw(const TextLayer& text, int overlay_w, int overlay_h) {
+  if (!program_.Valid() || text.runs.empty()) return;
+  program_.Use();
+  program_.Set("uAtlas", 0);
+  ActiveTexture(kTexture0);
+  vao_.Bind();
+  if (!built_ || overlay_w != built_w_ || overlay_h != built_h_ ||
+      text.runs != built_runs_) {
+    RebuildVertices(text, overlay_w, overlay_h);
+  }
+  Enable(kBlend);
+  BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
+  for (size_t font_index = 0; font_index < fonts_.size(); ++font_index) {
+    if (ranges_[font_index].count == 0) continue;
+    fonts_[font_index].second.Bind();
+    DrawArrays(kTriangles, ranges_[font_index].first,
+               ranges_[font_index].count);
+  }
+  Disable(kBlend);
 }
 
 }  // namespace mythos

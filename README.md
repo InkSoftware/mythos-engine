@@ -16,7 +16,7 @@ listen to and pick up, menus, and a bit of procedural art.
 | Target | Needs | Holds |
 | --- | --- | --- |
 | `mythos::engine` | the standard library, `third_party/stb`, nlohmann/json, GLM | levels, tiles, movement, the player, the body and the light in its hand, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
-| `mythos::engine_platform` | `mythos::engine`, SDL3 | window (vsync, fullscreen), the GL 4.1 renderer (RAII GL wrappers, shadow cube maps, multisampled scene target, composite pass, SDF text), the audio mixer, keyboard and mouse input, user files, frame clock and frame pacer, menu pointer, `applySettings` |
+| `mythos::engine_platform` | `mythos::engine`, SDL3 | window (vsync, fullscreen), the GL 4.1 renderer (RAII GL wrappers, shadow cube maps, multisampled scene target, composite pass, SDF text), the audio mixer, keyboard and mouse input, user files, frame clock and frame pacer, menu pointer, `ApplySettings` |
 | `mythos::sdl_main` | SDL3 | link into an executable so SDL is linked; include `<SDL3/SDL_main.h>` in the file defining `main` |
 | `mythos_pack` | `mythos::engine` | a tool that packs a game's assets folder into one file for the virtual file system (see Tools) |
 | `mythos_engine_tests` | `mythos::engine` | the unit tests (no SDL, no display) |
@@ -78,19 +78,19 @@ The engine gives mechanisms; a game gives meaning.
 - **Rules**: a class like `Game` that owns a `Level`, a `Player`, a `PlayerWalker`, `RoomDoors`, an
   `Interactor` and a `Progress`-derived state, and turns `Use` outcomes into text, sounds and plot.
 - **Data**: levels (`[map]` + `[furniture]`, and `[decor]` for pieces that block nothing), a tile legend, props, sounds, translations.
-  The engine reads the shared formats for you: `loadSoundBank`, `loadTranslation`, `loadAchievementDefs`,
-  `loadCredits`, `loadPlayerParams`, `loadFontFiles`, `parseTileSet`.
-- **Settings**: `GameSettings` with its pages (`updateSettingsPage`), `drawSettingsPage` (give it a `MenuTheme`),
-  and `platform/apply_settings.h` (`loadSettings`, `saveSettings`, `applySettings`). Their English and Greek
+  The engine reads the shared formats for you: `LoadSoundBank`, `LoadTranslation`, `LoadAchievementDefs`,
+  `LoadCredits`, `LoadPlayerParams`, `LoadFontFiles`, `ParseTileSet`.
+- **Settings**: `GameSettings` with its pages (`UpdateSettingsPage`), `DrawSettingsPage` (give it a `MenuTheme`),
+  and `platform/apply_settings.h` (`LoadSettings`, `SaveSettings`, `ApplySettings`). Their English and Greek
   strings are built in (`engine_strings.cpp`); the game's own tables override any of them.
 - **Assets**: `assets/` holds fonts, common sounds (steps, doors, torch, battery, tick, static, wind) and eight
   common textures. A game merges it under its own assets (the game's file of the same name wins);
   `MYTHOS_ENGINE_ASSET_DIR` names the folder for CMake.
-- **Art**: `addCommonMaterials()` first, then its own textures (PNG, BMP, TGA or JPG files named after the texture
+- **Art**: `AddCommonMaterials()` first, then its own textures (PNG, BMP, TGA or JPG files named after the texture
   override the built-in ones); models as OBJ (`tools/mythos_assets.py`
   builds them and the level files from Python).
-- **A front end**: build the camera and lights each frame (`CameraState`, then `applySettings(settings, camera)`),
-  poll input with `pollInput`, play cues with `playCue`, upload geometry to `SceneRenderer` (and models for things that move, with `uploadModel`; `CameraState::instances` and `CameraState::mirror` draw them and one wall mirror).
+- **A front end**: build the camera and lights each frame (`CameraState`, then `ApplySettings(settings, camera)`),
+  poll input with `PollInput`, play cues with `PlayCue`, upload geometry to `SceneRenderer` (and models for things that move, with `UploadModel`; `CameraState::instances` and `CameraState::mirror` draw them and one wall mirror).
 
 ## Models and textures
 
@@ -147,11 +147,11 @@ generator should skip a name that `assets/models/` already has), and the figure 
 the shoulder / elbow, point along +z), plus `flame` (a lighter's flame, material `glow_flame`). They use the common textures
 `cloth`, `skin`, `paper`, `ink`, `wood`, `metal`, `enamel`, `pine` and `flame` (`gfx/materials.h`).
 
-**Using them.** `world/body.h` poses the figure (`poseBody`) and holds the light (`torch`, or `lighter` with its `flame`);
-`platform/gl/body_instances.h` uploads those models (`uploadBodyModels`) and turns a pose into the frame's model
-instances (`addBodyInstances`); `CameraState::mirror` shows the figure in a wall mirror (`world/mirror.h` places it from
-a prop: `placeMirror`, then `setMirror`). `HandSway` and `BodyMotion` (`world/body.h`) give the hand's lag and sway and the
-chest's turn frame by frame, from `HandSwayParams` (`loadHandSwayParams`). The torch and lighter orientation
+**Using them.** `world/body.h` poses the figure (`PoseBody`) and holds the light (`torch`, or `lighter` with its `flame`);
+`platform/gl/body_instances.h` uploads those models (`UploadBodyModels`) and turns a pose into the frame's model
+instances (`AddBodyInstances`); `CameraState::mirror` shows the figure in a wall mirror (`world/mirror.h` places it from
+a prop: `PlaceMirror`, then `SetMirror`). `HandSway` and `BodyMotion` (`world/body.h`) give the hand's lag and sway and the
+chest's turn frame by frame, from `HandSwayParams` (`LoadHandSwayParams`). The torch and lighter orientation
 is baked into their OBJ (the lighter stands with its wide face towards +x and its lid hinged to one side): the `HeldParams`
 defaults match.
 
@@ -172,7 +172,7 @@ defaults match.
 - One map cell is one world unit; world x is the column and z is the row; model fronts face `+z`.
   Yaw 0 is south (+z), 90 is east.
 - Room doors are the glyphs `N` (closed, solid) and `n` (open); the legend must define both as doors.
-- All player-facing text goes through `tr("dotted.key")` with tables registered by the game.
+- All player-facing text goes through `Tr("dotted.key")` with tables registered by the game.
 - Every transition is seamless; the engine has no fail state of its own.
 
 ## Build and test

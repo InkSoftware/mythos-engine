@@ -1,0 +1,14 @@
+# Google C++ style (https://google.github.io/styleguide/cppguide.html).
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++20
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<.*\.h>$'      # C system headers (and <SDL3/SDL.h>)
+    Priority: 1
+  - Regex: '^<[^.]*>$'      # C++ standard library
+    Priority: 2
+  - Regex: '^<.*(/|\.hpp).*>$'  # other libraries (glm, nlohmann)
+    Priority: 3
+  - Regex: '^".*"$'         # this project
+    Priority: 4

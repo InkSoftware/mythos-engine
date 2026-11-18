@@ -3,8 +3,8 @@
 namespace mythos {
 namespace {
 
-// Strings of the engine's own screens (the settings page), so a game gets them without
-// writing them. A game's own table wins for any key it defines too.
+// Strings of the engine's own screens (the settings page), so a game gets them
+// without writing them. A game's own table wins for any key it defines too.
 const TranslationTable kEnglish = {
     {"settings.title", "SETTINGS"},
     {"settings.graphics", "GRAPHICS"},
@@ -81,6 +81,8 @@ const TranslationTable kGreek = {
 
 }  // namespace
 
-const TranslationTable& engineStrings(Lang l) { return l == Lang::Greek ? kGreek : kEnglish; }
+const TranslationTable& EngineStrings(Lang l) {
+  return l == Lang::kGreek ? kGreek : kEnglish;
+}
 
 }  // namespace mythos
