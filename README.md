@@ -60,8 +60,12 @@ Options: `MYTHOS_BUILD_PLATFORM` (SDL layer, default ON), `MYTHOS_BUILD_TESTS` (
 3.2.28), `MYTHOS_PORTABLE` (link SDL statically, always fetched, so the app runs without SDL installed),
 `MYTHOS_LTO` (link-time optimization for Release, on by default). MSVC builds use `/utf-8`, which games inherit.
 
-Targets Ubuntu 22.04+ (GCC 11+), macOS and Windows 10+ (MSVC 2022), with CMake 3.22+, hence C++20. CI builds and tests
-all three, each with `MYTHOS_PORTABLE` on and off (`.github/workflows/ci.yml`). SDL3 is fetched and built from source when no
+Targets the releases each vendor still supports: Ubuntu 22.04+ (GCC 11+), macOS 15+ and Windows 11 (MSVC 2022), with
+CMake 3.22+, hence C++20. On macOS `CMAKE_OSX_DEPLOYMENT_TARGET` defaults to 15.0 when the engine is the top-level project
+(a game sets its own before its `project()`), and `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` builds a universal binary (needs
+`MYTHOS_PORTABLE`, since an installed SDL such as Homebrew's is usually arm64 only). Windows 10 is out of support, but nothing
+in the code needs 11. CI builds and tests the oldest supported release of each OS (a binary built there runs on newer ones),
+each with `MYTHOS_PORTABLE` on and off, plus the x86_64 slice under Rosetta (`.github/workflows/ci.yml`). SDL3 is fetched and built from source when no
 installed copy is found.
 
 Dependencies: SDL3 (3.2.28), [nlohmann/json](https://github.com/nlohmann/json) 3.12.0 and [GLM](https://github.com/g-truc/glm)

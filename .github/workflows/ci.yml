@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-26, windows-2022]
+        os: [ubuntu-22.04, macos-15, windows-2022]
         portable: ["ON", "OFF"]
     steps:
       - uses: actions/checkout@v7
@@ -34,11 +34,25 @@ jobs:
         if: runner.os == 'macOS' && matrix.portable == 'OFF'
         run: brew install sdl3
 
+      # macOS: the portable build is universal (arm64 + x86_64), built on the oldest supported macOS, since a
+      # deployment target of 15 also runs on newer releases. The non-portable build uses Homebrew's SDL, which
+      # is arm64 only, so it stays native.
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMYTHOS_BUILD_TESTS=ON -DMYTHOS_PORTABLE=${{ matrix.portable }}
+        run: |
+          ARCHS=""
+          if [ "$RUNNER_OS" = "macOS" ] && [ "${{ matrix.portable }}" = "ON" ]; then ARCHS="arm64;x86_64"; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMYTHOS_BUILD_TESTS=ON \
+            -DMYTHOS_PORTABLE=${{ matrix.portable }} ${ARCHS:+-DCMAKE_OSX_ARCHITECTURES="$ARCHS"}
+        shell: bash
 
       - name: Build
         run: cmake --build build --config Release --parallel
 
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
+
+      - name: Test the x86_64 slice under Rosetta (macOS, portable)
+        if: runner.os == 'macOS' && matrix.portable == 'ON'
+        run: |
+          softwareupdate --install-rosetta --agree-to-license || true
+          arch -x86_64 ./build/mythos_engine_tests

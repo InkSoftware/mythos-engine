@@ -17,7 +17,8 @@ cmake -S . -B build -DMYTHOS_BUILD_PLATFORM=OFF  # headless: no SDL, no display 
 ```
 
 - `mythos_pack` (the asset packer, `tools/pack/`) is built with everything else; `mythos_engine_tests` only with `MYTHOS_BUILD_TESTS`.
-- CI (`.github/workflows/ci.yml`) builds and runs the tests on ubuntu-22.04, macos-26 and windows-2022, each with `MYTHOS_PORTABLE` ON and OFF; Dependabot keeps the actions current (weekly).
+- CI (`.github/workflows/ci.yml`) builds and runs the tests on ubuntu-22.04, macos-15 and windows-2022, each with `MYTHOS_PORTABLE` ON and OFF. Each is the oldest supported release of its OS (a binary built there also runs on newer ones); on macOS the portable job is universal (`arm64;x86_64`) and also runs the tests for the x86_64 slice under Rosetta, while the non-portable job stays native (Homebrew's SDL is arm64 only). Dependabot keeps the actions current (weekly).
+- Support floor: Ubuntu 22.04, macOS 15 (`CMAKE_OSX_DEPLOYMENT_TARGET` defaults to 15.0 in `CMakeLists.txt` when the engine is top level), Windows 11. Raise them as vendors drop releases (Ubuntu 22.04 standard support ends about April 2027).
 - Defaults to Release when top level. There is no linter; warnings (`-Wall -Wextra -Wpedantic`, `/W4`) must stay clean. `stb_truetype_impl.cpp` and `stb_image_impl.cpp` have warnings suppressed on purpose.
 - Code follows the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html). `.clang-format` (`BasedOnStyle: Google`, 80 columns, 2 spaces, includes regrouped) is the formatter: run `clang-format -i --style=file` on every `*.cpp` / `*.h` you touch (not `third_party/`). `.editorconfig` pins LF and a final newline (Python tooling keeps 4 spaces).
 - Options: `MYTHOS_BUILD_PLATFORM`, `MYTHOS_BUILD_TESTS`, `MYTHOS_FETCH_SDL`, `MYTHOS_PORTABLE`, `MYTHOS_LTO`, `MYTHOS_SDL_VERSION`.
