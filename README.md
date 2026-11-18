@@ -15,7 +15,7 @@ listen to and pick up, menus, and a bit of procedural art.
 
 | Target | Needs | Holds |
 | --- | --- | --- |
-| `mythos::engine` | the standard library, `third_party/stb`, nlohmann/json, GLM | levels, tiles, movement, the player, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
+| `mythos::engine` | the standard library, `third_party/stb`, nlohmann/json, GLM | levels, tiles, movement, the player, the body and the light in its hand, room doors, props and verbs, `Progress`, meshes, OBJ models, textures and common materials, SDF fonts and text layout, the overlay toolkit, menus and the settings pages, i18n and the built-in strings, JSON, achievements, credits, the sound bank, the virtual file system, matrices and the view frustum, audio and light arithmetic |
 | `mythos::engine_platform` | `mythos::engine`, SDL3 | window (vsync, fullscreen), the GL 4.1 renderer (RAII GL wrappers, shadow cube maps, multisampled scene target, composite pass, SDF text), the audio mixer, keyboard and mouse input, user files, frame clock and frame pacer, menu pointer, `applySettings` |
 | `mythos::sdl_main` | SDL3 | link into an executable so SDL is linked; include `<SDL3/SDL_main.h>` in the file defining `main` |
 | `mythos_pack` | `mythos::engine` | a tool that packs a game's assets folder into one file for the virtual file system (see Tools) |
@@ -28,14 +28,14 @@ headless.
 
 ```
 src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
-assets/       fonts, common sounds and textures that games share
-tools/        mythos_assets.py, map_editor.html, pack/ (mythos_pack)
+assets/       fonts, common sounds and textures, and the basic house and office models, that games share
+tools/        mythos_assets.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, map_editor.html, pack/ (mythos_pack)
 tests/        test_main.cpp
 third_party/  stb_truetype, stb_image
 ```
 
 The sources are in folders by kind: `core/` (math, matrices, JSON, files, packed assets), `world/` (levels, tiles,
-movement, the player, doors, props), `audio/` (sound arithmetic, the sound bank), `data/` (achievements, credits,
+movement, the player, doors, props, the body), `audio/` (sound arithmetic, the sound bank), `data/` (achievements, credits,
 translations), `gfx/` (surfaces, textures and their derived normal maps (or authored `_nrm` / `_rough` companions, light PBR), meshes, models, fonts and text, light arithmetic), `ui/` (overlay, menus,
 settings) and `platform/` (window, input, mixer; `platform/gl/` is the renderer). A folder depends only on the ones
 before it in that list (`gfx/` also on `world/`), apart from `platform/`, which uses them all.
@@ -92,11 +92,72 @@ The engine gives mechanisms; a game gives meaning.
 - **A front end**: build the camera and lights each frame (`CameraState`, then `applySettings(settings, camera)`),
   poll input with `pollInput`, play cues with `playCue`, upload geometry to `SceneRenderer` (and models for things that move, with `uploadModel`; `CameraState::instances` and `CameraState::mirror` draw them and one wall mirror).
 
+## Models and textures
+
+**Shipped in `assets/` (Poly Haven, CC0).** The basic models of houses and offices: furniture, household things,
+picture frames, a torch and a lighter. They are OBJ files in `assets/models/`; each material is a texture named
+`m_<model>_<n>` in `assets/modeltex/` (a game registers every BMP in that folder as a texture), with the optional
+`_nrm`, `_rough`, `_metal` and `_ao` companions the Materials setting reads (`gfx/pbr.h`). Metric (a world unit is a metre),
+feet on the floor and centred on the origin, front facing +z. They are baked by `tools/fetch_cc0_models.py` (the list) through
+`tools/mythos_models.py` (the conversion; a game's own fetch tool reuses it, with its own list and root). A game's
+assets are laid over these, so a model or texture of the same name replaces the engine's. Sources, authors and licences are
+in `CREDITS.md`; `assets/data/model_credits.json` is the same list for a game's credits page. Colour maps are 256 or 512 px.
+The picture frames show the `painting` texture (a "NO ART YET" placeholder: a game supplies its own). Their glass
+and any other see-through material are left out, since the renderer does not blend.
+
+| Model | Size w x h x d (m) | Triangles | Textures | PBR maps | What it is |
+| --- | --- | --- | --- | --- | --- |
+| `barrel` | 0.74 x 0.87 x 0.76 | 10820 | 1 baked | metal, nrm, rough | wine barrels |
+| `bed` | 0.90 x 1.20 x 2.00 | 49990 | 1 baked | metal, nrm, rough | beds |
+| `bookshelf` | 1.10 x 1.65 x 0.47 | 10106 | 1 baked | metal, nrm, rough | bookshelves |
+| `boombox` | 0.58 x 0.38 x 0.15 | 10168 | 2 baked | metal, nrm, rough | a boombox |
+| `bowl` | 0.31 x 0.09 x 0.31 | 14122 | 1 baked | nrm, rough | wooden bowls |
+| `broom` | 0.49 x 1.45 x 0.11 | 14258 | 2 baked | metal, nrm, rough | brooms |
+| `bucket` | 0.37 x 0.55 x 0.34 | 5116 | 1 baked | metal, nrm, rough | buckets |
+| `cardbox` | 0.39 x 0.34 x 0.52 | 16952 | 1 baked | nrm, rough | cardboard boxes |
+| `cassette` | 0.13 x 0.24 x 0.05 | 4830 | 3 baked | metal, nrm, rough | a cassette player |
+| `chair` | 0.43 x 0.97 x 0.58 | 22013 | 1 baked | metal, nrm, rough | chairs |
+| `cuttingboard` | 0.45 x 0.04 x 0.25 | 3520 | 1 baked | nrm, rough | kitchen counters |
+| `dustpan` | 0.33 x 0.10 x 0.37 | 4332 | 1 baked | metal, nrm, rough | a dustpan |
+| `frame_fancy` | 0.60 x 0.46 x 0.02 | 938 | 2 baked | nrm, rough | pictures on the walls |
+| `frame_stand` | 0.20 x 0.25 x 0.10 | 1632 | 1 baked + `painting` | metal, nrm, rough | photographs on the tables |
+| `frame_tall` | 0.59 x 0.84 x 0.02 | 2584 | 1 baked + `painting` | metal, nrm, rough | pictures on the walls |
+| `frame_wide` | 0.75 x 0.50 x 0.03 | 3676 | 1 baked + `painting` | metal, nrm, rough | pictures on the walls |
+| `gamepad` | 0.18 x 0.01 x 0.20 | 9546 | 1 baked | metal, nrm, rough | a game controller |
+| `jug` | 0.28 x 0.21 x 0.17 | 5770 | 1 baked | metal, nrm, rough | jugs |
+| `kettle` | 0.32 x 0.30 x 0.25 | 14838 | 2 baked | metal, nrm, rough | kettles |
+| `laptop` | 0.39 x 0.33 x 0.29 | 14450 | 2 baked | metal, nrm, rough | a laptop |
+| `lighter` | 0.01 x 0.06 x 0.05 | 3366 | 2 baked | metal, nrm, rough | a lighter |
+| `nightstand` | 0.50 x 0.62 x 0.51 | 470 | 1 baked | nrm, rough | bedside tables |
+| `oven` | 0.50 x 0.86 x 0.65 | 13914 | 2 baked | metal, nrm, rough | ovens |
+| `pot` | 0.26 x 0.18 x 0.18 | 11416 | 1 baked | metal, nrm, rough | cooking pots |
+| `sofa` | 0.85 x 1.07 x 0.77 | 5626 | 1 baked | nrm, rough | armchairs and sofas |
+| `table` | 0.83 x 0.78 x 0.83 | 4254 | 1 baked | metal, nrm, rough | tables |
+| `toolbox` | 0.40 x 0.30 x 0.27 | 14228 | 1 baked | metal, nrm, rough | toolboxes |
+| `torch` | 0.10 x 0.06 x 0.23 | 13252 | 2 baked | metal, nrm, rough | a torch |
+| `trashbag` | 0.53 x 0.57 x 0.46 | 4482 | 1 baked | nrm, rough | rubbish |
+| `vase` | 0.20 x 0.40 x 0.20 | 10296 | 1 baked | nrm, rough | vases |
+| `wardrobe` | 1.14 x 1.88 x 0.49 | 26406 | 1 baked | metal, nrm, rough | wardrobes and chests of drawers |
+
+**Procedural, written by the game's generator.** `tools/mythos_assets.py` builds these from boxes when a game runs
+`write_models` (the game then ships the OBJ): `GENERIC_MODELS` = `bed`, `toilet`, `shower`, `fridge`, `washer`, `sofa`,
+`table`, `chair`, `bookshelf`, `wardrobe`, `sink`, `pine` (the fallback for names the engine does not ship as scans; a game's
+generator should skip a name that `assets/models/` already has), and the figure the body code poses: `body_torso`,
+`body_head` (origin at the neck pivot), `body_leg` (origin at the hip, hangs down), `body_arm` and `body_forearm` (origin at
+the shoulder / elbow, point along +z), plus `flame` (a lighter's flame, material `glow_flame`). They use the common textures
+`cloth`, `skin`, `paper`, `ink`, `wood`, `metal`, `enamel`, `pine` and `flame` (`gfx/materials.h`).
+
+**Using them.** `world/body.h` poses the figure (`poseBody`) and holds the light (`torch`, or `lighter` with its `flame`);
+`platform/gl/body_instances.h` uploads those models (`uploadBodyModels`) and turns a pose into the frame's model
+instances (`addBodyInstances`); `CameraState::mirror` shows the figure in a wall mirror. The torch and lighter orientation
+is baked into their OBJ (the lighter stands with its wide face towards +x and its lid hinged to one side): the `HeldParams`
+defaults match.
+
 ## Tools
 
 - **`tools/mythos_assets.py`**: a Python library for a game's own asset generator. `Mesh` (boxes and quads by material,
   written as OBJ), `Grid` and `write_level` (draw rooms on a character map, write a level file), `GENERIC_MODELS`
-  (bed, toilet, shower, fridge, washer, sofa, table, chair, bookshelf, wardrobe, sink, pine) and `write_models`
+  (bed, toilet, shower, fridge, washer, sofa, table, chair, bookshelf, wardrobe, sink, pine; and the figure `body_*`, `flame`) and `write_models`
   (write a set of model builders as OBJ files).
 - **`tools/map_editor.html`**: a level editor that runs in the browser (Chrome or Edge). Open it, pick a game's
   repository root (the one with `assets/levels` and `assets/data/tiles.json`), edit a level and save.
