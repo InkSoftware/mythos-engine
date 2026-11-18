@@ -149,7 +149,9 @@ the shoulder / elbow, point along +z), plus `flame` (a lighter's flame, material
 
 **Using them.** `world/body.h` poses the figure (`poseBody`) and holds the light (`torch`, or `lighter` with its `flame`);
 `platform/gl/body_instances.h` uploads those models (`uploadBodyModels`) and turns a pose into the frame's model
-instances (`addBodyInstances`); `CameraState::mirror` shows the figure in a wall mirror. The torch and lighter orientation
+instances (`addBodyInstances`); `CameraState::mirror` shows the figure in a wall mirror (`world/mirror.h` places it from
+a prop: `placeMirror`, then `setMirror`). `HandSway` and `BodyMotion` (`world/body.h`) give the hand's lag and sway and the
+chest's turn frame by frame, from `HandSwayParams` (`loadHandSwayParams`). The torch and lighter orientation
 is baked into their OBJ (the lighter stands with its wide face towards +x and its lid hinged to one side): the `HeldParams`
 defaults match.
 

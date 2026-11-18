@@ -24,6 +24,7 @@
 #include "engine/core/json.h"
 #include "engine/core/json_reader.h"
 #include "engine/world/body.h"
+#include "engine/world/mirror.h"
 #include "engine/world/level.h"
 #include "engine/core/vfs.h"
 #include "engine/core/mat4.h"
@@ -236,6 +237,57 @@ TEST(body_params_load_and_reject_nonsense) {
     json::Reader r2(v, "t");
     HeldParams h;
     CHECK(!loadHeldParams(r2, "held", h));  // no \"held\" object: every key is required
+}
+
+TEST(the_hand_lags_a_turn_settles_and_sways_at_a_walk) {
+    const HandSwayParams p;
+    HandSway sway;
+    HandPose still;
+    for (int i = 0; i < 120; ++i) still = sway.update(1.0 / 60, i / 60.0, 5, 5, 0.3, 0.0, p);
+    CHECK(still.walk < 0.01);
+    CHECK(std::abs(still.yaw) < 0.05);
+    const HandPose turned = sway.update(1.0 / 60, 2.0, 5, 5, 0.6, 0.0, p);  // a sudden turn left the beam behind
+    CHECK(turned.yaw < -0.05);
+    HandSway walker;
+    HandPose w;
+    for (int i = 0; i < 180; ++i) w = walker.update(1.0 / 60, i / 60.0, 5 + i * 0.05, 5, 0, 0, p);  // 3 m/s
+    CHECK(w.walk > 0.9);
+    CHECK(w.stride > 1.0);
+    HandSway jumped;  // a long frame restarts from the pose rather than reading a huge turn and speed
+    jumped.update(1.0 / 60, 0, 0, 0, 0, 0, p);
+    const HandPose j = jumped.update(1.0, 1.0, 50, 50, 2.0, 0, p);
+    CHECK(std::abs(j.yaw) < 0.2 && j.walk < 0.01);
+}
+
+TEST(the_chest_starts_facing_the_view_and_the_arm_rises_and_falls) {
+    const BodyParams bt;
+    BodyMotion m;
+    m.update(0.016, 1.2, false, false, bt);
+    CHECK(std::abs(m.yaw() - 1.2) < 1e-9);
+    for (int i = 0; i < 60; ++i) m.update(0.016, 1.2, false, true, bt);
+    CHECK(m.raise() > 0.95);
+    for (int i = 0; i < 60; ++i) m.update(0.016, 1.2, false, false, bt);
+    CHECK(m.raise() < 0.05);
+}
+
+TEST(a_mirror_shows_only_in_range_and_in_sight) {
+    MirrorParams m;
+    m.range = 5;
+    Prop mirror;
+    mirror.model = "mirror";
+    mirror.at = {2.5, 1.0};
+    mirror.yawDeg = 0;  // faces south (+z)
+    mirror.lift = 1.0;
+    Level level;
+    std::string err;
+    CHECK(level.parse({"#####", "#...#", "#...#", "#...#", "#####"}, &err));
+    const MirrorPlacement near = placeMirror(m, mirror, 2.5, 3.0, level);
+    CHECK(near.on);
+    CHECK(std::abs(near.nz - 1.0) < 1e-9 && std::abs(near.nx) < 1e-9);
+    CHECK(std::abs(near.y - (1.0 + m.glassHeight)) < 1e-9);
+    CHECK(!placeMirror(m, mirror, 2.5, 30.0, level).on);  // out of range
+    mirror.model.clear();
+    CHECK(!placeMirror(m, mirror, 2.5, 3.0, level).on);   // nothing hangs there
 }
 
 TEST(font_measures_and_wraps_text) {

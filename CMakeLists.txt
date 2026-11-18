@@ -59,6 +59,7 @@ add_library(mythos_engine STATIC
     src/engine/ui/ui.cpp
     src/engine/world/interact.cpp
     src/engine/world/level.cpp
+    src/engine/world/mirror.cpp
     src/engine/world/movement.cpp
     src/engine/world/body.cpp
     src/engine/world/player.cpp

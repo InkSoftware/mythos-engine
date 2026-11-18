@@ -170,6 +170,78 @@ bool loadBodyParams(json::Reader& r, const std::string& path, BodyParams& t) {
     return r.ok();
 }
 
+bool loadHandSwayParams(json::Reader& r, const std::string& path, HandSwayParams& t) {
+    const struct {
+        const char* key;
+        double* out;
+    } fields[] = {{"springK", &t.springK},     {"springDamp", &t.springDamp}, {"turnLag", &t.turnLag},
+                  {"yawLimit", &t.yawLimit},   {"pitchLimit", &t.pitchLimit}, {"walkSpeed", &t.walkSpeed},
+                  {"walkEase", &t.walkEase},   {"strideRate", &t.strideRate}, {"walkYaw", &t.walkYaw},
+                  {"walkPitch", &t.walkPitch}, {"walkSide", &t.walkSide},     {"walkDown", &t.walkDown},
+                  {"idleYaw", &t.idleYaw},     {"idleBreath", &t.idleBreath}, {"idleDrift", &t.idleDrift},
+                  {"idleSide", &t.idleSide},   {"idleDown", &t.idleDown},     {"tremorStill", &t.tremorStill},
+                  {"tremorWalk", &t.tremorWalk}, {"bob", &t.bob}};
+    for (const auto& f : fields) *f.out = r.number(path + "." + f.key);
+    if (r.ok() && (t.springK <= 0 || t.springDamp < 0 || t.walkSpeed <= 0 || t.yawLimit < 0 || t.pitchLimit < 0))
+        r.fail(path + ".springK and walkSpeed must be positive; springDamp and the limits not negative");
+    return r.ok();
+}
+
+HandPose HandSway::update(double dt, double time, double x, double z, double viewYaw, double viewPitch,
+                          const HandSwayParams& p) {
+    const double h = std::max(dt, 1e-4);
+    if (!primed_ || dt > 0.25) {
+        lastYaw_ = viewYaw;
+        lastPitch_ = viewPitch;
+        lastX_ = x;
+        lastZ_ = z;
+        primed_ = true;
+    }
+    const double turnYaw = wrapPi(viewYaw - lastYaw_), turnPitch = viewPitch - lastPitch_;
+    const double speed = std::hypot(x - lastX_, z - lastZ_) / h;
+    lastYaw_ = viewYaw;
+    lastPitch_ = viewPitch;
+    lastX_ = x;
+    lastZ_ = z;
+    // Spring-damper: turning the view pulls the beam the other way, then it catches up.
+    yawV_ += (-p.springK * yaw_ - p.springDamp * yawV_) * h;
+    yaw_ -= turnYaw * p.turnLag;
+    pitchV_ += (-p.springK * pitch_ - p.springDamp * pitchV_) * h;
+    pitch_ -= turnPitch * p.turnLag;
+    yaw_ = std::clamp(yaw_ + yawV_ * h, -p.yawLimit, p.yawLimit);
+    pitch_ = std::clamp(pitch_ + pitchV_ * h, -p.pitchLimit, p.pitchLimit);
+    const double moving = std::min(1.0, speed / p.walkSpeed);
+    walk_ += (moving - walk_) * std::min(1.0, h * p.walkEase);
+    stride_ += speed * h * p.strideRate;
+
+    const double t = time;
+    const double still = 1.0 - walk_;  // idle: breathing and a hand that drifts and re-settles
+    const double tremor = p.tremorStill + p.tremorWalk * walk_;
+    const double breath = std::sin(t * 1.35);  // about one breath every 4.6 s
+    const double drift = std::sin(t * 0.47) + 0.7 * std::sin(t * 0.83 + 1.7) + 0.4 * std::sin(t * 1.9 + 0.4);
+    HandPose o;
+    o.stride = stride_;
+    o.walk = walk_;
+    o.yaw = yaw_ + walk_ * p.walkYaw * std::sin(stride_ * 0.5) + still * p.idleYaw * drift +
+            tremor * (std::sin(t * 1.7) + 0.6 * std::sin(t * 4.1 + 1.0));
+    o.pitch = pitch_ + walk_ * p.walkPitch * std::sin(stride_ + 0.6) +
+              still * (p.idleBreath * breath + p.idleDrift * (std::sin(t * 0.61 + 0.9) + 0.6 * std::sin(t * 1.43))) +
+              tremor * (std::sin(t * 1.3 + 2.0) + 0.6 * std::sin(t * 3.7));
+    o.side = walk_ * p.walkSide * std::sin(stride_ * 0.5) + still * p.idleSide * drift;
+    o.down = walk_ * p.walkDown * (0.5 - 0.5 * std::cos(stride_ * 2.0)) * 0.5 + p.bob * std::sin(t * 1.1) +
+             still * p.idleDown * breath;
+    return o;
+}
+
+void BodyMotion::update(double dt, double viewYaw, bool walking, bool lightUp, const BodyParams& t) {
+    if (!primed_) {
+        yaw_ = viewYaw;
+        primed_ = true;
+    }
+    yaw_ = turnBody(yaw_, viewYaw, dt, walking, t);
+    raise_ += ((lightUp ? 1.0 : 0.0) - raise_) * std::min(1.0, dt / t.raiseSeconds);
+}
+
 bool loadHeldParams(json::Reader& r, const std::string& path, HeldParams& t) {
     t.right = r.number(path + ".right");
     t.down = r.number(path + ".down");

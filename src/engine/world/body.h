@@ -43,6 +43,54 @@ struct PartMatrix {
     float m[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 };
 
+// How the hand that holds the light moves, as seconds, radians and metres: a loose spring behind the view (turning
+// drags the beam, which settles with a little overshoot), a walking sway, and a tremor and breath that never stop.
+struct HandSwayParams {
+    double springK = 70, springDamp = 9;     // the beam's spring and its damping
+    double turnLag = 0.6;                    // how much of a turn the beam is left behind by
+    double yawLimit = 0.35, pitchLimit = 0.30;  // the most the beam lags (radians)
+    double walkSpeed = 3.0;                  // metres a second that count as walking at full
+    double walkEase = 6.0;                   // how fast standing and walking blend (per second)
+    double strideRate = 3.4;                 // stride radians per metre walked
+    double walkYaw = 0.022, walkPitch = 0.018, walkSide = 0.018, walkDown = 0.025;  // the sway at a walk
+    double idleYaw = 0.020, idleBreath = 0.012, idleDrift = 0.014, idleSide = 0.008, idleDown = 0.006;  // standing still
+    double tremorStill = 0.004, tremorWalk = 0.003;  // the hand's shake, standing and walking (added)
+    double bob = 0.004;                      // the hand's slow rise and fall (metres)
+};
+bool loadHandSwayParams(json::Reader& r, const std::string& path, HandSwayParams& out);
+
+// The hand's pose this frame, in CameraState's terms (handYaw, handPitch, handSide, handDown), with the walk it came
+// from: `walk` 0 standing .. 1 walking, and `stride` the leg phase in radians (BodyInput's, before any scaling).
+struct HandPose {
+    double yaw = 0, pitch = 0, side = 0, down = 0;
+    double stride = 0, walk = 0;
+};
+
+// Follows the player's pose from frame to frame. Call update every frame; a pause or a jump longer than a quarter
+// of a second (a teleport, a new scene) restarts it from the current pose.
+class HandSway {
+public:
+    HandPose update(double dt, double time, double x, double z, double viewYaw, double viewPitch, const HandSwayParams& p);
+
+private:
+    double yaw_ = 0, pitch_ = 0, yawV_ = 0, pitchV_ = 0;
+    double lastYaw_ = 0, lastPitch_ = 0, lastX_ = 0, lastZ_ = 0, stride_ = 0, walk_ = 0;
+    bool primed_ = false;
+};
+
+// The chest's facing (turnBody) and how far the arm has brought the light up, eased frame by frame.
+class BodyMotion {
+public:
+    // Returns nothing; read yaw() and raise() afterwards. `lightUp`: the player holds the light up.
+    void update(double dt, double viewYaw, bool walking, bool lightUp, const BodyParams& t);
+    double yaw() const { return yaw_; }
+    double raise() const { return raise_; }
+
+private:
+    double yaw_ = 0, raise_ = 0;
+    bool primed_ = false;
+};
+
 struct BodyInput {
     double eyeX = 0, eyeZ = 0, eyeHeight = 1.55;  // where the camera is
     double yaw = 0, pitch = 0;                    // the view (yaw: direction (cos, sin) on the x, z plane)

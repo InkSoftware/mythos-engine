@@ -7,6 +7,7 @@
 #include "engine/gfx/model.h"
 #include "engine/platform/gl/scene_renderer.h"
 #include "engine/world/body.h"
+#include "engine/world/mirror.h"
 
 namespace mythos {
 
@@ -23,5 +24,18 @@ BodyModels uploadBodyModels(SceneRenderer& scene, const ModelLibrary& models);
 // lighter and its flame) shows in the view and in the mirror, when `lightHeld`.
 void addBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose, const BodyModels& ids, bool lightHeld,
                       bool lighter);
+
+// Hangs the renderer's mirror where `p` says (leaves its alpha and tint alone); `p.on` false switches it off.
+inline void setMirror(MirrorState& out, const MirrorPlacement& p) {
+    out.on = p.on;
+    if (!p.on) return;
+    out.x = p.x;
+    out.y = p.y;
+    out.z = p.z;
+    out.nx = p.nx;
+    out.nz = p.nz;
+    out.halfW = p.halfW;
+    out.halfH = p.halfH;
+}
 
 }  // namespace mythos
