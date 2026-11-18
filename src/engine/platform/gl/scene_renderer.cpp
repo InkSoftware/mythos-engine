@@ -2,6 +2,7 @@
 
 #include "engine/core/mat4.h"
 #include "engine/gfx/normalmap.h"
+#include "engine/gfx/pbr.h"
 #include "engine/platform/gl/scene_shaders.h"
 #include "engine/ui/settings.h"
 #include <algorithm>
@@ -83,6 +84,7 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         u.handFaces = worldProgram_.uniform("uHandFaces");
         u.res = worldProgram_.uniform("uRes");
         u.grain = worldProgram_.uniform("uGrain");
+        u.materials = worldProgram_.uniform("uMaterials");
         // The samplers never change: the texture on unit 0, the shadow cubes on units 1 to 5.
         worldProgram_.use();
         worldProgram_.set("uTex", 0);
@@ -92,6 +94,7 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         worldProgram_.set("uShadow3", 4);
         worldProgram_.set("uShadowHand", 5);
         worldProgram_.set("uNormalTex", 6);
+        worldProgram_.set("uMaterialTex", 7);
     }
 
     // Fullscreen quad: position (x, y) and uv per vertex, two triangles.
@@ -113,6 +116,11 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
     // bottom of a wall), and Surface row 0 is the top of the image, so flip while converting.
     std::vector<uint8_t> rgbaBytes;
     for (const auto& name : textures.names()) {
+        if (isPbrCompanion(name)) {
+            // A companion map is read with its texture below; one with no texture is drawn as itself.
+            const std::string base = name.substr(0, name.rfind('_'));
+            if (textures.has(base)) continue;
+        }
         const Surface& s = textures.get(name);
         surfaceToRgbaFlipped(s, rgbaBytes);
         GlTexture tex;
@@ -122,14 +130,38 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         tex.setParams(LINEAR_MIPMAP_LINEAR, LINEAR, REPEAT);
         textures_.emplace_back(name, std::move(tex));
 
-        // Its normal map, read from the texture's own brightness (the art has none by hand).
-        surfaceToRgbaFlipped(makeNormalMap(s, kNormalStrength), rgbaBytes);
+        // Its normal map (alpha: gloss). Authored maps (<name>_nrm, <name>_rough) win; otherwise the normal is
+        // read from the texture's own brightness and there is no specular (gfx/pbr.h).
+        const std::string nrmName = name + kNormalSuffix, roughName = name + kRoughSuffix,
+                          metalName = name + kMetalSuffix, aoName = name + kAoSuffix;
+        surfaceToRgbaFlipped(makeSurfaceMap(s, textures.has(nrmName) ? &textures.get(nrmName) : nullptr,
+                                            textures.has(roughName) ? &textures.get(roughName) : nullptr, kNormalStrength),
+                             rgbaBytes);
         GlTexture nm;
         nm.create();
         nm.allocate(s.w, s.h, rgbaBytes.data());
         GenerateMipmap(TEXTURE_2D);
         nm.setParams(LINEAR_MIPMAP_LINEAR, LINEAR, REPEAT);
         normalMaps_.emplace_back(name, std::move(nm));
+
+        // Its material map (R metal, G occlusion), only when it has a companion for one of them.
+        const Surface mat = makeMaterialMap(s, textures.has(metalName) ? &textures.get(metalName) : nullptr,
+                                            textures.has(aoName) ? &textures.get(aoName) : nullptr);
+        if (!mat.empty()) {
+            surfaceToRgbaFlipped(mat, rgbaBytes);
+            GlTexture mm;
+            mm.create();
+            mm.allocate(mat.w, mat.h, rgbaBytes.data());
+            GenerateMipmap(TEXTURE_2D);
+            mm.setParams(LINEAR_MIPMAP_LINEAR, LINEAR, REPEAT);
+            materialMaps_.emplace_back(name, std::move(mm));
+        }
+    }
+    {
+        const uint8_t open[4] = {0, 255, 255, 255};  // metal 0, occlusion 1
+        defaultMaterial_.create();
+        defaultMaterial_.allocate(1, 1, open);
+        defaultMaterial_.setParams(NEAREST, NEAREST, REPEAT);
     }
 
     // Overlay texture: re-uploaded every frame with nearest filtering.
@@ -166,6 +198,12 @@ GLuint SceneRenderer::normalMapFor(const std::string& name) const {
     for (const auto& t : normalMaps_)
         if (t.first == "missing") return t.second.id();
     return 0;
+}
+
+GLuint SceneRenderer::materialMapFor(const std::string& name) const {
+    for (const auto& t : materialMaps_)
+        if (t.first == name) return t.second.id();
+    return defaultMaterial_.id();
 }
 
 void SceneRenderer::uploadBatches(BatchList& dst, const std::vector<Batch>& src) {
@@ -212,6 +250,7 @@ void SceneRenderer::uploadBatches(BatchList& dst, const std::vector<Batch>& src)
         BindVertexArray(0);
         g.texture = textureFor(b.texture);
         g.normal = normalMapFor(b.texture);
+        g.material = materialMapFor(b.texture);
         g.emissive = b.emissive;
         g.alphaTest = b.alphaTest;
         dst.push_back(std::move(g));
@@ -262,11 +301,14 @@ void SceneRenderer::drawBatches(const BatchList& batches, const float* model, co
                     BindTexture(TEXTURE_2D, b.texture);
                     drawState_.texture = b.texture;
                 }
-                if (bindNormals_ && b.normal != drawState_.normal) {
+                if (bindNormals_ && (b.normal != drawState_.normal || b.material != drawState_.material)) {
                     ActiveTexture(TEXTURE0 + 6);
                     BindTexture(TEXTURE_2D, b.normal);
+                    ActiveTexture(TEXTURE0 + 7);
+                    BindTexture(TEXTURE_2D, b.material);
                     ActiveTexture(TEXTURE0);
                     drawState_.normal = b.normal;
+                    drawState_.material = b.material;
                 }
                 const int emissive = b.emissive ? 1 : 0, alphaTest = b.alphaTest ? 1 : 0;
                 if (emissive != drawState_.emissive) {
@@ -367,6 +409,7 @@ void SceneRenderer::drawWorld(const CameraState& cam, const Frame& f) {
     BindTexture(TEXTURE_CUBE_MAP, handShadow_.texture());
     Uniform2f(u.res, static_cast<float>(target_.width()), static_cast<float>(target_.height()));
     Uniform1f(u.grain, f.grain);
+    Uniform1i(u.materials, f.materials);
     ActiveTexture(TEXTURE0);
     drawState_ = DrawState{};
 
@@ -488,6 +531,7 @@ void SceneRenderer::render(const CameraState& cam, int windowW, int windowH, con
     f.fovY = kFovY;
     f.aspect = static_cast<float>(target_.width()) / static_cast<float>(target_.height());
     f.grain = cam.grain ? 1.0f : 0.0f;
+    f.materials = std::clamp(cam.materials, 0, 2);
     const float center[3] = {f.eye[0] + f.dir[0], f.eye[1] + f.dir[1], f.eye[2] + f.dir[2]};
     const float up[3] = {0, 1, 0};
     mat4LookAt(f.eye, center, up, f.view);

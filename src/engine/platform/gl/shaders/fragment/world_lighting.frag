@@ -4,6 +4,7 @@ in vec3 vNormal;
 in vec2 vUV;
 uniform sampler2D uTex;
 uniform sampler2D uNormalTex;
+uniform sampler2D uMaterialTex;  // R metal, G ambient occlusion
 uniform vec3 uCam;
 uniform vec3 uFlashDir;
 uniform float uFlashOn;
@@ -12,6 +13,7 @@ uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uTime;
 uniform int uEmissive;
+uniform int uMaterials;         // 0 flat look, 1 specular + metal + occlusion, 2 also reflections
 uniform int uAlphaTest;
 uniform int uOutdoor;
 uniform vec3 uMoonDir;
@@ -86,8 +88,14 @@ float shadowFactor(int i, vec3 lightPos, vec3 n) {
 
 // Tilts the surface normal by the texture's normal map. The tangent frame comes from the screen-space
 // derivatives of the position and the uv (no tangents in the vertices), so it follows any model.
+float gGloss = 0.0;  // the normal map's alpha: 1 - roughness (0 = matt), set by bumpNormal
+float gMetal = 0.0, gAo = 1.0;  // the material map, set by main
+float gRough = 1.0;             // the roughness the specular uses
+vec3 gF0 = vec3(0.04);          // reflectance at normal incidence: 0.04 for a dielectric, the albedo for a metal
 vec3 bumpNormal(vec3 n) {
-    vec3 m = texture(uNormalTex, vUV).xyz * 2.0 - 1.0;
+    vec4 map = texture(uNormalTex, vUV);
+    gGloss = map.a;
+    vec3 m = map.xyz * 2.0 - 1.0;
     vec3 dp1 = dFdx(vWorld), dp2 = dFdy(vWorld);
     vec2 duv1 = dFdx(vUV), duv2 = dFdy(vUV);
     vec3 dp2perp = cross(dp2, n), dp1perp = cross(n, dp1);
@@ -95,6 +103,38 @@ vec3 bumpNormal(vec3 n) {
     vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
     float invmax = inversesqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
     return normalize(T * invmax * m.x + B * invmax * m.y + n * m.z);
+}
+
+// Specular: GGX distribution, a Schlick-Smith visibility and Schlick Fresnel, times n.l. F0 is 0.04 for a
+// dielectric and the albedo for a metal. Zero for a matt surface (no roughness map, no metal), so old art looks as
+// it did.
+vec3 specular(vec3 n, vec3 v, vec3 l) {
+    if (gRough >= 1.0) return vec3(0.0);
+    vec3 h = normalize(l + v);
+    float nl = abs(dot(n, l)), nv = max(abs(dot(n, v)), 0.02), nh = abs(dot(n, h)), vh = clamp(dot(v, h), 0.0, 1.0);
+    float a2 = gRough * gRough * gRough * gRough;
+    float d = nh * nh * (a2 - 1.0) + 1.0;
+    float ndf = a2 / (3.14159265 * d * d);
+    float k = (gRough + 1.0) * (gRough + 1.0) * 0.125;
+    float vis = 0.25 / (mix(nl, 1.0, k) * mix(nv, 1.0, k));
+    vec3 fres = gF0 + (1.0 - gF0) * pow(1.0 - vh, 5.0);
+    return min(ndf * vis * nl, 8.0) * fres;
+}
+
+// What a shiny surface reflects of the room: there are no probes, so the environment is the ambient light of the
+// era (brighter overhead, darker underfoot), or the night sky outdoors. Karis' analytic environment BRDF gives
+// the split-sum scale and bias, and the baked occlusion dims the reflection in crevices.
+vec3 environmentSpecular(vec3 n, vec3 v, vec3 ambient) {
+    if (gRough >= 1.0 || uMaterials < 2) return vec3(0.0);
+    float nv = max(abs(dot(n, v)), 0.02);
+    vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022), c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r = gRough * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * nv)) * r.x + r.y;
+    vec2 ab = vec2(-1.04, 1.04) * a004 + r.zw;
+    float occ = clamp(pow(nv + gAo, exp2(-16.0 * gRough - 1.0)) - 1.0 + gAo, 0.0, 1.0);
+    vec3 refl = reflect(-v, n);
+    float sky = mix(0.55, 1.45, clamp(refl.y * 0.5 + 0.5, 0.0, 1.0));
+    return ambient * sky * (gF0 * ab.x + ab.y) * occ;
 }
 
 void main() {
@@ -109,17 +149,31 @@ void main() {
     } else {
         vec3 geo = normalize(vNormal);   // the surface itself: shadows are cast from it
         vec3 n = bumpNormal(geo);        // what the light sees, grain and mortar included
+        vec2 mat = texture(uMaterialTex, vUV).rg;
+        if (uMaterials == 0) {
+            gGloss = 0.0;
+            mat = vec2(0.0, 1.0);
+        }
+        gMetal = mat.r;
+        gAo = mat.g;
+        gRough = (gGloss < 0.02 && gMetal < 0.02) ? 1.0 : (gGloss < 0.02 ? 0.6 : clamp(1.0 - gGloss, 0.08, 1.0));
+        gF0 = mix(vec3(0.04), albedo, gMetal);
         vec3 toCam = normalize(uCam - vWorld);
         float facing = abs(dot(n, toCam));  // winding of models is arbitrary
 
-        vec3 light;
+        vec3 spec = vec3(0.0);
+        vec3 light = vec3(0.0);  // direct light
+        vec3 ambient;
         if (uOutdoor == 1) {
             // Cold moonlight plus a faint blue sky ambient.
             float ndl = abs(dot(n, uMoonDir));
-            light = vec3(0.30, 0.38, 0.58) * 0.55 * ndl + vec3(0.040, 0.052, 0.085);
+            vec3 moon = vec3(0.30, 0.38, 0.58) * 0.55;
+            light = moon * ndl;
+            spec += moon * specular(n, toCam, uMoonDir);
+            ambient = vec3(0.040, 0.052, 0.085);
         } else {
             // A dark interior: dim ambient, slightly stronger near the player (both per era).
-            light = uAmbientBase + uAmbientNear * clamp(1.0 - dist / 3.5, 0.0, 1.0);
+            ambient = uAmbientBase + uAmbientNear * clamp(1.0 - dist / 3.5, 0.0, 1.0);
         }
 
         // Lamps: small positional lights, fading out smoothly at their radius.
@@ -131,6 +185,7 @@ void main() {
             float ndl = 0.35 + 0.65 * abs(dot(n, toL / max(d, 0.001)));
             float lit = (i < uShadowCount && att > 0.0) ? shadowFactor(i, uLightPos[i], geo) : 1.0;
             light += uLightColor[i] * att * ndl * lit;
+            spec += uLightColor[i] * att * lit * specular(n, toCam, toL / max(d, 0.001));
         }
 
         // The hand light: the torch is a tight warm cone straight ahead; the lighter is a
@@ -145,8 +200,10 @@ void main() {
             float lit = 1.0;
             if (uHandShadow == 1 && cone * falloff > 0.002) lit = shadowFactor(4, uHandPos, geo);
             light += tint * mix(2.4, 2.0, uLighter) * cone * falloff * (0.35 + 0.65 * facing) * flicker * lit;
+            spec += tint * mix(2.4, 2.0, uLighter) * cone * falloff * flicker * lit * specular(n, toCam, toCam);
         }
-        col = albedo * light;
+        // Ambient light is what baked occlusion dims; a metal has no diffuse colour, only reflection.
+        col = albedo * (1.0 - gMetal) * (ambient * gAo + light) + spec + environmentSpecular(n, toCam, ambient * 2.5);
     }
 
     float fog = 1.0 - exp(-uFogDensity * dist);

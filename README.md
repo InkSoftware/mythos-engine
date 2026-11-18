@@ -36,7 +36,7 @@ third_party/  stb_truetype, stb_image
 
 The sources are in folders by kind: `core/` (math, matrices, JSON, files, packed assets), `world/` (levels, tiles,
 movement, the player, doors, props), `audio/` (sound arithmetic, the sound bank), `data/` (achievements, credits,
-translations), `gfx/` (surfaces, textures and their derived normal maps, meshes, models, fonts and text, light arithmetic), `ui/` (overlay, menus,
+translations), `gfx/` (surfaces, textures and their derived normal maps (or authored `_nrm` / `_rough` companions, light PBR), meshes, models, fonts and text, light arithmetic), `ui/` (overlay, menus,
 settings) and `platform/` (window, input, mixer; `platform/gl/` is the renderer). A folder depends only on the ones
 before it in that list (`gfx/` also on `world/`), apart from `platform/`, which uses them all.
 

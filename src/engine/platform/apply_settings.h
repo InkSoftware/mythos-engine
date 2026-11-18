@@ -18,7 +18,7 @@ void saveSettings(const UserFiles& files, const GameSettings& s, const std::stri
 
 // Window mode and vsync, render scale and volumes. Cheap to call every frame: each only acts on a change.
 void applySettings(const GameSettings& s, Window& window, SceneRenderer& scene, AudioEngine& audio);
-// The camera's graphics options: film grain, shadows, anti-aliasing, motion blur and lens.
+// The camera's graphics options: film grain, shadows, materials, anti-aliasing, motion blur and lens.
 void applySettings(const GameSettings& s, CameraState& cam);
 
 // The largest kResolutions index that fits the window's display (no limit when its size is unknown).

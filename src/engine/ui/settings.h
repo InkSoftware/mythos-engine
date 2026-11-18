@@ -1,6 +1,6 @@
 #pragma once
 // Player options and the settings page that edits them: window size, fullscreen, vsync, frame
-// rate limit, render scale, anti-aliasing, shadows, film grain, motion blur, camera effect, three volumes and
+// rate limit, render scale, anti-aliasing, shadows, materials, film grain, motion blur, camera effect, three volumes and
 // the language. The platform layer applies them and keeps them in
 // a key=value file (toKeyValues / applyKeyValues).
 #include <map>
@@ -37,6 +37,10 @@ inline constexpr int kRenderScaleCount = static_cast<int>(sizeof(kRenderScaleLin
 // the renderer: more lamps cast shadows, from bigger maps, at each step).
 inline constexpr int kShadowLevelCount = 6;
 
+// Material levels: 0 off (no specular, metal or occlusion: the flat look), 1 basic (specular, metal and baked
+// occlusion), 2 full (adds reflections of the room's ambient light).
+inline constexpr int kMaterialLevelCount = 3;
+
 // Motion blur strengths in percent (0 = off), as offered on the settings page.
 inline constexpr int kMotionBlurScales[] = {0, 25, 50, 75, 100, 150, 200};
 inline constexpr int kMotionBlurCount = static_cast<int>(sizeof(kMotionBlurScales) / sizeof(kMotionBlurScales[0]));
@@ -51,6 +55,7 @@ struct GameSettings {
     int renderScale = 1;      // index into kRenderScaleLines
     int antiAlias = 1;        // 0..kAntiAliasCount-1: off, FXAA, MSAA 2x, 4x, 8x
     int shadows = 3;          // 0..kShadowLevelCount-1: off, very low, low, medium, max, ultra max
+    int materials = 2;        // 0..kMaterialLevelCount-1: off, basic, full (see kMaterialLevelCount)
     bool filmGrain = true;
     int motionBlur = 0;       // index into kMotionBlurScales: how much turning the view smears it
     bool cameraEffect = true; // lens: colour fringing towards the edges of the picture
@@ -67,8 +72,8 @@ struct GameSettings {
 // and the hotspot / click ids are these.
 enum SettingsItem {
     kSetGraphics, kSetAudio,  // the main page's links to the sub-pages
-    kSetResolution, kSetFullscreen, kSetVsync, kSetFpsCap, kSetRenderScale, kSetAntiAlias, kSetShadows, kSetFilmGrain,
-    kSetMotionBlur, kSetCameraEffect, kSetMaster, kSetAmbience, kSetEffects, kSetLanguage, kSetBack,
+    kSetResolution, kSetFullscreen, kSetVsync, kSetFpsCap, kSetRenderScale, kSetAntiAlias, kSetShadows, kSetMaterials,
+    kSetFilmGrain, kSetMotionBlur, kSetCameraEffect, kSetMaster, kSetAmbience, kSetEffects, kSetLanguage, kSetBack,
     kSettingsItemCount
 };
 

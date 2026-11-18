@@ -31,6 +31,7 @@
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/model.h"
 #include "engine/gfx/normalmap.h"
+#include "engine/gfx/pbr.h"
 #include "engine/world/movement.h"
 #include "engine/core/noise.h"
 #include "engine/world/player.h"
@@ -580,6 +581,7 @@ TEST(runtime_settings_round_trip_through_key_values) {
     a.filmGrain = false;
     a.antiAlias = 4;
     a.shadows = 5;
+    a.materials = 1;
     a.motionBlur = 4;  // 100%
     a.cameraEffect = false;
     a.vsync = false;
@@ -594,6 +596,8 @@ TEST(runtime_settings_round_trip_through_key_values) {
     CHECK(!b.filmGrain && b.fullscreen);
     CHECK_EQ(b.antiAlias, 4);
     CHECK_EQ(b.shadows, 5);
+    CHECK_EQ(b.materials, 1);
+    CHECK_EQ(GameSettings{}.materials, 2);  // full by default
     CHECK(b.motionBlur == 4 && !b.cameraEffect && !b.vsync);
     CHECK_EQ(b.fpsCap, 4);
     CHECK_EQ(b.masterVolume, 3);
@@ -604,10 +608,11 @@ TEST(runtime_settings_round_trip_through_key_values) {
     CHECK_EQ(c.renderScale, 0);
     CHECK_EQ(c.resolution, 0);     // unparsable: unchanged
     GameSettings d;
-    applyKeyValues(d, {{"antiAliasing", "99"}, {"fpsCap", "77"}, {"shadowMaps", "9"}, {"motionBlurScale", "33"}});
+    applyKeyValues(d, {{"antiAliasing", "99"}, {"fpsCap", "77"}, {"shadowMaps", "9"}, {"motionBlurScale", "33"}, {"materials", "7"}});
     CHECK_EQ(d.antiAlias, kAntiAliasCount - 1);
     CHECK_EQ(d.fpsCap, 0);  // not an offered limit: none
     CHECK_EQ(d.shadows, kShadowLevelCount - 1);
+    CHECK_EQ(d.materials, kMaterialLevelCount - 1);
     CHECK_EQ(d.motionBlur, 0);  // not an offered strength: off
 }
 
@@ -629,6 +634,15 @@ TEST(runtime_settings_page_new_rows) {
     in.leftPressed = true;
     for (int i = 0; i < 9; ++i) updateSettingsPage(s, page, index, in, false, 2);
     CHECK_EQ(s.shadows, 0);
+    index = kSetMaterials;
+    in = UiInput{};
+    in.leftPressed = true;
+    for (int i = 0; i < 5; ++i) updateSettingsPage(s, page, index, in, false, 2);
+    CHECK_EQ(s.materials, 0);
+    in.leftPressed = false;
+    in.rightPressed = true;
+    for (int i = 0; i < 5; ++i) updateSettingsPage(s, page, index, in, false, 2);
+    CHECK_EQ(s.materials, kMaterialLevelCount - 1);
     index = kSetMotionBlur;
     in = UiInput{};
     in.rightPressed = true;
@@ -930,6 +944,48 @@ TEST(normal_map_is_flat_for_a_flat_texture_and_tilts_with_a_slope) {
         for (int x = 0; x < 8; ++x) down.at(x, y) = rgba(y * 30, y * 30, y * 30);
     CHECK(((makeNormalMap(down, 3.0f).at(4, 4) >> 8) & 0xFF) > 136);
     CHECK(makeNormalMap(Surface(), 1.0f).empty());
+}
+
+TEST(surface_map_uses_authored_normal_and_roughness_or_falls_back) {
+    Surface albedo(4, 4, rgba(100, 100, 100));
+    // Nothing authored: the brightness-made normal (flat here) and no gloss, as before PBR.
+    Surface plain = makeSurfaceMap(albedo, nullptr, nullptr, 3.0f);
+    CHECK_EQ(plain.at(1, 1), rgba(128, 128, 255, 0));
+    // An authored normal map is taken as it is; roughness 64 becomes gloss 191.
+    Surface nrm(4, 4, rgba(200, 50, 220));
+    Surface rough(4, 4, rgba(64, 64, 64));
+    Surface both = makeSurfaceMap(albedo, &nrm, &rough, 3.0f);
+    CHECK_EQ(both.at(2, 3), rgba(200, 50, 220, 191));
+    // Roughness alone keeps the generated normal.
+    CHECK_EQ(makeSurfaceMap(albedo, nullptr, &rough, 3.0f).at(0, 0), rgba(128, 128, 255, 191));
+    // A companion of another size is resampled to the albedo's.
+    Surface small(2, 2, rgba(0, 0, 0));
+    Surface sized = makeSurfaceMap(albedo, nullptr, &small, 3.0f);
+    CHECK_EQ(sized.w, 4);
+    CHECK_EQ(sized.at(3, 3), rgba(128, 128, 255, 255));  // roughness 0: fully glossy
+    CHECK(makeSurfaceMap(Surface(), &nrm, &rough, 1.0f).empty());
+    CHECK(isPbrCompanion("m_sofa_0_nrm"));
+    CHECK(isPbrCompanion("m_sofa_0_rough"));
+    CHECK(!isPbrCompanion("m_sofa_0"));
+    CHECK(!isPbrCompanion("_nrm"));
+    CHECK(isPbrCompanion("m_sofa_0_metal"));
+    CHECK(isPbrCompanion("m_sofa_0_ao"));
+}
+
+TEST(material_map_packs_metal_and_occlusion_with_open_defaults) {
+    Surface albedo(4, 4, rgba(100, 100, 100));
+    // Neither companion: empty, so the renderer shares one default (metal 0, occlusion 1).
+    CHECK(makeMaterialMap(albedo, nullptr, nullptr).empty());
+    CHECK(makeMaterialMap(Surface(), &albedo, &albedo).empty());
+    Surface metal(4, 4, rgba(220, 220, 220));
+    Surface ao(4, 4, rgba(90, 90, 90));
+    CHECK_EQ(makeMaterialMap(albedo, &metal, &ao).at(1, 2), rgba(220, 90, 255));
+    CHECK_EQ(makeMaterialMap(albedo, &metal, nullptr).at(0, 0), rgba(220, 255, 255));  // fully open
+    CHECK_EQ(makeMaterialMap(albedo, nullptr, &ao).at(3, 3), rgba(0, 90, 255));        // not metal
+    Surface small(2, 2, rgba(255, 255, 255));
+    Surface sized = makeMaterialMap(albedo, &small, nullptr);
+    CHECK_EQ(sized.w, 4);
+    CHECK_EQ(sized.at(2, 2), rgba(255, 255, 255));
 }
 
 TEST(engine_common_materials_stand_alone) {

@@ -58,6 +58,7 @@ struct CameraState {
     static constexpr int kMaxLights = 8;
     static constexpr int kMaxShadowLights = 4;  // lamps that cast shadows: the ones nearest the eye
     int shadowLevel = 3;       // shadow maps: 0 off, 1 very low, 2 low, 3 medium, 4 max, 5 ultra max (see shadowSpec)
+    int materials = 2;         // 0 off (flat look), 1 specular + metal + occlusion, 2 also reflections (gfx/pbr.h)
     double motionBlur = 0;     // how much turning the view smears the picture: 0 off, 1 normal, 2 double...
     int antiAlias = 1;         // 0 off, 1 FXAA, 2 / 3 / 4 = MSAA 2x / 4x / 8x (what the GPU lacks is lowered)
     bool lensEffect = true;    // colour fringing that grows towards the edges of the picture
@@ -106,7 +107,8 @@ private:
         GlBuffer vbo;
         std::vector<GpuChunk> chunks;
         gl::GLuint texture = 0;  // not owned: see textures_
-        gl::GLuint normal = 0;   // its normal map, likewise
+        gl::GLuint normal = 0;   // its normal + gloss map, likewise
+        gl::GLuint material = 0; // its metal + occlusion map (the shared default when it has none)
         bool emissive = false;
         bool alphaTest = false;
         float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};  // bounds of all chunks in model space, for culling
@@ -117,6 +119,7 @@ private:
     struct Frame {
         float eye[3], dir[3], flash[3], moon[3], fog[3];
         float fogDensity, fovY, aspect, grain;
+        int materials;
         float view[16], proj[16];
         Frustum planes;  // the view frustum, world space
     };
@@ -129,6 +132,7 @@ private:
     void drawQuad();
     gl::GLuint textureFor(const std::string& name) const;
     gl::GLuint normalMapFor(const std::string& name) const;
+    gl::GLuint materialMapFor(const std::string& name) const;  // the shared default when it has no map of its own
     void uploadOverlay(const Surface& overlay);
     // Reallocates the internal target when the preset or the window's aspect needs another size.
     void resizeTarget(int windowW, int windowH);
@@ -182,12 +186,15 @@ private:
     std::vector<uint32_t> overlayPixels_;  // what is in overlayTex_, to skip identical frames
     TextRenderer text_;
     std::vector<std::pair<std::string, GlTexture>> textures_;
-    std::vector<std::pair<std::string, GlTexture>> normalMaps_;  // made from textures_ (gfx/normalmap.h)
+    std::vector<std::pair<std::string, GlTexture>> normalMaps_;  // made from textures_ (gfx/pbr.h)
+    std::vector<std::pair<std::string, GlTexture>> materialMaps_;  // only for textures with a metal or ao companion
+    GlTexture defaultMaterial_;  // metal 0, occlusion 1: what every other texture uses
     BatchList world_, props_, cab_, door_;
     // The state last set by drawBatches, so repeated batches skip redundant GL calls.
     struct DrawState {
         gl::GLuint texture = ~0u;
         gl::GLuint normal = ~0u;
+        gl::GLuint material = ~0u;
         int emissive = -1, alphaTest = -1;
     } drawState_;
     gl::GLint uModel_ = -1, uEmissive_ = -1, uAlphaTest_ = -1;
@@ -197,7 +204,7 @@ private:
         gl::GLint view = -1, proj = -1, cam = -1, flashDir = -1, flashOn = -1, lighter = -1, outdoor = -1, moonDir = -1,
                   fogColor = -1, fogDensity = -1, time = -1, ambientBase = -1, ambientNear = -1, lightCount = -1,
                   lightPos = -1, lightColor = -1, lightRadius = -1, shadowCount = -1, shadowTexel = -1,
-                  handShadow = -1, handPos = -1, handFaces = -1, res = -1, grain = -1;
+                  handShadow = -1, handPos = -1, handFaces = -1, res = -1, grain = -1, materials = -1;
     } world_u_;
 };
 

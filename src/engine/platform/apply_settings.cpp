@@ -25,6 +25,7 @@ void applySettings(const GameSettings& s, Window& window, SceneRenderer& scene, 
 void applySettings(const GameSettings& s, CameraState& cam) {
     cam.grain = s.filmGrain;
     cam.shadowLevel = s.shadows;
+    cam.materials = std::clamp(s.materials, 0, kMaterialLevelCount - 1);
     cam.antiAlias = s.antiAlias;
     cam.motionBlur = kMotionBlurScales[std::clamp(s.motionBlur, 0, kMotionBlurCount - 1)] / 100.0;
     cam.lensEffect = s.cameraEffect;

@@ -20,6 +20,7 @@ Row rowFor(int item, const GameSettings& s, const std::string& languageName) {
     const std::string shadowNames[kShadowLevelCount] = {tr("common.off"),    tr("settings.veryLow"), tr("settings.low"),
                                                         tr("settings.medium"), tr("settings.max"),   tr("settings.ultraMax")};
     const std::string aaNames[kAntiAliasCount] = {tr("common.off"), "FXAA", "MSAA 2X", "MSAA 4X", "MSAA 8X"};
+    const std::string materialNames[kMaterialLevelCount] = {tr("common.off"), tr("settings.basic"), tr("settings.full")};
     const auto onOff = [](bool v) { return tr(v ? "common.on" : "common.off"); };
     const Resolution res = kResolutions[std::clamp(s.resolution, 0, kResolutionCount - 1)];
     const int fps = kFpsCaps[std::clamp(s.fpsCap, 0, kFpsCapCount - 1)];
@@ -36,6 +37,7 @@ Row rowFor(int item, const GameSettings& s, const std::string& languageName) {
         case kSetRenderScale: return {tr("settings.renderScale"), scales[std::clamp(s.renderScale, 0, kRenderScaleCount - 1)]};
         case kSetAntiAlias: return {tr("settings.antiAliasing"), aaNames[std::clamp(s.antiAlias, 0, kAntiAliasCount - 1)]};
         case kSetShadows: return {tr("settings.shadows"), shadowNames[std::clamp(s.shadows, 0, kShadowLevelCount - 1)]};
+        case kSetMaterials: return {tr("settings.materials"), materialNames[std::clamp(s.materials, 0, kMaterialLevelCount - 1)]};
         case kSetFilmGrain: return {tr("settings.filmGrain"), onOff(s.filmGrain)};
         case kSetMotionBlur: return {tr("settings.motionBlur"), blur == 0 ? tr("common.off") : std::to_string(blur) + "%"};
         case kSetCameraEffect: return {tr("settings.cameraEffect"), onOff(s.cameraEffect)};
@@ -60,6 +62,9 @@ void drawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s, Se
     Style rowStyle = t.item;
     rowStyle.size = t.rowSize;
     float y = py + t.firstRowY;
+    // A long page squeezes its rows so that Back stays clear of the hint at the bottom.
+    const int rows = static_cast<int>(settingsPageItems(page).size());
+    const float pitch = std::min(t.rowPitch, (fb.h - t.hintFromBottom - 20.0f - t.backGap - y) / static_cast<float>(std::max(rows - 1, 1)));
     const float left = px + t.margin, right = px + t.pageW - t.margin;
     for (const int i : settingsPageItems(page)) {
         if (i == kSetBack) y += t.backGap;  // Back stands apart
@@ -89,7 +94,7 @@ void drawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s, Se
         } else if (!r.link) {
             c.text(st, right, y, r.value, Align::Right);
         }
-        y += t.rowPitch;
+        y += pitch;
     }
     c.text(t.hint, fb.w / 2.0f, fb.h - t.hintFromBottom, tr("settings.hint"), Align::Center);
 }

@@ -14,7 +14,7 @@ int resolutionIndex(int w, int h) {
 const std::vector<int>& settingsPageItems(SettingsPage page) {
     static const std::vector<int> main = {kSetGraphics, kSetAudio, kSetLanguage, kSetBack};
     static const std::vector<int> graphics = {kSetResolution, kSetFullscreen, kSetVsync,       kSetFpsCap,
-                                              kSetRenderScale, kSetAntiAlias, kSetShadows, kSetFilmGrain, kSetMotionBlur,
+                                              kSetRenderScale, kSetAntiAlias, kSetShadows, kSetMaterials, kSetFilmGrain, kSetMotionBlur,
                                               kSetCameraEffect, kSetBack};
     static const std::vector<int> audio = {kSetMaster, kSetAmbience, kSetEffects, kSetBack};
     return page == SettingsPage::Graphics ? graphics : (page == SettingsPage::Audio ? audio : main);
@@ -80,6 +80,7 @@ bool updateSettingsPage(GameSettings& s, SettingsPage& page, int& index, const U
         case kSetRenderScale: s.renderScale = step(s.renderScale, 0, kRenderScaleCount - 1); break;
         case kSetAntiAlias: s.antiAlias = step(s.antiAlias, 0, kAntiAliasCount - 1); break;
         case kSetShadows: s.shadows = step(s.shadows, 0, kShadowLevelCount - 1); break;
+        case kSetMaterials: s.materials = step(s.materials, 0, kMaterialLevelCount - 1); break;
         case kSetFilmGrain:
             if (toggle) s.filmGrain = !s.filmGrain;
             break;
@@ -117,6 +118,7 @@ std::map<std::string, std::string> toKeyValues(const GameSettings& s) {
             {"renderScale", std::to_string(s.renderScale)},
             {"antiAliasing", std::to_string(s.antiAlias)},
             {"shadowMaps", std::to_string(s.shadows)},
+            {"materials", std::to_string(s.materials)},
             {"filmGrain", s.filmGrain ? "1" : "0"},
             {"motionBlurScale", std::to_string(kMotionBlurScales[std::clamp(s.motionBlur, 0, kMotionBlurCount - 1)])},
             {"cameraEffect", s.cameraEffect ? "1" : "0"},
@@ -139,6 +141,7 @@ void applyKeyValues(GameSettings& s, const std::map<std::string, std::string>& v
         } else if (key == "renderScale") s.renderScale = num(val, 0, kRenderScaleCount - 1);
         else if (key == "antiAliasing") s.antiAlias = num(val, 0, kAntiAliasCount - 1);
         else if (key == "shadowMaps") s.shadows = num(val, 0, kShadowLevelCount - 1);
+        else if (key == "materials") s.materials = num(val, 0, kMaterialLevelCount - 1);
         else if (key == "filmGrain") s.filmGrain = val != "0";
         else if (key == "motionBlurScale") {
             const int pct = std::atoi(val.c_str());
