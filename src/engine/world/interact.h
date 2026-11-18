@@ -114,8 +114,8 @@ class Interactor {
   void Idle() { listen_ = 0; }
   // `p` is what the view rests on; `home` means it is the held prop's empty
   // place; `held` is the id in hand ("" none).
-  Use Use(const Prop& p, bool home, const std::string& held, double dt,
-          bool pressed, bool holding, double listen_seconds);
+  mythos::Use Use(const Prop& p, bool home, const std::string& held, double dt,
+                  bool pressed, bool holding, double listen_seconds);
   double ListenTime() const { return listen_; }
 
  private:
