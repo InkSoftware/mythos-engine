@@ -95,16 +95,21 @@ public:
     static constexpr int kInternalH = 600;
 
 private:
-    // One textured draw call's worth of geometry: its own VAO + VBO, set up once at upload.
+    // One texture's geometry: a single VAO + VBO, set up once at upload, holding its triangles
+    // sorted by chunk so that each chunk is one contiguous range to cull and draw.
+    struct GpuChunk {
+        int first = 0, count = 0;  // vertex range in the batch's buffer
+        float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
+    };
     struct GpuBatch {
         GlVertexArray vao;
         GlBuffer vbo;
-        int count = 0;
+        std::vector<GpuChunk> chunks;
         gl::GLuint texture = 0;  // not owned: see textures_
         gl::GLuint normal = 0;   // its normal map, likewise
         bool emissive = false;
         bool alphaTest = false;
-        float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};  // bounds in model space, for culling
+        float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};  // bounds of all chunks in model space, for culling
     };
     using BatchList = std::vector<GpuBatch>;
 
@@ -133,7 +138,10 @@ private:
     // Renders the distance cube maps of each shadow-casting lamp and of the hand light.
     void drawShadows(const CameraState& cam);
     // One lamp's cube map: the scene's distance from `pos` out to `reach`, six faces.
-    void drawShadowCube(const CameraState& cam, ShadowCube& cube, const float* pos, float reach);
+    // Draws the faces in faceMask (bit i = face i), skipping any whose entry in keys[6] already equals
+    // baseKey (same lamp, same scene); the entries of the faces drawn are set to baseKey.
+    void drawShadowCube(const CameraState& cam, ShadowCube& cube, const float* pos, float reach, unsigned faceMask,
+                        uint64_t* keys, uint64_t baseKey);
     // What the scene looks like to a shadow map: the geometry, the scroll and the doors. Equal
     // keys (with the same lamp) mean the cube is still right.
     uint64_t sceneKey(const CameraState& cam) const;
@@ -148,8 +156,10 @@ private:
     GlProgram worldProgram_, quadProgram_, skyProgram_, shadowProgram_, compositeProgram_;
     ShadowCube handShadow_;    // the torch's or lighter's
     // What each cube was last drawn for (0 = nothing): a static lamp in a still scene is not redrawn.
-    uint64_t shadowKey_[CameraState::kMaxShadowLights] = {};
-    uint64_t handKey_ = 0;
+    // Kept per cube face: the hand light only draws the faces its beam can reach.
+    uint64_t shadowKey_[CameraState::kMaxShadowLights][6] = {};
+    uint64_t handKey_[6] = {};
+    unsigned handFaces_ = 0x3F;  // the faces of the hand light's cube the beam can reach this frame
     uint64_t sceneRevision_ = 1;  // bumped by every upload of geometry
     bool handShadowOn_ = false;
     float handPos_[3] = {0, 0, 0};  // where the hand light is held this frame
@@ -187,7 +197,7 @@ private:
         gl::GLint view = -1, proj = -1, cam = -1, flashDir = -1, flashOn = -1, lighter = -1, outdoor = -1, moonDir = -1,
                   fogColor = -1, fogDensity = -1, time = -1, ambientBase = -1, ambientNear = -1, lightCount = -1,
                   lightPos = -1, lightColor = -1, lightRadius = -1, shadowCount = -1, shadowTexel = -1,
-                  handShadow = -1, handPos = -1, res = -1, grain = -1;
+                  handShadow = -1, handPos = -1, handFaces = -1, res = -1, grain = -1;
     } world_u_;
 };
 

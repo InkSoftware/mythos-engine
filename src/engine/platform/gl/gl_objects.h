@@ -86,8 +86,9 @@ public:
 
     // Sampler state for the bound-to-this texture.
     void setParams(gl::GLint minFilter, gl::GLint magFilter, gl::GLint wrap);
-    // Allocates RGBA8 storage of w x h with optional pixels (null = uninitialised).
-    void allocate(int w, int h, const void* rgbaPixels = nullptr);
+    // Allocates storage of w x h with optional pixels (null = uninitialised). The format is RGBA8,
+    // or SRGB8_ALPHA8 for colour art, which the hardware then decodes to linear when sampling.
+    void allocate(int w, int h, const void* rgbaPixels = nullptr, gl::GLenum internalFormat = gl::RGBA8);
 
 private:
     gl::GLuint id_ = 0;

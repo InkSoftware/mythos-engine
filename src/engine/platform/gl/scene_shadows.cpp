@@ -43,6 +43,7 @@ void SceneRenderer::chooseLamps(const CameraState& cam, const Frame& f) {
     // The hand light is held low and to the right (inside the player's radius, so never in a
     // wall), so what it lights throws a shadow you can see rather than one hidden behind it.
     handShadowOn_ = cam.flashOn && handShadow_.valid();
+    handFaces_ = 0x3F;
     if (handShadowOn_) {
         const float rx = -std::sin(static_cast<float>(cam.yaw)), rz = std::cos(static_cast<float>(cam.yaw));
         const float side = 0.14f + static_cast<float>(cam.handSide);
@@ -50,6 +51,18 @@ void SceneRenderer::chooseLamps(const CameraState& cam, const Frame& f) {
         handPos_[1] = f.eye[1] - 0.20f - static_cast<float>(cam.handDown);
         handPos_[2] = f.eye[2] + rz * side + f.dir[2] * 0.05f;
         handReach_ = cam.lighter ? 7.0f : 14.0f;  // as far as its light is worth anything
+        // The beam lights nothing outside its cone (the shader's smoothstep starts at this cosine),
+        // so only the cube faces the cone can reach are drawn. A face's square view is inside a cone
+        // of 54.74 degrees about its axis; the margin covers the soft edge and the filter taps.
+        const float coneCos = cam.lighter ? 0.30f : 0.91f;
+        const float reachAngle = std::acos(coneCos) + (54.74f + 8.0f) * 3.14159265f / 180.0f;
+        if (reachAngle < 3.1415f) {
+            const float lim = std::cos(reachAngle);
+            static const float axes[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+            handFaces_ = 0;
+            for (int i = 0; i < 6; ++i)
+                if (f.flash[0] * axes[i][0] + f.flash[1] * axes[i][1] + f.flash[2] * axes[i][2] > lim) handFaces_ |= 1u << i;
+        }
     }
     if (shadowLimit_ == 0 || !shadow_[0].valid()) return;
     auto key = [&](const PointLight& l) {
@@ -70,8 +83,8 @@ void SceneRenderer::ensureShadowMaps(int level) {
     for (ShadowCube& c : shadow_) c.reset();
     handShadow_.reset();
     shadowDepth_.reset();
-    std::fill(std::begin(shadowKey_), std::end(shadowKey_), 0);
-    handKey_ = 0;
+    std::memset(shadowKey_, 0, sizeof(shadowKey_));
+    std::memset(handKey_, 0, sizeof(handKey_));
     const ShadowSpec spec = kShadowSpecs[level];
     shadowLimit_ = std::min(spec.lamps, CameraState::kMaxShadowLights);
     shadowSize_ = std::max(spec.size, 1);
@@ -122,30 +135,30 @@ void SceneRenderer::drawShadows(const CameraState& cam) {
     for (int i = 0; i < shadowCount_; ++i) {
         const PointLight& l = lamps_[static_cast<size_t>(i)];
         const float pos[3] = {static_cast<float>(l.x), static_cast<float>(l.y), static_cast<float>(l.z)};
-        const uint64_t key = keyFor(pos, static_cast<float>(l.radius));
-        if (key == shadowKey_[i]) continue;
-        drawShadowCube(cam, shadow_[i], pos, static_cast<float>(l.radius));
-        shadowKey_[i] = key;
+        drawShadowCube(cam, shadow_[i], pos, static_cast<float>(l.radius), 0x3F, shadowKey_[i],
+                       keyFor(pos, static_cast<float>(l.radius)));
     }
-    if (handShadowOn_) {
-        const uint64_t key = keyFor(handPos_, handReach_);
-        if (key != handKey_) {
-            drawShadowCube(cam, handShadow_, handPos_, handReach_);
-            handKey_ = key;
-        }
-    }
+    if (handShadowOn_)
+        drawShadowCube(cam, handShadow_, handPos_, handReach_, handFaces_, handKey_, keyFor(handPos_, handReach_));
     uModel_ = savedModel;
     uEmissive_ = savedEmissive;
     uAlphaTest_ = savedAlpha;
     bindNormals_ = true;
 }
 
-void SceneRenderer::drawShadowCube(const CameraState& cam, ShadowCube& cube, const float* eye, float reachIn) {
+void SceneRenderer::drawShadowCube(const CameraState& cam, ShadowCube& cube, const float* eye, float reachIn,
+                                   unsigned faceMask, uint64_t* keys, uint64_t baseKey) {
     const float reach = std::max(0.5f, reachIn);
-    shadowProgram_.set("uLightPos", eye[0], eye[1], eye[2]);
+    bool setUp = false;
     float proj[16];
-    mat4Perspective(1.5707963f, 1.0f, 0.05f, reach, proj);
     for (int face = 0; face < 6; ++face) {
+        if (!(faceMask & (1u << face)) || keys[face] == baseKey) continue;
+        keys[face] = baseKey;
+        if (!setUp) {
+            setUp = true;
+            shadowProgram_.set("uLightPos", eye[0], eye[1], eye[2]);
+            mat4Perspective(1.5707963f, 1.0f, 0.05f, reach, proj);
+        }
         float view[16], viewProj[16];
         Frustum frustum;
         cubeFaceView(face, eye, view);

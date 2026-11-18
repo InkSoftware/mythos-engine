@@ -80,6 +80,7 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         u.shadowTexel = worldProgram_.uniform("uShadowTexel");
         u.handShadow = worldProgram_.uniform("uHandShadow");
         u.handPos = worldProgram_.uniform("uHandPos");
+        u.handFaces = worldProgram_.uniform("uHandFaces");
         u.res = worldProgram_.uniform("uRes");
         u.grain = worldProgram_.uniform("uGrain");
         // The samplers never change: the texture on unit 0, the shadow cubes on units 1 to 5.
@@ -116,7 +117,7 @@ bool SceneRenderer::init(const TextureLibrary& textures) {
         surfaceToRgbaFlipped(s, rgbaBytes);
         GlTexture tex;
         tex.create();
-        tex.allocate(s.w, s.h, rgbaBytes.data());
+        tex.allocate(s.w, s.h, rgbaBytes.data(), SRGB8_ALPHA8);
         GenerateMipmap(TEXTURE_2D);
         tex.setParams(LINEAR_MIPMAP_LINEAR, LINEAR, REPEAT);
         textures_.emplace_back(name, std::move(tex));
@@ -170,7 +171,8 @@ GLuint SceneRenderer::normalMapFor(const std::string& name) const {
 void SceneRenderer::uploadBatches(BatchList& dst, const std::vector<Batch>& src) {
     for (const auto& b : src) {
         if (b.verts.empty()) continue;
-        // Bucket whole triangles by the chunk holding their first vertex.
+        // Bucket whole triangles by the chunk holding their first vertex; the ordered map then
+        // lays the chunks out one after another in a single buffer.
         std::map<std::pair<int, int>, std::vector<Vertex>> chunks;
         for (size_t i = 0; i + 2 < b.verts.size(); i += 3) {
             const Vertex& v = b.verts[i];
@@ -178,30 +180,41 @@ void SceneRenderer::uploadBatches(BatchList& dst, const std::vector<Batch>& src)
             list.insert(list.end(), b.verts.begin() + static_cast<std::ptrdiff_t>(i),
                         b.verts.begin() + static_cast<std::ptrdiff_t>(i) + 3);
         }
-        const GLuint texture = textureFor(b.texture), normal = normalMapFor(b.texture);
+        GpuBatch g;
+        std::vector<Vertex> all;
+        all.reserve(b.verts.size());
+        g.bmin[0] = g.bmin[1] = g.bmin[2] = 1e30f;
+        g.bmax[0] = g.bmax[1] = g.bmax[2] = -1e30f;
         for (const auto& [key, verts] : chunks) {
-            GpuBatch g;
-            g.vbo.upload(verts.data(), verts.size() * sizeof(Vertex), STATIC_DRAW);
-            g.vao.create();
-            g.vao.bind();
-            setVertexLayout(g.vbo.id());
-            BindVertexArray(0);
-            g.count = static_cast<int>(verts.size());
-            g.texture = texture;
-            g.normal = normal;
-            g.emissive = b.emissive;
-            g.alphaTest = b.alphaTest;
-            g.bmin[0] = g.bmin[1] = g.bmin[2] = 1e30f;
-            g.bmax[0] = g.bmax[1] = g.bmax[2] = -1e30f;
+            GpuChunk c;
+            c.first = static_cast<int>(all.size());
+            c.count = static_cast<int>(verts.size());
+            c.bmin[0] = c.bmin[1] = c.bmin[2] = 1e30f;
+            c.bmax[0] = c.bmax[1] = c.bmax[2] = -1e30f;
             for (const Vertex& v : verts) {
                 const float p[3] = {v.px, v.py, v.pz};
                 for (int k = 0; k < 3; ++k) {
-                    g.bmin[k] = std::min(g.bmin[k], p[k]);
-                    g.bmax[k] = std::max(g.bmax[k], p[k]);
+                    c.bmin[k] = std::min(c.bmin[k], p[k]);
+                    c.bmax[k] = std::max(c.bmax[k], p[k]);
                 }
             }
-            dst.push_back(std::move(g));
+            for (int k = 0; k < 3; ++k) {
+                g.bmin[k] = std::min(g.bmin[k], c.bmin[k]);
+                g.bmax[k] = std::max(g.bmax[k], c.bmax[k]);
+            }
+            all.insert(all.end(), verts.begin(), verts.end());
+            g.chunks.push_back(c);
         }
+        g.vbo.upload(all.data(), all.size() * sizeof(Vertex), STATIC_DRAW);
+        g.vao.create();
+        g.vao.bind();
+        setVertexLayout(g.vbo.id());
+        BindVertexArray(0);
+        g.texture = textureFor(b.texture);
+        g.normal = normalMapFor(b.texture);
+        g.emissive = b.emissive;
+        g.alphaTest = b.alphaTest;
+        dst.push_back(std::move(g));
     }
 }
 
@@ -231,27 +244,50 @@ void SceneRenderer::drawBatches(const BatchList& batches, const float* model, co
     UniformMatrix4fv(uModel_, 1, FALSE_, model);
     for (const auto& b : batches) {
         if (cull && !boxInFrustum(*cull, b.bmin, b.bmax, offsetZ)) continue;
-        if (b.texture != drawState_.texture) {
-            BindTexture(TEXTURE_2D, b.texture);
-            drawState_.texture = b.texture;
+        bool bound = false;  // state is set up when the first chunk turns out to be visible
+        // Neighbouring visible chunks are one range of the buffer: they go out as a single draw.
+        int runFirst = 0, runCount = 0;
+        auto flush = [&] {
+            if (runCount > 0) DrawArrays(TRIANGLES, runFirst, runCount);
+            runCount = 0;
+        };
+        for (const auto& c : b.chunks) {
+            if (cull && !boxInFrustum(*cull, c.bmin, c.bmax, offsetZ)) {
+                flush();
+                continue;
+            }
+            if (!bound) {
+                bound = true;
+                if (b.texture != drawState_.texture) {
+                    BindTexture(TEXTURE_2D, b.texture);
+                    drawState_.texture = b.texture;
+                }
+                if (bindNormals_ && b.normal != drawState_.normal) {
+                    ActiveTexture(TEXTURE0 + 6);
+                    BindTexture(TEXTURE_2D, b.normal);
+                    ActiveTexture(TEXTURE0);
+                    drawState_.normal = b.normal;
+                }
+                const int emissive = b.emissive ? 1 : 0, alphaTest = b.alphaTest ? 1 : 0;
+                if (emissive != drawState_.emissive) {
+                    Uniform1i(uEmissive_, emissive);
+                    drawState_.emissive = emissive;
+                }
+                if (alphaTest != drawState_.alphaTest) {
+                    Uniform1i(uAlphaTest_, alphaTest);
+                    drawState_.alphaTest = alphaTest;
+                }
+                b.vao.bind();
+            }
+            if (runCount > 0 && runFirst + runCount == c.first) {
+                runCount += c.count;
+            } else {
+                flush();
+                runFirst = c.first;
+                runCount = c.count;
+            }
         }
-        if (bindNormals_ && b.normal != drawState_.normal) {
-            ActiveTexture(TEXTURE0 + 6);
-            BindTexture(TEXTURE_2D, b.normal);
-            ActiveTexture(TEXTURE0);
-            drawState_.normal = b.normal;
-        }
-        const int emissive = b.emissive ? 1 : 0, alphaTest = b.alphaTest ? 1 : 0;
-        if (emissive != drawState_.emissive) {
-            Uniform1i(uEmissive_, emissive);
-            drawState_.emissive = emissive;
-        }
-        if (alphaTest != drawState_.alphaTest) {
-            Uniform1i(uAlphaTest_, alphaTest);
-            drawState_.alphaTest = alphaTest;
-        }
-        b.vao.bind();
-        DrawArrays(TRIANGLES, 0, b.count);
+        flush();
     }
 }
 
@@ -322,6 +358,7 @@ void SceneRenderer::drawWorld(const CameraState& cam, const Frame& f) {
     Uniform1f(u.shadowTexel, 2.0f / static_cast<float>(shadowSize_));
     Uniform1i(u.handShadow, handShadowOn_ ? 1 : 0);
     Uniform3f(u.handPos, handPos_[0], handPos_[1], handPos_[2]);
+    Uniform1i(u.handFaces, static_cast<int>(handFaces_));
     for (int i = 0; i < CameraState::kMaxShadowLights; ++i) {
         ActiveTexture(TEXTURE0 + static_cast<GLenum>(1 + i));
         BindTexture(TEXTURE_CUBE_MAP, shadow_[i].texture());
@@ -346,6 +383,10 @@ void SceneRenderer::drawScene(const CameraState& cam, const Frustum& cull) {
     drawBatches(world_, model, &cull, static_cast<float>(cam.scrollZ));
     drawBatches(props_, model, &cull, static_cast<float>(cam.scrollZ));
     for (const auto& d : cam.doors) {
+        // The panel swings within kDoorPanelWidth of its hinge.
+        const float hx = static_cast<float>(d.hingeX), hz = static_cast<float>(d.hingeZ), r = kDoorPanelWidth + 0.1f;
+        const float bmin[3] = {hx - r, 0.0f, hz - r}, bmax[3] = {hx + r, kDoorPanelHeight + 0.1f, hz + r};
+        if (!boxInFrustum(cull, bmin, bmax)) continue;
         doorModel(d.hingeX, d.hingeZ, d.angle, model);
         drawBatches(door_, model);
     }

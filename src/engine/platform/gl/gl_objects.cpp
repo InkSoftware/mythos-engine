@@ -49,9 +49,9 @@ void GlTexture::setParams(GLint minFilter, GLint magFilter, GLint wrap) {
     TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, wrap);
     TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, wrap);
 }
-void GlTexture::allocate(int w, int h, const void* rgbaPixels) {
+void GlTexture::allocate(int w, int h, const void* rgbaPixels, gl::GLenum internalFormat) {
     bind();
-    TexImage2D(TEXTURE_2D, 0, RGBA8, w, h, 0, RGBA, UNSIGNED_BYTE, rgbaPixels);
+    TexImage2D(TEXTURE_2D, 0, internalFormat, w, h, 0, RGBA, UNSIGNED_BYTE, rgbaPixels);
 }
 
 void surfaceToRgbaFlipped(const Surface& s, std::vector<uint8_t>& out) {

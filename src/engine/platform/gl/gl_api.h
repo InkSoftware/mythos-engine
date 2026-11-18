@@ -30,6 +30,7 @@ constexpr GLenum RGBA = 0x1908;
 constexpr GLenum BGRA = 0x80E1;
 constexpr GLenum UNSIGNED_INT_8_8_8_8_REV = 0x8367;
 constexpr GLenum RGBA8 = 0x8058;
+constexpr GLenum SRGB8_ALPHA8 = 0x8C43;
 constexpr GLenum RED = 0x1903;
 constexpr GLenum R8 = 0x8229;
 constexpr GLenum UNPACK_ALIGNMENT = 0x0CF5;

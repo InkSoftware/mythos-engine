@@ -30,6 +30,7 @@ uniform samplerCube uShadow3;
 uniform samplerCube uShadowHand;
 uniform int uHandShadow;        // 1: the hand light casts shadows from uHandPos
 uniform vec3 uHandPos;
+uniform int uHandFaces;         // bit i: face i of the hand light's cube was drawn this frame
 out vec4 outColor;
 
 vec3 finishPixel(vec3 linearCol, float t);
@@ -56,20 +57,31 @@ float shadowFactor(int i, vec3 lightPos, vec3 n) {
     float dq = length(q);
     float ref = dq - (texel * 1.5 + 0.01);
     vec3 dir = q / max(dq, 0.001);
+    if (i == 4) {  // the hand cube only draws the faces its beam reaches; elsewhere there is no shadow
+        vec3 a = abs(dir);
+        int face = (a.x >= a.y && a.x >= a.z) ? (dir.x > 0.0 ? 0 : 1) : ((a.y >= a.z) ? (dir.y > 0.0 ? 2 : 3) : (dir.z > 0.0 ? 4 : 5));
+        if (((uHandFaces >> face) & 1) == 0) return 1.0;
+    }
     vec3 t = normalize(cross(dir, abs(dir.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
     vec3 b = cross(dir, t);
     float spin = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) * 6.2831853;
-    // Eight taps up close, where the edge is seen; half as many from afar, where it is small.
+    // The taps turn by the golden angle each step: one cos / sin here, then a rotation per tap.
+    const float cg = -0.7390089, sg = 0.6736956;  // cos / sin of 2.3999632
+    float c = cos(spin), s = sin(spin);
     int taps = dq < 6.0 ? 12 : 6;
+    float invTaps = 1.0 / float(taps);
+    // Eight taps up close, where the edge is seen; half as many from afar, where it is small.
     float lit = 0.0;
     for (int k = 0; k < taps; ++k) {
-        float rad = sqrt((float(k) + 0.5) / float(taps)) * uShadowTexel * 3.5;
-        float phi = float(k) * 2.3999632 + spin;
-        vec3 sd = dir + (t * cos(phi) + b * sin(phi)) * rad;
+        float rad = sqrt((float(k) + 0.5) * invTaps) * uShadowTexel * 3.5;
+        vec3 sd = dir + (t * c + b * s) * rad;
         lit += ref > storedDistance(i, sd) ? 0.0 : 1.0;
+        float c2 = c * cg - s * sg;
+        s = s * cg + c * sg;
+        c = c2;
     }
     // Never fully dark: light bounces, so a shadow keeps a share of the light (the soft fill).
-    return mix(0.30, 1.0, lit / float(taps));
+    return mix(0.30, 1.0, lit * invTaps);
 }
 
 // Tilts the surface normal by the texture's normal map. The tangent frame comes from the screen-space
@@ -88,7 +100,7 @@ vec3 bumpNormal(vec3 n) {
 void main() {
     vec4 tex = texture(uTex, vUV);
     if (uAlphaTest == 1 && tex.a < 0.5) discard;
-    vec3 albedo = pow(tex.rgb, vec3(2.2));  // sRGB -> linear
+    vec3 albedo = tex.rgb;  // the texture is SRGB8_ALPHA8: sampling already gives linear
 
     float dist = length(uCam - vWorld);
     vec3 col;
