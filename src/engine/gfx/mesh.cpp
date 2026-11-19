@@ -54,23 +54,39 @@ void AddQuad(Batch& b, P3 p0, P3 p1, P3 p2, P3 p3, float nx, float ny, float nz,
 }
 
 // An axis-aligned box, all six faces, uv tiled by face size.
+// Faces of AddBox, to leave out where a box is joined to another one.
+enum BoxFace : unsigned {
+  kFacePosX = 1,
+  kFaceNegX = 2,
+  kFaceTop = 4,
+  kFaceBottom = 8,
+  kFacePosZ = 16,
+  kFaceNegZ = 32,
+};
+
 void AddBox(Batch& b, float x0, float y0, float z0, float x1, float y1,
-            float z1) {
+            float z1, unsigned skip = 0) {
+  if (!(skip & kFacePosX))
   AddQuad(b, {.x = x1, .y = y0, .z = z0}, {.x = x1, .y = y0, .z = z1},
           {.x = x1, .y = y1, .z = z1}, {.x = x1, .y = y1, .z = z0}, 1, 0, 0,
           z1 - z0, y1 - y0);
+  if (!(skip & kFaceNegX))
   AddQuad(b, {.x = x0, .y = y0, .z = z1}, {.x = x0, .y = y0, .z = z0},
           {.x = x0, .y = y1, .z = z0}, {.x = x0, .y = y1, .z = z1}, -1, 0, 0,
           z1 - z0, y1 - y0);
+  if (!(skip & kFaceTop))
   AddQuad(b, {.x = x0, .y = y1, .z = z0}, {.x = x1, .y = y1, .z = z0},
           {.x = x1, .y = y1, .z = z1}, {.x = x0, .y = y1, .z = z1}, 0, 1, 0,
           x1 - x0, z1 - z0);
+  if (!(skip & kFaceBottom))
   AddQuad(b, {.x = x0, .y = y0, .z = z1}, {.x = x1, .y = y0, .z = z1},
           {.x = x1, .y = y0, .z = z0}, {.x = x0, .y = y0, .z = z0}, 0, -1, 0,
           x1 - x0, z1 - z0);
+  if (!(skip & kFacePosZ))
   AddQuad(b, {.x = x0, .y = y0, .z = z1}, {.x = x1, .y = y0, .z = z1},
           {.x = x1, .y = y1, .z = z1}, {.x = x0, .y = y1, .z = z1}, 0, 0, 1,
           x1 - x0, y1 - y0);
+  if (!(skip & kFaceNegZ))
   AddQuad(b, {.x = x0, .y = y0, .z = z0}, {.x = x1, .y = y0, .z = z0},
           {.x = x1, .y = y1, .z = z0}, {.x = x0, .y = y1, .z = z0}, 0, 0, -1,
           x1 - x0, y1 - y0);
@@ -323,24 +339,49 @@ class SceneBuilder {
         BatchFor(geometry_.world, tiles_.WallTexture(glyph), false, false);
     const bool window = tiles_[glyph].window;
     const bool along_x = (arms & 12u) != 0;  // arms to the west or east
+    // The post and the arms are one wall, so the faces where they meet, and
+    // where an arm reaches the next wall cell, stay out of the mesh: they would
+    // show as hollow boxes wherever the wall is cut open.
     struct Box {
       float x0, z0, x1, z1;
+      unsigned skip;
     };
-    std::vector<Box> boxes = {{a, a, b, b}};
-    if (arms & 1u) boxes.push_back({a, 0, b, a});
-    if (arms & 2u) boxes.push_back({a, b, b, 1});
-    if (arms & 4u) boxes.push_back({0, a, a, b});
-    if (arms & 8u) boxes.push_back({b, a, 1, b});
+    const auto cap = [&](unsigned face, int nx, int ny) {
+      return tiles_.Solid(level_.At(nx, ny)) ? face : 0u;
+    };
+    std::vector<Box> boxes = {
+        {a, a, b, b,
+         ((arms & 1u) ? kFaceNegZ : 0u) | ((arms & 2u) ? kFacePosZ : 0u) |
+             ((arms & 4u) ? kFaceNegX : 0u) | ((arms & 8u) ? kFacePosX : 0u)}};
+    if (arms & 1u) {
+      boxes.push_back(
+          {a, 0, b, a, kFacePosZ | cap(kFaceNegZ, x, y - 1)});
+    }
+    if (arms & 2u) {
+      boxes.push_back(
+          {a, b, b, 1, kFaceNegZ | cap(kFacePosZ, x, y + 1)});
+    }
+    if (arms & 4u) {
+      boxes.push_back(
+          {0, a, a, b, kFacePosX | cap(kFaceNegX, x - 1, y)});
+    }
+    if (arms & 8u) {
+      boxes.push_back(
+          {b, a, 1, b, kFaceNegX | cap(kFacePosX, x + 1, y)});
+    }
     if (!window) {
       for (const Box& bx : boxes)
-        AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1);
+        AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1,
+               bx.skip);
     } else {
       // Below the sill and above the head the wall is whole; between them only
       // the ends of the cell stand (the jambs), and the opening is glazed.
       constexpr float kSill = 0.90f, kHead = 2.05f, kJamb = 0.10f;
       for (const Box& bx : boxes) {
-        AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kSill, fz + bx.z1);
-        AddBox(wall, fx + bx.x0, kHead, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1);
+        AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kSill, fz + bx.z1,
+               bx.skip);
+        AddBox(wall, fx + bx.x0, kHead, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1,
+               bx.skip);
       }
       Batch& wood = BatchFor(geometry_.world, "door", false, false);
       Batch& glass = BatchFor(geometry_.world, "glass", false, false);

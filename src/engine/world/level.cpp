@@ -139,7 +139,10 @@ bool Level::Passable(int x, int y) const {
 }
 
 unsigned Level::ThinArms(int x, int y) const {
+  // A wall ends flat at the edge of the map: outside it there is nothing to
+  // join, and an arm into it would stick out as a spike.
   const auto joins = [&](int nx, int ny) {
+    if (!InBounds(nx, ny)) return false;
     const char c = At(nx, ny);
     return tiles_->Solid(c) || tiles_->IsDoor(c);
   };
