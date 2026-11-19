@@ -21,7 +21,6 @@ const std::string* Lookup(Lang lang, const std::string& key) {
 }  // namespace
 
 void SetLanguage(Lang l) { g_lang = l; }
-Lang Language() { return g_lang; }
 
 void SetTranslations(Lang l, const TranslationTable* table) {
   g_tables[static_cast<int>(l)] = table;

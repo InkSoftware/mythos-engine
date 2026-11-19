@@ -64,7 +64,6 @@ class AudioEngine {
   // stand still (they continue from the same sample when resumed); the looping
   // ambience keeps playing.
   void SetPaused(bool paused);
-  bool Paused() const { return paused_; }
   // How far the ambience drops while a voice line plays (1 = not at all).
   void SetVoiceDuck(float duck);
   // Length of a loaded clip in seconds, or 0 if it is not loaded.

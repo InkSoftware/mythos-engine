@@ -24,18 +24,6 @@ void MoveWithCollision(const Level& level, Vec2& pos, double dx, double dy,
 // faster than straight.
 Vec2 WalkStep(double angle, double forward, double side, double distance);
 
-// An agent walking cell centre to cell centre down a distance field.
-struct FieldWalker {
-  Vec2 target;  // the cell centre it is walking to
-  bool has_target = false;
-};
-
-// Advances pos by up to `distance`, always stepping to the neighbouring cell
-// with the lowest field value. Stops at the goal (value 0) or when the field
-// gives no way on.
-void WalkField(const Level& level, const std::vector<int>& field, Vec2& pos,
-               FieldWalker& walker, double distance);
-
 }  // namespace mythos
 
 #endif  // MYTHOS_ENGINE_WORLD_MOVEMENT_H_

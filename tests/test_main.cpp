@@ -332,16 +332,10 @@ TEST(AMirrorShowsOnlyInRangeAndInSight) {
   CHECK(!PlaceMirror(m, mirror, 2.5, 3.0, level).on);  // nothing hangs there
 }
 
-TEST(FontMeasuresAndWrapsText) {
+TEST(FontMeasuresText) {
   CHECK_EQ(TextWidth("AB", 1), 11);
   CHECK_EQ(TextWidth("AB", 2), 22);
   CHECK_EQ(TextWidth("", 1), 0);
-  auto lines = WrapText("alpha beta gamma", 10);
-  CHECK_EQ(lines.size(), 2u);
-  if (lines.size() == 2) {
-    CHECK(lines[0] == "alpha beta");
-    CHECK(lines[1] == "gamma");
-  }
 }
 
 // The word wrap as it was first written: every candidate line measured from
@@ -608,17 +602,6 @@ TEST(EngineCollisionSlidesAlongWalls) {
   MoveWithCollision(l, p, -1.0, 0.5, 0.22);  // into the west wall, and south
   CHECK(p.x == 1.5);                         // blocked on x
   CHECK(std::fabs(p.y - 2.0) < 1e-9);        // slid on y
-}
-
-TEST(EngineFieldWalkerReachesTheGoal) {
-  Level l;
-  CHECK(l.Parse({"#######", "#.....#", "###.###", "#.....#", "#######"}));
-  const std::vector<int> field = l.DistanceField(5, 3);
-  Vec2 p{.x = 1.5, .y = 1.5};
-  FieldWalker w;
-  for (int i = 0; i < 100; ++i) WalkField(l, field, p, w, 0.25);
-  CHECK(std::fabs(p.x - 5.5) < 1e-9);
-  CHECK(std::fabs(p.y - 3.5) < 1e-9);
 }
 
 TEST(EngineRayHitsSphere) {
@@ -1430,7 +1413,6 @@ TEST(VfsPackRoundTripAndMount) {
                           &err));  // wrong key
   CHECK(!vfs::MountMemory("junk", "pak://assets", key, &err));
   CHECK(vfs::MountMemory(pack, "pak://assets", key, &err));
-  CHECK(vfs::AnyMounted());
 
   std::string out;
   CHECK(vfs::ReadFile("pak://assets/data/a.json", out));
@@ -1462,7 +1444,6 @@ TEST(VfsPackRoundTripAndMount) {
   CHECK(out == std::string("disk"));
   std::filesystem::remove(tmp);
   vfs::UnmountAll();
-  CHECK(!vfs::AnyMounted());
 }
 
 TEST(VfsDetectsTampering) {

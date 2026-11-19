@@ -39,7 +39,6 @@ bool Mount(const std::string& pack_file, const std::string& root, uint64_t key,
 bool MountMemory(std::string bytes, const std::string& root, uint64_t key,
                  std::string* error = nullptr);
 void UnmountAll();
-bool AnyMounted();
 
 // A file's bytes: from a mounted pack when path is under its root (a file
 // missing there is missing, the disk is not tried), otherwise from the disk.

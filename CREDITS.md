@@ -73,9 +73,7 @@ Converted to OBJ and BMP by `tools/fetch_cc0_models.py` (textures in `assets/mod
 | `broom.obj` | [Wooden Broom](https://polyhaven.com/a/wooden_broom) | Balen | CC0 1.0 | brooms |
 | `bucket.obj` | [Wooden Bucket 01](https://polyhaven.com/a/wooden_bucket_01) | James Ray Cock | CC0 1.0 | buckets |
 | `cardbox.obj` | [Cardboard Box 01](https://polyhaven.com/a/cardboard_box_01) | Rahul Chaudhary | CC0 1.0 | cardboard boxes |
-| `cassette.obj` | [Cassette Player](https://polyhaven.com/a/cassette_player) | Oday Abuzaeed | CC0 1.0 | a cassette player |
 | `chair.obj` | [Dining Chair 02](https://polyhaven.com/a/dining_chair_02) | James Ray Cock | CC0 1.0 | chairs |
-| `cuttingboard.obj` | [Wooden Cutting Board](https://polyhaven.com/a/wooden_cutting_board) | Kuutti Siitonen | CC0 1.0 | kitchen counters |
 | `dustpan.obj` | [Dustpan](https://polyhaven.com/a/dustpan) | Balen | CC0 1.0 | a dustpan |
 | `frame_fancy.obj` | [Fancy Picture Frame 01](https://polyhaven.com/a/fancy_picture_frame_01) | Rob Tuytel, Rico Cilliers | CC0 1.0 | pictures on the walls |
 | `frame_stand.obj` | [Standing Picture Frame 01](https://polyhaven.com/a/standing_picture_frame_01) | James Ray Cock | CC0 1.0 | photographs on the tables |
@@ -88,7 +86,6 @@ Converted to OBJ and BMP by `tools/fetch_cc0_models.py` (textures in `assets/mod
 | `lighter.obj` | [Vintage Lighter](https://polyhaven.com/a/vintage_lighter) | Slinc | CC0 1.0 | a lighter |
 | `nightstand.obj` | [Painted Wooden Nightstand](https://polyhaven.com/a/painted_wooden_nightstand) | Kirill Sannikov | CC0 1.0 | bedside tables |
 | `oven.obj` | [Electric Stove](https://polyhaven.com/a/electric_stove) | Kuutti Siitonen | CC0 1.0 | ovens |
-| `pot.obj` | [Pot Enamel 01](https://polyhaven.com/a/pot_enamel_01) | Kuutti Siitonen | CC0 1.0 | cooking pots |
 | `sofa.obj` | [Arm Chair 01](https://polyhaven.com/a/ArmChair_01) | Kirill Sannikov | CC0 1.0 | armchairs and sofas |
 | `table.obj` | [Round Wooden Table 02](https://polyhaven.com/a/round_wooden_table_02) | Ulan Cabanilla | CC0 1.0 | tables |
 | `toolbox.obj` | [Metal Toolbox](https://polyhaven.com/a/metal_toolbox) | Mateusz Sadek | CC0 1.0 | toolboxes |

@@ -119,7 +119,6 @@ class RenderTarget {
   // GPU offers, 0 / 1 = none); resolve() then copies it into color(), which is
   // what to sample.
   void SetSamples(int n);
-  int Samples() const { return samples_; }
   static int MaxSamples();
   void Resolve() const;
   void Bind() const;         // draw into this target
@@ -216,8 +215,6 @@ class GlProgram {
   void Set(std::string_view name, float a, float b) const;
   void Set(std::string_view name, float a, float b, float c) const;
   void SetMat4(std::string_view name, const float* m) const;
-  void SetVec3Array(std::string_view name, int count, const float* v) const;
-  void SetFloatArray(std::string_view name, int count, const float* v) const;
 
  private:
   struct StringHash {

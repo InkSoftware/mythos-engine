@@ -20,14 +20,6 @@ inline uint32_t Rgba(int r, int g, int b, int a = 255) {
          static_cast<uint32_t>(Clampi(b, 0, 255));
 }
 
-// Multiplies the colour channels by k (lighting). Result is opaque.
-inline uint32_t Shade(uint32_t c, double k) {
-  const int r = static_cast<int>(((c >> 16) & 0xFF) * k);
-  const int g = static_cast<int>(((c >> 8) & 0xFF) * k);
-  const int b = static_cast<int>((c & 0xFF) * k);
-  return Rgba(r, g, b, 255);
-}
-
 struct Surface {
   int w = 0;
   int h = 0;

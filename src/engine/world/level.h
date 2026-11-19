@@ -98,9 +98,6 @@ class Level {
   // Unique across all levels.
   uint64_t Revision() const { return revision_; }
 
-  // 4-connected BFS steps from (gx,gy) to every cell; -1 = unreachable/blocked.
-  std::vector<int> DistanceField(int gx, int gy) const;
-
   // Samples the segment for blocking glyphs and furniture.
   bool LineOfSight(double x0, double y0, double x1, double y1) const;
 

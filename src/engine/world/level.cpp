@@ -250,35 +250,6 @@ std::vector<std::pair<int, int>> Level::FindAll(char glyph) const {
   return out;
 }
 
-std::vector<int> Level::DistanceField(int gx, int gy) const {
-  std::vector<int> dist(static_cast<size_t>(w_) * h_, -1);
-  if (!InBounds(gx, gy) || !Passable(gx, gy)) return dist;
-
-  std::vector<int> queue;
-  queue.reserve(dist.size());
-  const int start = gy * w_ + gx;
-  dist[start] = 0;
-  queue.push_back(start);
-
-  const int step_x[4] = {1, -1, 0, 0};
-  const int step_y[4] = {0, 0, 1, -1};
-  for (size_t head = 0; head < queue.size(); ++head) {
-    const int current = queue[head];
-    const int cell_x = current % w_;
-    const int cell_y = current / w_;
-    for (int dir = 0; dir < 4; ++dir) {
-      const int next_x = cell_x + step_x[dir];
-      const int next_y = cell_y + step_y[dir];
-      if (!Passable(next_x, next_y)) continue;
-      const int next = next_y * w_ + next_x;
-      if (dist[next] != -1) continue;
-      dist[next] = dist[current] + 1;
-      queue.push_back(next);
-    }
-  }
-  return dist;
-}
-
 bool Level::LineOfSight(double x0, double y0, double x1, double y1) const {
   const double dx = x1 - x0;
   const double dy = y1 - y0;

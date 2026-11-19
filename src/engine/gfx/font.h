@@ -24,9 +24,6 @@ int TextLength(const std::string& text);
 // Pixel width of text when drawn at the given scale.
 int TextWidth(const std::string& text, int scale = 1);
 
-// Word-wraps text into lines of at most maxChars characters.
-std::vector<std::string> WrapText(const std::string& text, size_t max_chars);
-
 }  // namespace mythos
 
 #endif  // MYTHOS_ENGINE_GFX_FONT_H_

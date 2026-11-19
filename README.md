@@ -129,9 +129,7 @@ and any other see-through material are left out, since the renderer does not ble
 | `broom` | 0.49 x 1.45 x 0.11 | 14258 | 2 baked | metal, nrm, rough | brooms |
 | `bucket` | 0.37 x 0.55 x 0.34 | 5116 | 1 baked | metal, nrm, rough | buckets |
 | `cardbox` | 0.39 x 0.34 x 0.52 | 16952 | 1 baked | nrm, rough | cardboard boxes |
-| `cassette` | 0.13 x 0.24 x 0.05 | 4830 | 3 baked | metal, nrm, rough | a cassette player |
 | `chair` | 0.43 x 0.97 x 0.58 | 22013 | 1 baked | metal, nrm, rough | chairs |
-| `cuttingboard` | 0.45 x 0.04 x 0.25 | 3520 | 1 baked | nrm, rough | kitchen counters |
 | `dustpan` | 0.33 x 0.10 x 0.37 | 4332 | 1 baked | metal, nrm, rough | a dustpan |
 | `frame_fancy` | 0.60 x 0.46 x 0.02 | 938 | 2 baked | nrm, rough | pictures on the walls |
 | `frame_stand` | 0.20 x 0.25 x 0.10 | 1632 | 1 baked + `painting` | metal, nrm, rough | photographs on the tables |
@@ -144,7 +142,6 @@ and any other see-through material are left out, since the renderer does not ble
 | `lighter` | 0.01 x 0.06 x 0.05 | 3366 | 2 baked | metal, nrm, rough | a lighter |
 | `nightstand` | 0.50 x 0.62 x 0.51 | 470 | 1 baked | nrm, rough | bedside tables |
 | `oven` | 0.50 x 0.86 x 0.65 | 13914 | 2 baked | metal, nrm, rough | ovens |
-| `pot` | 0.26 x 0.18 x 0.18 | 11416 | 1 baked | metal, nrm, rough | cooking pots |
 | `sofa` | 0.85 x 1.07 x 0.77 | 5626 | 1 baked | nrm, rough | armchairs and sofas |
 | `table` | 0.83 x 0.78 x 0.83 | 4254 | 1 baked | metal, nrm, rough | tables |
 | `toolbox` | 0.40 x 0.30 x 0.27 | 14228 | 1 baked | metal, nrm, rough | toolboxes |
@@ -189,6 +186,8 @@ defaults match.
   Started with no arguments (from a file manager) it opens the last project, or asks for the game's folder (the one holding `assets/`);
   models and textures come from the project's `assets/`, or from the `assets/` shipped beside the editor.
   Each tagged release attaches `MythosEditor` builds for macOS (universal), Linux and Windows, with the engine's assets.
+  The builds are not signed or notarized: on macOS clear the download's quarantine flag once (`xattr -cr MythosEditor.app`) or
+  allow it under System Settings > Privacy & Security.
 
   `MythosEditor --project <game repo> [--assets <merged asset stage>]` edits levels, furniture and decor. A game puts
   its own things in it (props, lamps, rooms and spawn points kept in its own JSON files, which levels belong to which

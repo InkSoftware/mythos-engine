@@ -392,13 +392,5 @@ void GlProgram::Set(std::string_view n, float a, float b, float c) const {
 void GlProgram::SetMat4(std::string_view n, const float* m) const {
   UniformMatrix4fv(Uniform(n), 1, kFalse, m);
 }
-void GlProgram::SetVec3Array(std::string_view n, int count,
-                             const float* v) const {
-  Uniform3fv(Uniform(n), count, v);
-}
-void GlProgram::SetFloatArray(std::string_view n, int count,
-                              const float* v) const {
-  Uniform1fv(Uniform(n), count, v);
-}
 
 }  // namespace mythos

@@ -16,7 +16,6 @@ enum class Lang { kEnglish, kGreek };
 using TranslationTable = std::unordered_map<std::string, std::string>;
 
 void SetLanguage(Lang l);
-Lang Language();
 
 // Registers the table used for language l (the table must outlive its use; null
 // clears it).

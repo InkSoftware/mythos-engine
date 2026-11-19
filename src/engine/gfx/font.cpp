@@ -233,35 +233,4 @@ int TextWidth(const std::string& text, int scale) {
          scale;  // no spacing after the last character
 }
 
-std::vector<std::string> WrapText(const std::string& text, size_t max_chars) {
-  std::vector<std::string> lines;
-  std::string line;
-  size_t line_len =
-      0;  // in characters, not bytes (Greek letters are two bytes)
-  size_t start = 0;
-  while (start <= text.size()) {
-    const size_t end = text.find(' ', start);
-    const std::string word = text.substr(
-        start, end == std::string::npos ? std::string::npos : end - start);
-    if (!word.empty()) {
-      const size_t word_len = static_cast<size_t>(TextLength(word));
-      if (!line.empty() && line_len + 1 + word_len > max_chars) {
-        lines.push_back(line);
-        line.clear();
-        line_len = 0;
-      }
-      if (!line.empty()) {
-        line += ' ';
-        ++line_len;
-      }
-      line += word;
-      line_len += word_len;
-    }
-    if (end == std::string::npos) break;
-    start = end + 1;
-  }
-  if (!line.empty()) lines.push_back(line);
-  return lines;
-}
-
 }  // namespace mythos

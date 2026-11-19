@@ -238,7 +238,6 @@ bool Mount(const std::string& pack_file, const std::string& root, uint64_t key,
 }
 
 void UnmountAll() { Mounts().clear(); }
-bool AnyMounted() { return !Mounts().empty(); }
 
 bool ReadFile(const std::string& path, std::string& out) {
   std::string rel;
