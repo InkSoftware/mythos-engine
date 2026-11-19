@@ -62,16 +62,19 @@ using gl::Uniform1f;
 using gl::Uniform1fv;
 using gl::Uniform1i;
 using gl::Uniform2f;
+using gl::Uniform2fv;
 using gl::Uniform3f;
 using gl::Uniform3fv;
 using gl::Uniform4f;
+using gl::Uniform4fv;
 using gl::UniformMatrix4fv;
 using gl::VertexAttribPointer;
 using gl::Viewport;
 
 // Door panel hinged at (hingeX, hingeZ), its spine turned to absolute `angle`
 // on the map plane.
-void DoorModel(double hinge_x, double hinge_z, double angle, float* m) {
+void DoorModel(double hinge_x, double hinge_y, double hinge_z, double angle,
+               float* m) {
   const float c = static_cast<float>(std::cos(angle)),
               s = static_cast<float>(std::sin(angle));
   Mat4Identity(m);
@@ -80,6 +83,7 @@ void DoorModel(double hinge_x, double hinge_z, double angle, float* m) {
   m[8] = -s;
   m[10] = c;  // local +z (the thickness) stays perpendicular
   m[12] = static_cast<float>(hinge_x);
+  m[13] = static_cast<float>(hinge_y);
   m[14] = static_cast<float>(hinge_z);
 }
 
@@ -233,6 +237,10 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.time = world_program_.Uniform("uTime");
   u.ambient_base = world_program_.Uniform("uAmbientBase");
   u.ambient_near = world_program_.Uniform("uAmbientNear");
+  u.lightning = world_program_.Uniform("uLightning");
+  u.zone_count = world_program_.Uniform("uZoneCount");
+  u.zone_xz = world_program_.Uniform("uZoneXZ[0]");
+  u.zone_y = world_program_.Uniform("uZoneY[0]");
   u.light_count = world_program_.Uniform("uLightCount");
   u.light_pos = world_program_.Uniform("uLightPos[0]");
   u.light_color = world_program_.Uniform("uLightColor[0]");
@@ -540,6 +548,7 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
   const float tan_half_y = std::tan(f.fov_y * 0.5f);
   sky_program_.Set("uTan", tan_half_y * f.aspect, tan_half_y);
   sky_program_.Set("uTime", static_cast<float>(cam.time));
+  sky_program_.Set("uLightning", static_cast<float>(cam.lightning));
   sky_program_.Set("uMoonDir", f.moon[0], f.moon[1], f.moon[2]);
   sky_program_.Set("uFogColor", f.fog[0], f.fog[1], f.fog[2]);
   sky_program_.Set("uRes", static_cast<float>(target_.Width()),
@@ -607,6 +616,27 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
             cam.ambient_base[2]);
   Uniform3f(u.ambient_near, cam.ambient_near[0], cam.ambient_near[1],
             cam.ambient_near[2]);
+  Uniform1f(u.lightning, static_cast<float>(cam.lightning));
+  {
+    float xz[CameraState::kMaxLightningZones * 4] = {};
+    float zy[CameraState::kMaxLightningZones * 2] = {};
+    const int n = std::min<int>(CameraState::kMaxLightningZones,
+                                static_cast<int>(cam.lightning_zones.size()));
+    for (int i = 0; i < n; ++i) {
+      const LightningZone& z = cam.lightning_zones[static_cast<size_t>(i)];
+      xz[i * 4 + 0] = static_cast<float>(z.x0);
+      xz[i * 4 + 1] = static_cast<float>(z.z0);
+      xz[i * 4 + 2] = static_cast<float>(z.x1);
+      xz[i * 4 + 3] = static_cast<float>(z.z1);
+      zy[i * 2 + 0] = static_cast<float>(z.y0);
+      zy[i * 2 + 1] = static_cast<float>(z.y1);
+    }
+    Uniform1i(u.zone_count, cam.lightning_zoned ? n : -1);
+    if (n > 0) {
+      Uniform4fv(u.zone_xz, n, xz);
+      Uniform2fv(u.zone_y, n, zy);
+    }
+  }
   SetLampUniforms();
   Uniform1i(u.shadow_count, shadow_count_);
   Uniform1f(u.shadow_texel, 2.0f / static_cast<float>(shadow_size_));
@@ -649,11 +679,13 @@ void SceneRenderer::DrawDoors(const CameraState& cam, const Frustum& cull,
     const float hinge_x = static_cast<float>(door.hinge_x),
                 hinge_z = static_cast<float>(door.hinge_z);
     const float reach = kDoorPanelWidth + kDoorCullMargin;
-    const float bmin[3] = {hinge_x - reach, 0.0f, hinge_z - reach};
-    const float bmax[3] = {hinge_x + reach, kDoorPanelHeight + kDoorCullMargin,
+    const float hinge_y = static_cast<float>(door.y);
+    const float bmin[3] = {hinge_x - reach, hinge_y, hinge_z - reach};
+    const float bmax[3] = {hinge_x + reach,
+                           hinge_y + kDoorPanelHeight + kDoorCullMargin,
                            hinge_z + reach};
     if (!BoxInFrustum(cull, bmin, bmax)) continue;
-    DoorModel(door.hinge_x, door.hinge_z, door.angle, model);
+    DoorModel(door.hinge_x, door.y, door.hinge_z, door.angle, model);
     DrawBatches(door_, model);
   }
 }

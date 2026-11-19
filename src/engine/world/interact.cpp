@@ -27,6 +27,7 @@ void PropOverride::ApplyTo(Prop& prop) const {
   if (text) prop.text = *text;
   if (notebook) prop.notebook = *notebook;
   if (at) prop.at = *at;
+  if (floor) prop.floor = *floor;
   if (lift) prop.lift = *lift;
   if (yaw_deg) prop.yaw_deg = *yaw_deg;
   if (aim_height) prop.aim_height = *aim_height;

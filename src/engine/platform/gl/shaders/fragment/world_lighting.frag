@@ -19,6 +19,10 @@ uniform int uOutdoor;
 uniform vec3 uMoonDir;
 uniform vec3 uAmbientBase;
 uniform vec3 uAmbientNear;
+uniform float uLightning;  // a flash of lightning, 0..1
+uniform int uZoneCount;    // -1: the flash lights everything; else only the first uZoneCount boxes
+uniform vec4 uZoneXZ[40];  // x0 z0 x1 z1
+uniform vec2 uZoneY[40];   // y0 y1
 uniform int uLightCount;
 uniform vec3 uLightPos[8];
 uniform vec3 uLightColor[8];
@@ -177,6 +181,19 @@ void main() {
             // A dark interior: dim ambient, slightly stronger near the player (both per era).
             ambient = uAmbientBase + uAmbientNear * clamp(1.0 - dist / 3.5, 0.0, 1.0);
         }
+
+        // Lightning: a cold white-blue flash that fills the room from the windows.
+        float flash = uLightning;
+        if (uZoneCount >= 0) {  // only a room with a window sees it
+            float inside = 0.0;
+            for (int i = 0; i < uZoneCount; ++i)
+                if (vWorld.x >= uZoneXZ[i].x - 0.02 && vWorld.x <= uZoneXZ[i].z + 0.02 &&
+                    vWorld.z >= uZoneXZ[i].y - 0.02 && vWorld.z <= uZoneXZ[i].w + 0.02 &&
+                    vWorld.y >= uZoneY[i].x - 0.02 && vWorld.y <= uZoneY[i].y + 0.02)
+                    inside = 1.0;
+            flash *= inside;
+        }
+        ambient += flash * vec3(0.50, 0.57, 0.80);
 
         // Lamps: small positional lights, fading out smoothly at their radius.
         for (int i = 0; i < uLightCount; ++i) {

@@ -15,12 +15,25 @@ namespace mythos {
 
 enum class DoorKind { kNone, kClosed, kOpen };
 
+// How thick a thin wall is, in metres (a cell is one metre): a lath-and-plaster
+// partition, not a metre of masonry.
+constexpr float kThinWallThickness = 0.20f;
+
 struct TileInfo {
   bool solid = false;  // blocks movement, pathfinding and line of sight
   DoorKind door = DoorKind::kNone;  // door cells get a doorway assembly instead
                                     // of a wall block
   std::string
       wall;  // texture of a solid tile's faces ("" = the legend's default)
+  bool thin = false;    // a solid tile drawn and walled as a thin slab
+                        // (kThinWallThickness) through the middle of its cell,
+                        // joined to every solid or door neighbour, instead of
+                        // a full-cell block: a real interior wall
+  bool window = false;  // a thin wall with a window opening (and glass) in it;
+                        // implies thin
+  bool open_ceiling = false;  // a walkable tile with no ceiling: the well of a
+                              // stair going up, seen through to the floor above
+  bool open_floor = false;    // and no floor: the hole of a stair going down
   bool empty = false;  // draws nothing at all (no floor, no walls): open air
                        // around a cab
   bool wall_is_object =
@@ -57,6 +70,8 @@ class TileSet {
     return t.empty() ? default_floor : t;
   }
   const std::string& SpriteTexture(char c) const { return (*this)[c].sprite; }
+  bool Thin(char c) const { return (*this)[c].thin || (*this)[c].window; }
+  std::array<TileInfo, 256>& tiles() { return tiles_; }
 
   std::string default_wall = "brick";
   std::string default_floor = "wood";
@@ -75,8 +90,9 @@ const TileSetPtr& DefaultTileSet();
 //   { "defaultWall": "brick", "defaultFloor": "wood",
 //     "tiles": { "#": { "solid": true, "door": "closed"|"open", "wall": "...",
 //     "floor": "...",
-//                       "wallIsObject": true, "sprite": "...", "spriteSize":
-//                       0.34, "spriteLift": 0.05 } } }
+//                       "wallIsObject": true, "thin": true, "window": true,
+//                       "sprite": "...", "spriteSize": 0.34, "spriteLift":
+//                       0.05 } } }
 // Every field is optional; keys starting with '_' are comments. Unknown fields
 // are errors.
 bool ParseTileSet(const json::Value& root, TileSet& out,

@@ -31,6 +31,7 @@ namespace mythos {
 // hinge).
 struct DoorInstance {
   double hinge_x = 0, hinge_z = 0;
+  double y = 0;  // the floor's height (a house of several floors)
   double angle = 0;
 };
 
@@ -79,6 +80,12 @@ struct MirrorState {
   double tint[3] = {0.80, 0.84, 0.86};  // the glass dims and cools the picture
 };
 
+// A box the flash of lightning reaches: a room with a window.
+struct LightningZone {
+  double x0 = 0, z0 = 0, x1 = 0, z1 = 0;  // on the map plane
+  double y0 = 0, y1 = 0;                  // from the floor to the ceiling
+};
+
 struct CameraState {
   double x = 0, z = 0;  // eye position on the map plane (x = column, z = row)
   double eye_height = 1.55;
@@ -90,6 +97,7 @@ struct CameraState {
   float ambient_near[3] = {0.085f, 0.075f, 0.065f};
   std::vector<PointLight> lights;
   static constexpr int kMaxLights = 8;
+  static constexpr int kMaxLightningZones = 40;
   static constexpr int kMaxShadowLights =
       4;                 // lamps that cast shadows: the ones nearest the eye
   int shadow_level = 3;  // shadow maps: 0 off, 1 very low, 2 low, 3 medium, 4
@@ -116,6 +124,12 @@ struct CameraState {
   bool outdoor = false;  // night sky and moonlight instead of a ceiling
   bool grain = true;     // film grain (a graphics setting)
   double time = 0;       // seconds, for grain and flicker
+  double lightning = 0;  // 0..1: a flash of lightning lights the world and the
+                         // sky (a thunderstorm; the game decides when)
+  bool lightning_zoned = false;  // true: the flash lights the world only inside
+                                 // lightning_zones (rooms with a window; none
+                                 // at all in a cellar); false: everywhere
+  std::vector<LightningZone> lightning_zones;  // at most kMaxLightningZones
   std::vector<ModelInstance>
       instances;  // models drawn this frame (not in the lamps' shadows)
   MirrorState mirror;
@@ -321,6 +335,7 @@ class SceneRenderer {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, outdoor = -1, moon_dir = -1, fog_color = -1,
               fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
+              lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
               light_count = -1, light_pos = -1, light_color = -1,
               light_radius = -1, shadow_count = -1, shadow_texel = -1,
               hand_shadow = -1, hand_pos = -1, hand_faces = -1, res = -1,

@@ -49,6 +49,17 @@ MODELS = {
     "cuttingboard": Spec("wooden_cutting_board", scale=1.0, size=256, what="kitchen counters"),
     "nightstand": Spec("painted_wooden_nightstand", scale=1.0, size=256, what="bedside tables"),
     "cassette": Spec("cassette_player", scale=1.0, size=256, what="a cassette player"),
+    "cabinet": Spec("painted_wooden_cabinet", scale=1.0, size=256, what="cupboards"),
+    "dresser": Spec("drawer_cabinet", scale=1.0, size=256, what="chests of drawers"),
+    "stool": Spec("wooden_stool_01", scale=1.0, size=256, what="stools"),
+    "crate": Spec("wooden_crate_01", scale=1.0, size=256, what="crates"),
+    "winebottles": Spec("wine_bottles_01", scale=1.0, size=256, what="wine bottles"),
+    "ladder": Spec("wooden_ladder", scale=1.0, size=256, what="ladders"),
+    "pillows": Spec("throw_pillows_01", scale=1.0, size=256, what="cushions and pillows"),
+    "schooldesk": Spec("SchoolDesk_01", scale=1.0, size=256, what="school desks"),
+    "grandfather": Spec("vintage_grandfather_clock_01", scale=1.0, size=256, what="tall clocks"),
+    "toolchest": Spec("metal_tool_chest", scale=1.0, size=256, what="tool chests"),
+    "deskamp": Spec("desk_lamp_arm_01", scale=1.0, size=256, what="desk lamps"),
     "dustpan": Spec("dustpan", scale=1.0, size=256, what="a dustpan"),
 }
 

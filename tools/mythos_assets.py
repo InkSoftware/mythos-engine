@@ -274,6 +274,110 @@ GENERIC_MODELS = {
 }
 
 
+# ---------------------------------------------------------------- common dressing (procedural stand-ins)
+# Plain-box models of things any house has. They are PLACEHOLDERS: swap one for a scanned model of the same name
+# (tools/fetch_cc0_models.py) when there is one. tools/generate_models.py writes them to assets/models.
+
+def box(m, mat, x0, y0, z0, x1, y1, z1):
+    """A box from two corners (Mesh.box takes a centre and half sizes)."""
+    m.box(mat, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, abs(x1 - x0) / 2, abs(y1 - y0) / 2, abs(z1 - z0) / 2)
+
+
+def m_curtain():
+    """A pair of curtains drawn back either side of a window, hung on a rod; the back on z = 0."""
+    m = Mesh()
+    for side in (-1, 1):
+        box(m, "cloth", side * 0.46 - 0.12, 0, 0.0, side * 0.46 + 0.12, 2.3, 0.05)
+        box(m, "cloth", side * 0.4 - 0.05, 0, 0.05, side * 0.4 + 0.05, 2.25, 0.08)
+    box(m, "wood", -0.56, 2.32, 0.02, 0.56, 2.35, 0.06)
+    return m
+
+
+def m_rug():
+    m = Mesh()
+    box(m, "carpet", -1.0, 0, -0.7, 1.0, 0.01, 0.7)
+    box(m, "cloth", -0.92, 0.01, -0.62, 0.92, 0.012, 0.62)
+    return m
+
+
+def m_lamp_floor():
+    m = Mesh()
+    box(m, "metal", -0.12, 0, -0.12, 0.12, 0.03, 0.12)
+    box(m, "metal", -0.012, 0.03, -0.012, 0.012, 1.45, 0.012)
+    box(m, "paper", -0.17, 1.4, -0.17, 0.17, 1.62, 0.17)
+    return m
+
+
+def m_lamp_table():
+    m = Mesh()
+    box(m, "wood", -0.07, 0, -0.07, 0.07, 0.03, 0.07)
+    box(m, "enamel", -0.03, 0.03, -0.03, 0.03, 0.26, 0.03)
+    box(m, "paper", -0.11, 0.26, -0.11, 0.11, 0.42, 0.11)
+    return m
+
+
+def m_boiler():
+    """The cellar's boiler: a drum, pipes and a gauge. The front faces +z."""
+    m = Mesh()
+    box(m, "metal", -0.3, 0, -0.3, 0.3, 1.35, 0.3)
+    box(m, "metal", -0.33, 1.3, -0.33, 0.33, 1.42, 0.33)
+    box(m, "metal", 0.1, 1.42, -0.05, 0.16, 2.2, 0.05)
+    box(m, "metal", -0.3, 0.2, 0.3, 0.3, 0.4, 0.36)
+    m.box("glow_dial", 0.0, 0.95, 0.305, 0.07, 0.07, 0.004)
+    return m
+
+
+def m_workbench():
+    m = Mesh()
+    box(m, "wood", -0.46, 0.85, -0.3, 0.46, 0.92, 0.3)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            box(m, "wood", sx * 0.42 - 0.03, 0, sz * 0.26 - 0.03, sx * 0.42 + 0.03, 0.85, sz * 0.26 + 0.03)
+    box(m, "wood", -0.42, 0.25, -0.26, 0.42, 0.29, 0.26)
+    box(m, "metal", 0.3, 0.92, -0.1, 0.4, 1.0, 0.0)      # the vice
+    return m
+
+
+def m_shelving():
+    """Steel shelving against a wall, jars on it; its front faces +z (turn it to face the room)."""
+    m = Mesh()
+    for sx in (-1, 1):
+        box(m, "metal", sx * 0.46 - 0.02, 0, -0.18, sx * 0.46 + 0.02, 1.9, -0.14)
+        box(m, "metal", sx * 0.46 - 0.02, 0, 0.14, sx * 0.46 + 0.02, 1.9, 0.18)
+    for y in (0.3, 0.8, 1.3, 1.85):
+        box(m, "wood", -0.48, y, -0.2, 0.48, y + 0.03, 0.2)
+    for y in (0.33, 0.83, 1.33):
+        for i, x in enumerate((-0.35, -0.12, 0.1, 0.33)):
+            box(m, "enamel", x - 0.05, y, -0.05 + 0.04 * (i % 2), x + 0.05, y + 0.15, 0.05 + 0.04 * (i % 2))
+    return m
+
+
+def m_bench():
+    m = Mesh()
+    box(m, "wood", -0.7, 0.42, -0.2, 0.7, 0.46, 0.2)
+    box(m, "wood", -0.7, 0.7, -0.22, 0.7, 0.9, -0.18)
+    for sx in (-1, 1):
+        box(m, "wood", sx * 0.6 - 0.03, 0, -0.18, sx * 0.6 + 0.03, 0.42, 0.18)
+    return m
+
+
+def m_coatrack():
+    """A board of hooks on the wall with a child's raincoat hanging from it (its back on z = 0), a metre tall."""
+    m = Mesh()
+    box(m, "wood", -0.2, 0.92, 0.0, 0.2, 1.0, 0.03)
+    box(m, "cloth", -0.12, 0.3, 0.03, 0.12, 0.92, 0.07)
+    box(m, "cloth", -0.19, 0.55, 0.03, -0.12, 0.88, 0.065)
+    box(m, "cloth", 0.12, 0.55, 0.03, 0.19, 0.88, 0.065)
+    box(m, "enamel", -0.07, 0.8, 0.07, 0.07, 0.92, 0.075)
+    return m
+
+
+COMMON_MODELS = {
+    "curtain": m_curtain, "rug": m_rug, "lamp_floor": m_lamp_floor, "lamp_table": m_lamp_table, "boiler": m_boiler,
+    "workbench": m_workbench, "shelving": m_shelving, "bench": m_bench, "coatrack": m_coatrack,
+}
+
+
 def write_models(directory, builders, generator):
     os.makedirs(directory, exist_ok=True)
     for name, build in builders.items():

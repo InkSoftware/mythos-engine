@@ -13,6 +13,8 @@ constexpr double kPassableOpen = 0.5;
 // regionSize stops counting at this many cells (also what a blocked start cell
 // reports).
 constexpr int kRegionCap = 400;
+// Depth stops counting at this many cells.
+constexpr int kDepthCap = 8;
 
 }  // namespace
 
@@ -30,13 +32,22 @@ void RoomDoors::Scan(const Level& level) {
           tiles.Solid(level.At(x, y - 1)) && tiles.Solid(level.At(x, y + 1));
       door.open = glyph == 'n' ? 1.0 : 0.0;
       door.opening = glyph == 'n';
-      // It swings into the room: the smaller of the two spaces the door
+      // It swings into the room. A room is deeper than a corridor, however
+      // narrow the corridor: it goes into the side that runs further straight
+      // on from the door (counted over bare floor, not furniture). If the two
+      // are as deep, it goes into the smaller of the two spaces the door
       // separates.
       const int side_x = door.along_x ? 1 : 0, side_y = door.along_x ? 0 : 1;
-      door.swing = RegionSize(level, x + side_x, y + side_y) <=
-                           RegionSize(level, x - side_x, y - side_y)
-                       ? 1
-                       : -1;
+      const int ahead = Depth(level, x, y, side_x, side_y);
+      const int behind = Depth(level, x, y, -side_x, -side_y);
+      if (ahead != behind) {
+        door.swing = ahead > behind ? 1 : -1;
+      } else {
+        door.swing = RegionSize(level, x + side_x, y + side_y) <=
+                             RegionSize(level, x - side_x, y - side_y)
+                         ? 1
+                         : -1;
+      }
       doors_.push_back(door);
     }
   }
@@ -88,6 +99,17 @@ void RoomDoors::AppendStates(std::vector<DoorState>& out) const {
                    .open = door.open,
                    .swing = door.swing});
   }
+}
+
+int RoomDoors::Depth(const Level& level, int x, int y, int step_x, int step_y) {
+  const TileSet& tiles = level.Tiles();
+  int depth = 0;
+  for (int i = 1; i <= kDepthCap; ++i) {
+    const char glyph = level.At(x + step_x * i, y + step_y * i);
+    if (tiles.Solid(glyph) || tiles.IsDoor(glyph)) break;
+    ++depth;
+  }
+  return depth;
 }
 
 int RoomDoors::RegionSize(const Level& level, int x, int y) {

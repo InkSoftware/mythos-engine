@@ -6,6 +6,7 @@ uniform vec3 uUp;
 uniform vec2 uTan;      // tan of half fov, x and y
 uniform float uTime;
 uniform vec3 uMoonDir;
+uniform float uLightning;
 uniform vec3 uFogColor;
 out vec4 outColor;
 
@@ -66,6 +67,9 @@ void main() {
     col += vec3(0.55, 0.60, 0.72) * halo * (1.0 - cloud * 0.7);
     col = mix(col, moonCol, disc * (1.0 - cloud * 0.85));
     col = mix(col, cloudCol, cloud);
+
+    // Lightning lights the clouds from within, and the whole sky a little.
+    col += vec3(0.55, 0.62, 0.90) * uLightning * (0.35 + 0.65 * cloud);
 
     // Haze toward the horizon so the sky meets the fogged ground.
     col = mix(col, uFogColor, smoothstep(0.16, -0.05, dir.y));

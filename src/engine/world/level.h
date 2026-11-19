@@ -62,6 +62,23 @@ class Level {
   // Passable for movement: not a solid glyph, and not covered by furniture.
   bool Passable(int x, int y) const;
 
+  // Thin walls (TileInfo::thin): a solid thin cell fills only a post of
+  // kThinWallThickness at its centre plus an arm to each side that has a solid
+  // or door neighbour. These are the rectangles (min x, min z, max x, max z, in
+  // world units) a thin solid cell fills; none for any other cell.
+  struct Rect {
+    double x0, z0, x1, z1;
+  };
+  std::vector<Rect> ThinRects(int x, int y) const;
+  // Which sides of a thin cell continue as wall: bit 0 north (-z), 1 south, 2
+  // west, 3 east.
+  unsigned ThinArms(int x, int y) const;
+  // Whether a body covering this box (world units) touches anything solid:
+  // walls (a thin wall only where its slab is) and furniture.
+  bool BoxBlocked(double min_x, double min_z, double max_x, double max_z) const;
+  // The same for one point.
+  bool PointBlocked(double x, double z) const;
+
   // First cell (row-major) holding glyph c.
   bool Find(char glyph, int& x, int& y) const;
   std::vector<std::pair<int, int>> FindAll(char c) const;

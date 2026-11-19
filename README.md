@@ -5,10 +5,19 @@ underneath. It carries games of one kind: a player walking a grid of rooms, door
 listen to and pick up, menus, and a bit of procedural art.
 
 - **World**: grid levels and tile legends, movement and pathfinding, line of sight, the player, room doors,
-  props with verbs (`Interactor`), a notebook, clues and flags (`Progress`).
+  props with verbs (`Interactor`, a prop carries the `floor` of the building it is on), a notebook, clues and
+  flags (`Progress`). A tile can be **thin** (a wall a fifth of a metre thick through the middle of its cell, with
+  a door and a window as thin as it: `TileInfo::thin`, `window`, `Level::BoxBlocked`), so houses can have real
+  walls on the same one-metre grid; walls are `kWallHeight` (2.5 m) high. A game with several storeys keeps one
+  level per floor and draws them stacked, `kFloorPitch` apart (`BuildSceneGeometry(level, models, outdoor, y)`,
+  `AppendSceneGeometry`; tile flags `openCeiling` / `openFloor` leave a stairwell open between two floors, and a
+  door panel carries its floor's height: `DoorInstance::y`). The engine has no stairs and no height for the player:
+  walking up is the game's rule.
 - **Rendering** (OpenGL 4.1 core): per-pixel lighting with lamps and a hand light (torch or lighter), shadows from
   distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect, render scale from 300 to 2160
-  lines, a night sky, culled world geometry, SDF text.
+  lines, a night sky, a flash of lightning (`CameraState::lightning` lights the world and the sky; with `lightning_zoned` only inside
+  `lightning_zones`, the rooms that have a window), culled world
+  geometry, SDF text.
 - **Everything around a game**: a settings system (pages, drawing, saving, applying), localisation with built-in
   English and Greek strings, JSON loaders for sounds, translations, achievements and credits, positional audio, packed
   assets, and procedural textures.
@@ -29,7 +38,7 @@ headless.
 ```
 src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures, and the basic house and office models, that games share
-tools/        mythos_assets.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, map_editor.html, pack/ (mythos_pack)
+tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, map_editor.html, pack/ (mythos_pack)
 tests/        test_main.cpp
 third_party/  stb_truetype, stb_image
 ```
@@ -99,7 +108,7 @@ The engine gives mechanisms; a game gives meaning.
 ## Models and textures
 
 **Shipped in `assets/` (Poly Haven, CC0).** The basic models of houses and offices: furniture, household things,
-picture frames, a torch and a lighter. They are OBJ files in `assets/models/`; each material is a texture named
+picture frames, a torch and a lighter, plus common dressing (cupboards, chests, stools, crates, ladders, cushions, a tall clock, curtains, a rug, lamps, a boiler, a workbench, shelving, a bench) of which the last few are procedural placeholders (`tools/generate_models.py`). They are OBJ files in `assets/models/`; each material is a texture named
 `m_<model>_<n>` in `assets/modeltex/` (a game registers every BMP in that folder as a texture), with the optional
 `_nrm`, `_rough`, `_metal` and `_ao` companions the Materials setting reads (`gfx/pbr.h`). Metric (a world unit is a metre),
 feet on the floor and centred on the origin, front facing +z. They are baked by `tools/fetch_cc0_models.py` (the list) through

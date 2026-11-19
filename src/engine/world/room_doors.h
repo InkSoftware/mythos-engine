@@ -40,6 +40,7 @@ class RoomDoors {
 
   // The number of passable cells reachable from (x, y) without passing a door,
   // up to a cap.
+  static int Depth(const Level& level, int x, int y, int step_x, int step_y);
   static int RegionSize(const Level& level, int x, int y);
   // True if a body of this radius at pos overlaps the cell.
   static bool Overlaps(const Vec2& pos, double radius, int x, int y);

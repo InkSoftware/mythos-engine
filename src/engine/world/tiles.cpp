@@ -39,11 +39,17 @@ bool ParseTileSet(const json::Value& root, TileSet& out, std::string* error) {
     for (const auto& [field, value] : def.items()) {
       const std::string where = "tile '" + glyph + "': " + field;
       if (!field.empty() && field[0] == '_') continue;
-      if (field == "solid" || field == "wallIsObject" || field == "empty") {
+      if (field == "solid" || field == "wallIsObject" || field == "empty" ||
+          field == "thin" || field == "window" || field == "openCeiling" ||
+          field == "openFloor") {
         if (!value.is_boolean()) return fail(where + " must be true or false");
-        (field == "solid"   ? tile.solid
-         : field == "empty" ? tile.empty
-                            : tile.wall_is_object) = value.get<bool>();
+        (field == "solid"         ? tile.solid
+         : field == "empty"       ? tile.empty
+         : field == "thin"        ? tile.thin
+         : field == "window"      ? tile.window
+         : field == "openCeiling" ? tile.open_ceiling
+         : field == "openFloor"   ? tile.open_floor
+                                  : tile.wall_is_object) = value.get<bool>();
       } else if (field == "wall" || field == "floor" || field == "sprite") {
         if (!value.is_string()) return fail(where + " must be a texture name");
         (field == "wall"    ? tile.wall
@@ -64,6 +70,9 @@ bool ParseTileSet(const json::Value& root, TileSet& out, std::string* error) {
         return fail("tile '" + glyph + "': unknown field \"" + field + "\"");
       }
     }
+  }
+  for (auto& tile : out.tiles()) {
+    if (tile.window) tile.thin = true;  // a window is always a thin wall
   }
   return true;
 }

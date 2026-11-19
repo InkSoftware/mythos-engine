@@ -17,7 +17,10 @@ class ModelLibrary;
 
 namespace mythos {
 
-constexpr float kWallHeight = 2.6f;
+constexpr float kWallHeight = 2.5f;
+// The distance between the floors of a house stacked in one scene: a hair more
+// than a wall, so the ceiling below and the floor above never share a plane.
+constexpr float kFloorPitch = kWallHeight + 0.01f;
 
 struct Vertex {
   float px, py, pz;
@@ -49,6 +52,13 @@ struct SceneGeometry {
 // door frames too.
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
                                  bool outdoor = false);
+
+// The geometry of the level raised by `y` (a floor of a house: floor * pitch).
+SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
+                                 bool outdoor, float y);
+
+// Adds `from` to `into`: the floors of a house drawn as one scene.
+void AppendSceneGeometry(SceneGeometry& into, SceneGeometry&& from);
 
 // The swinging door panel, hinged at the local origin, spanning local +x (width
 // kDoorPanelWidth, height kDoorPanelHeight). The renderer places it at a door's

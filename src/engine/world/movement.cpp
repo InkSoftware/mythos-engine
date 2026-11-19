@@ -36,18 +36,9 @@ Vec2 WalkStep(double angle, double forward, double side, double distance) {
 }
 
 bool CanOccupy(const Level& level, double x, double y, double radius) {
-  // The body is a square of half-width `radius`: all four corners must stand on
-  // passable cells.
-  const double offsets[2] = {-radius, radius};
-  for (const double offset_x : offsets) {
-    for (const double offset_y : offsets) {
-      if (!level.Passable(static_cast<int>(std::floor(x + offset_x)),
-                          static_cast<int>(std::floor(y + offset_y)))) {
-        return false;
-      }
-    }
-  }
-  return true;
+  // The body is a square of half-width `radius`: it may touch no wall (a thin
+  // wall only where its slab is) and no furniture.
+  return !level.BoxBlocked(x - radius, y - radius, x + radius, y + radius);
 }
 
 void MoveWithCollision(const Level& level, Vec2& pos, double dx, double dy,

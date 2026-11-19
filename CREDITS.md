@@ -96,5 +96,16 @@ Converted to OBJ and BMP by `tools/fetch_cc0_models.py` (textures in `assets/mod
 | `trashbag.obj` | [Trashbag](https://polyhaven.com/a/trashbag) | Benny Weimer | CC0 1.0 | rubbish |
 | `vase.obj` | [Ceramic Vase 01](https://polyhaven.com/a/ceramic_vase_01) | James Ray Cock | CC0 1.0 | vases |
 | `wardrobe.obj` | [Drawer Cabinet](https://polyhaven.com/a/drawer_cabinet) | Ulan Cabanilla | CC0 1.0 | wardrobes and chests of drawers |
+| `cabinet.obj` | [Painted Wooden Cabinet](https://polyhaven.com/a/painted_wooden_cabinet) | Kirill Sannikov | CC0 1.0 | cupboards |
+| `crate.obj` | [Wooden Crate 01](https://polyhaven.com/a/wooden_crate_01) | James Ray Cock | CC0 1.0 | crates |
+| `deskamp.obj` | [Desk Lamp Arm 01](https://polyhaven.com/a/desk_lamp_arm_01) | Yann Kervran, Kuutti Siitonen | CC0 1.0 | desk lamps |
+| `dresser.obj` | [Drawer Cabinet](https://polyhaven.com/a/drawer_cabinet) | Ulan Cabanilla | CC0 1.0 | chests of drawers |
+| `grandfather.obj` | [Vintage Grandfather Clock 01](https://polyhaven.com/a/vintage_grandfather_clock_01) | Yann Kervran, James Ray Cock | CC0 1.0 | tall clocks |
+| `ladder.obj` | [Wooden Ladder](https://polyhaven.com/a/wooden_ladder) | Miroslav Turura | CC0 1.0 | ladders |
+| `pillows.obj` | [Throw Pillows 01](https://polyhaven.com/a/throw_pillows_01) | Serhii Khromov | CC0 1.0 | cushions and pillows |
+| `schooldesk.obj` | [School Desk 01](https://polyhaven.com/a/SchoolDesk_01) | Ethan Place | CC0 1.0 | school desks |
+| `stool.obj` | [Wooden Stool 01](https://polyhaven.com/a/wooden_stool_01) | Kuutti Siitonen | CC0 1.0 | stools |
+| `toolchest.obj` | [Metal Tool Chest](https://polyhaven.com/a/metal_tool_chest) | Yann Kervran, John Hutcheson | CC0 1.0 | tool chests |
+| `winebottles.obj` | [Wine Bottles 01](https://polyhaven.com/a/wine_bottles_01) | Rico Cilliers, Jurita Burger | CC0 1.0 | wine bottles |
 
 <!-- cc0-models:end -->

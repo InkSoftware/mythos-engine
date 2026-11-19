@@ -138,6 +138,59 @@ bool Level::Passable(int x, int y) const {
          solid_[static_cast<size_t>(y) * w_ + x] == 0;
 }
 
+unsigned Level::ThinArms(int x, int y) const {
+  const auto joins = [&](int nx, int ny) {
+    const char c = At(nx, ny);
+    return tiles_->Solid(c) || tiles_->IsDoor(c);
+  };
+  return (joins(x, y - 1) ? 1u : 0u) | (joins(x, y + 1) ? 2u : 0u) |
+         (joins(x - 1, y) ? 4u : 0u) | (joins(x + 1, y) ? 8u : 0u);
+}
+
+std::vector<Level::Rect> Level::ThinRects(int x, int y) const {
+  std::vector<Rect> out;
+  if (!InBounds(x, y)) return out;
+  const char c = At(x, y);
+  if (!tiles_->Solid(c) || !tiles_->Thin(c)) return out;
+  const double a = 0.5 - kThinWallThickness / 2,
+               b = 0.5 + kThinWallThickness / 2;
+  const double fx = x, fz = y;
+  const unsigned arms = ThinArms(x, y);
+  out.push_back({fx + a, fz + a, fx + b, fz + b});
+  if (arms & 1u) out.push_back({fx + a, fz, fx + b, fz + a});
+  if (arms & 2u) out.push_back({fx + a, fz + b, fx + b, fz + 1});
+  if (arms & 4u) out.push_back({fx, fz + a, fx + a, fz + b});
+  if (arms & 8u) out.push_back({fx + b, fz + a, fx + 1, fz + b});
+  return out;
+}
+
+bool Level::BoxBlocked(double min_x, double min_z, double max_x,
+                       double max_z) const {
+  const int x0 = static_cast<int>(std::floor(min_x));
+  const int x1 = static_cast<int>(std::floor(max_x));
+  const int z0 = static_cast<int>(std::floor(min_z));
+  const int z1 = static_cast<int>(std::floor(max_z));
+  for (int cy = z0; cy <= z1; ++cy) {
+    for (int cx = x0; cx <= x1; ++cx) {
+      if (Passable(cx, cy)) continue;
+      if (!InBounds(cx, cy) || solid_[static_cast<size_t>(cy) * w_ + cx] != 0 ||
+          !tiles_->Thin(At(cx, cy))) {
+        return true;
+      }
+      for (const Rect& r : ThinRects(cx, cy)) {
+        if (min_x < r.x1 && max_x > r.x0 && min_z < r.z1 && max_z > r.z0) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+bool Level::PointBlocked(double x, double z) const {
+  return BoxBlocked(x, z, x, z);
+}
+
 bool Level::AddFurniture(const Placement& placement) {
   if (!InBounds(placement.x, placement.y) ||
       (placement.solid && !Passable(placement.x, placement.y))) {
@@ -233,9 +286,7 @@ bool Level::LineOfSight(double x0, double y0, double x1, double y1) const {
   const int steps = std::max(1, static_cast<int>(length / kSightStep));
   for (int step = 1; step < steps; ++step) {
     const double along = static_cast<double>(step) / steps;
-    const int cell_x = static_cast<int>(std::floor(x0 + dx * along));
-    const int cell_y = static_cast<int>(std::floor(y0 + dy * along));
-    if (!Passable(cell_x, cell_y)) {
+    if (PointBlocked(x0 + dx * along, y0 + dy * along)) {
       return false;  // walls and furniture block sight
     }
   }

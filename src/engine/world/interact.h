@@ -26,6 +26,8 @@ struct Prop {
   std::string id;
   std::string model;  // "" draws nothing (an empty place you can still look at)
   Vec2 at;            // world x, z
+  int floor = 0;      // which storey of the building it is on (0 the ground
+                      // floor, 1 above, -1 the cellar)
   double lift = 0, yaw_deg = 0;
   double aim_height = 0,
          aim_radius = 0;  // the sphere the player's view must hit
@@ -45,6 +47,7 @@ struct Prop {
 struct PropOverride {
   std::optional<std::string> model, name, text, notebook, loop;
   std::optional<Vec2> at;
+  std::optional<int> floor;
   std::optional<double> lift, yaw_deg, aim_height, aim_radius, seconds;
   std::optional<Verb> verb;
   void ApplyTo(Prop& p) const;

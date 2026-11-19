@@ -467,6 +467,136 @@ TEST(EngineDefaultLegendKnowsOnlyTheHashWall) {
   CHECK(!copy.Passable(1, 1));
 }
 
+namespace {
+std::shared_ptr<TileSet> ThinLegend() {
+  auto tiles = std::make_shared<TileSet>();
+  (*tiles)['W'].solid = true;
+  (*tiles)['W'].thin = true;
+  (*tiles)['w'].solid = true;
+  (*tiles)['w'].window = true;
+  (*tiles)['N'].solid = true;
+  (*tiles)['N'].thin = true;
+  (*tiles)['N'].door = DoorKind::kClosed;
+  return tiles;
+}
+}  // namespace
+
+TEST(EngineThinWallsBlockOnlyTheirSlab) {
+  Level l;
+  CHECK(l.Parse({"#######", "#..W..#", "#..W..#", "#..W..#", "#######"}));
+  l.SetTiles(ThinLegend());
+  // The wall column x=3 is a slab 0.2 thick through the middle of the cell.
+  CHECK(CanOccupy(l, 3.2, 2.5, 0.15));    // beside the slab, inside the cell
+  CHECK(!CanOccupy(l, 3.5, 2.5, 0.15));   // on it
+  CHECK(!CanOccupy(l, 3.62, 2.5, 0.15));  // a body straddling it
+  CHECK(CanOccupy(l, 2.5, 2.5, 0.15));
+  Vec2 p{.x = 2.5, .y = 2.5};
+  for (int i = 0; i < 20; ++i)
+    MoveWithCollision(l, p, 0.1, 0.0, 0.15);  // walk into it from the west
+  CHECK(p.x > 3.2 && p.x < 3.3);  // stopped at the slab, not the cell
+  CHECK(l.Tiles().Thin('W') && !l.Tiles().Thin('#'));
+}
+
+TEST(EngineThinWallsJoinUpAndBlockSight) {
+  Level l;
+  CHECK(l.Parse({"#####", "#WWW#", "#...#", "#####"}));
+  l.SetTiles(ThinLegend());
+  CHECK_EQ(l.ThinArms(2, 1), 1u + 4u + 8u);   // north (the border), west, east
+  CHECK_EQ(l.ThinRects(2, 1).size(), 4u);     // the post and three arms
+  CHECK(l.ThinRects(2, 2).empty());           // floor
+  CHECK(l.LineOfSight(1.5, 2.5, 3.5, 2.5));   // along the room
+  CHECK(!l.LineOfSight(2.5, 2.5, 2.5, 0.5));  // through the slab
+  CHECK(l.LineOfSight(2.5, 2.5, 2.5, 1.7));   // up to its face, not past it
+}
+
+TEST(EngineLegendReadsThinAndWindow) {
+  json::Value v;
+  CHECK(json::Parse(R"({"tiles": {"W": {"solid": true, "thin": true},
+                        "w": {"solid": true, "window": true}}})",
+                    v));
+  TileSet t;
+  std::string err;
+  CHECK(ParseTileSet(v, t, &err));
+  CHECK(t.Thin('W') && t['w'].window && t.Thin('w'));  // a window is thin
+  CHECK(!t.Thin('#'));
+}
+
+TEST(EngineThinWallsAndWindowsBuildGeometry) {
+  Level l;
+  CHECK(l.Parse({"#######", "#.....#", "#WWwWW#", "#.....#", "#######"}));
+  l.SetTiles(ThinLegend());
+  ModelLibrary models;
+  const SceneGeometry g = BuildSceneGeometry(l, models, false);
+  bool glass = false;
+  for (const Batch& b : g.world)
+    glass = glass || (b.texture == "glass" && !b.verts.empty());
+  CHECK(glass);  // the window is glazed
+  // A thin wall's faces stand 0.4 and 0.6 into the cell, not on the cell edge.
+  bool slab_face = false;
+  for (const Batch& b : g.world)
+    for (const auto& v : b.verts)
+      if (std::abs(v.pz - 2.4f) < 1e-4f || std::abs(v.pz - 2.6f) < 1e-4f)
+        slab_face = true;
+  CHECK(slab_face);
+}
+
+TEST(EngineStairwellTilesOpenTheCeilingAndTheFloor) {
+  json::Value v;
+  CHECK(json::Parse(R"({"tiles": {"U": {"openCeiling": true},
+                        "v": {"openFloor": true}}})",
+                    v));
+  TileSet t;
+  std::string err;
+  CHECK(ParseTileSet(v, t, &err));
+  CHECK(t['U'].open_ceiling && !t['U'].open_floor);
+  CHECK(t['v'].open_floor && !t['v'].open_ceiling);
+  Level l;
+  CHECK(l.Parse({"#####", "#.U.#", "#####"}));
+  l.SetTiles(std::make_shared<const TileSet>(t));
+  ModelLibrary models;
+  const auto count_quads_at = [&](const SceneGeometry& g, float y, float x) {
+    int n = 0;
+    for (const Batch& b : g.world)
+      for (size_t i = 0; i + 2 < b.verts.size(); i += 3)
+        if (std::abs(b.verts[i].py - y) < 1e-4f &&
+            std::abs(b.verts[i + 1].py - y) < 1e-4f &&
+            std::abs(b.verts[i + 2].py - y) < 1e-4f &&
+            b.verts[i].px >= x - 1e-4f && b.verts[i].px <= x + 1.0001f &&
+            b.verts[i + 1].px >= x - 1e-4f &&
+            b.verts[i + 1].px <= x + 1.0001f &&
+            b.verts[i + 2].px >= x - 1e-4f &&
+            b.verts[i + 2].px <= x + 1.0001f &&
+            std::abs(b.verts[i].ny) > 0.5f && b.verts[i].pz > 0.99f &&
+            b.verts[i].pz < 2.01f && b.verts[i + 1].pz > 0.99f &&
+            b.verts[i + 1].pz < 2.01f && b.verts[i + 2].pz > 0.99f &&
+            b.verts[i + 2].pz < 2.01f)
+          ++n;
+    return n;
+  };
+  const SceneGeometry g = BuildSceneGeometry(l, models, false);
+  CHECK(count_quads_at(g, kWallHeight, 1.0f) > 0);  // a ceiling over the floor
+  CHECK_EQ(count_quads_at(g, kWallHeight, 2.0f), 0);  // none over the well
+  CHECK(count_quads_at(g, 0.0f, 2.0f) > 0);  // its floor is still there
+}
+
+TEST(EngineBuildsAFloorHigherUp) {
+  Level l;
+  CHECK(l.Parse({"###", "#.#", "###"}));
+  ModelLibrary models;
+  const SceneGeometry low = BuildSceneGeometry(l, models, false);
+  SceneGeometry up = BuildSceneGeometry(l, models, false, kFloorPitch);
+  CHECK_EQ(low.world.size(), up.world.size());
+  float lo = 1e9f;
+  for (const Batch& b : up.world)
+    for (const auto& v : b.verts) lo = std::min(lo, v.py);
+  CHECK(std::abs(lo - kFloorPitch) < 1e-4f);  // its floor is the pitch up
+  CHECK(kFloorPitch > kWallHeight);           // never in the ceiling's plane
+  SceneGeometry both = BuildSceneGeometry(l, models, false);
+  const size_t n = both.world.size();
+  AppendSceneGeometry(both, std::move(up));
+  CHECK_EQ(both.world.size(), 2 * n);
+}
+
 TEST(EngineCollisionSlidesAlongWalls) {
   Level l;
   CHECK(l.Parse({"#####", "#...#", "#...#", "#####"}));

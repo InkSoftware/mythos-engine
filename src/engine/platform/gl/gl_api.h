@@ -141,6 +141,8 @@ constexpr GLenum kNearestFilter =
   X(void, Uniform3f, GLint location, GLfloat a, GLfloat b, GLfloat c)        \
   X(void, Uniform1fv, GLint location, GLsizei count, const GLfloat* value)   \
   X(void, Uniform3fv, GLint location, GLsizei count, const GLfloat* value)   \
+  X(void, Uniform2fv, GLint location, GLsizei count, const GLfloat* value)   \
+  X(void, Uniform4fv, GLint location, GLsizei count, const GLfloat* value)   \
   X(void, UniformMatrix4fv, GLint location, GLsizei count,                   \
     GLboolean transpose, const GLfloat* value)                               \
   X(void, GenFramebuffers, GLsizei n, GLuint* framebuffers)                  \
