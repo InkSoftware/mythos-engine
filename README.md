@@ -186,6 +186,8 @@ defaults match.
   fetched at `MYTHOS_IMGUI_TAG`) and is on by default when the engine is the top-level project
   (`MYTHOS_BUILD_EDITOR`); a game that wants it sets `MYTHOS_BUILD_EDITOR=ON` before fetching the engine.
 
+  Started with no arguments (from a file manager) it opens the last project, or asks for the game's folder (the one holding `assets/`);
+  models and textures come from the project's `assets/`, or from the `assets/` shipped beside the editor.
   Each tagged release attaches `MythosEditor` builds for macOS (universal), Linux and Windows, with the engine's assets.
 
   `MythosEditor --project <game repo> [--assets <merged asset stage>]` edits levels, furniture and decor. A game puts

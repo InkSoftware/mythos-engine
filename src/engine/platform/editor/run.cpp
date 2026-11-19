@@ -22,6 +22,7 @@
 
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl3.h"
+#include "engine/core/fileio.h"
 #include "engine/platform/editor/editor_app.h"
 #include "engine/platform/gl/gl_api.h"
 #include "engine/platform/window.h"
@@ -42,6 +43,58 @@ const char* FindUiFont() {
   for (const char* f : kFonts)
     if (std::filesystem::exists(f)) return f;
   return nullptr;
+}
+
+bool HasProject(const std::string& dir) {
+  std::error_code ec;
+  return !dir.empty() &&
+         std::filesystem::is_directory(
+             std::filesystem::path(dir) / "assets" / "levels", ec);
+}
+
+// The engine's assets that ship beside the editor (a release archive), where
+// the models and textures can be read from when a project has none of its own.
+std::string BundledAssets() {
+  namespace fs = std::filesystem;
+  if (const char* base = SDL_GetBasePath()) {
+    for (const char* rel : {"assets", "../../../assets", "../assets"}) {
+      const fs::path p = (fs::path(base) / rel).lexically_normal();
+      std::error_code ec;
+      if (fs::is_directory(p / "models", ec)) return p.string();
+    }
+  }
+  return "";
+}
+
+struct PickState {
+  bool done = false;
+  std::string path;
+};
+void SDLCALL OnPicked(void* userdata, const char* const* list, int) {
+  auto* st = static_cast<PickState*>(userdata);
+  if (list && list[0]) st->path = list[0];
+  st->done = true;  // an empty list: cancelled
+}
+
+// Asks for the project's folder (the one holding assets/) until it is one, or
+// the person cancels (an empty string).
+std::string PickProject(SDL_Window* window) {
+  for (;;) {
+    PickState st;
+    SDL_ShowOpenFolderDialog(OnPicked, &st, window, nullptr, false);
+    while (!st.done) {
+      SDL_Event e;
+      while (SDL_PollEvent(&e)) {
+      }
+      SDL_Delay(20);
+    }
+    if (st.path.empty() || HasProject(st.path)) return st.path;
+    SDL_ShowSimpleMessageBox(
+        SDL_MESSAGEBOX_WARNING, "Level editor",
+        "That folder has no assets/levels. Pick the folder of the game that "
+        "holds assets/.",
+        window);
+  }
 }
 
 }  // namespace
@@ -90,7 +143,6 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
     }
   }
 
-  if (args.stage_dir.empty()) args.stage_dir = args.project_dir + "/assets";
   const Adapter default_adapter;
   const Adapter* adapter = config.adapter ? config.adapter : &default_adapter;
 
@@ -98,6 +150,27 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
   if (!window.Open((adapter->Name() + " - Level Editor").c_str(), width, height,
                    shot.empty()))
     return 1;
+
+  // Started from a file manager there are no arguments and the working folder
+  // is not a project: use the last project, else ask for one.
+  const std::string last_file = mythos::PrefFilePath(
+      adapter->PrefsOrg(), adapter->PrefsApp(), "project.txt");
+  if (!HasProject(args.project_dir) && shot.empty()) {
+    std::string last = mythos::ReadTextFile(last_file);
+    while (!last.empty() && (last.back() == '\n' || last.back() == '\r'))
+      last.pop_back();
+    args.project_dir = HasProject(last) ? last : PickProject(window.Sdl());
+    if (args.project_dir.empty()) return 0;
+  }
+  if (args.stage_dir.empty()) {
+    const std::string own = args.project_dir + "/assets";
+    const std::string bundled = BundledAssets();
+    std::error_code ec;
+    args.stage_dir =
+        !bundled.empty() && !std::filesystem::is_directory(own + "/models", ec)
+            ? bundled
+            : own;
+  }
 
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
@@ -127,8 +200,12 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
     std::string error;
     if (!app.Init(args, adapter, &error)) {
       SDL_Log("cannot start the editor: %s", error.c_str());
+      SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Level editor",
+                               ("Cannot start the editor: " + error).c_str(),
+                               window.Sdl());
       exit_code = 1;
     } else {
+      if (shot.empty()) mythos::WriteFileAtomic(last_file, args.project_dir);
       Uint64 last = SDL_GetPerformanceCounter();
       int settle = 0;
       for (int frame = 0; !app.WantsQuit(); ++frame) {
