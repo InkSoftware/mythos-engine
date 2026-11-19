@@ -14,9 +14,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # The portable builds (SDL linked statically) are what ships, on every OS. One non-portable build, on Linux,
+      # keeps the system-SDL path covered; it is the same code on every OS.
       matrix:
-        os: [ubuntu-22.04, macos-15, windows-2022]
-        portable: ["ON", "OFF"]
+        include:
+          - { os: ubuntu-22.04, portable: "ON" }
+          - { os: macos-15, portable: "ON" }
+          - { os: windows-2022, portable: "ON" }
+          - { os: ubuntu-22.04, portable: "OFF" }
     steps:
       - uses: actions/checkout@v7
 
