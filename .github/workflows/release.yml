@@ -1,0 +1,96 @@
+name: Release
+
+# A pushed tag vX.Y.Z[-suffix] builds the level editor (MythosEditor) for macOS, Linux and Windows, uploads each
+# as a workflow artifact and attaches them to a GitHub release of that tag. Each archive holds the editor and the
+# engine's assets (pass them with --assets, next to --project <game repo>).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  editor:
+    name: MythosEditor (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, os: ubuntu-22.04 }
+          - { name: macos-universal, os: macos-15 }
+          - { name: windows-x64, os: windows-2022 }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install SDL3 build dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config \
+            libasound2-dev libpulse-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev \
+            libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev \
+            libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev libudev-dev libwayland-dev wayland-protocols \
+            libdecor-0-dev
+
+      # Portable: SDL is built from source and linked statically, so the editor runs without SDL installed.
+      # macOS is universal (arm64 + x86_64) on the oldest supported release.
+      - name: Configure
+        run: |
+          ARCHS=""
+          if [ "$RUNNER_OS" = "macOS" ]; then ARCHS="arm64;x86_64"; fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMYTHOS_BUILD_TESTS=OFF -DMYTHOS_BUILD_EDITOR=ON \
+            -DMYTHOS_PORTABLE=ON ${ARCHS:+-DCMAKE_OSX_ARCHITECTURES="$ARCHS"}
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config Release --parallel --target mythos_editor_app
+
+      - name: Package
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          NAME="MythosEditor-${TAG}-${{ matrix.name }}"
+          mkdir -p "dist/$NAME"
+          cp -R assets "dist/$NAME/assets"
+          cp LICENSE "dist/$NAME/" || true
+          case "$RUNNER_OS" in
+            macOS)
+              cp -R build/MythosEditor.app "dist/$NAME/"
+              (cd dist && ditto -c -k --keepParent "$NAME" "$NAME.zip") ;;
+            Linux)
+              cp build/MythosEditor "dist/$NAME/"
+              (cd dist && tar -czf "$NAME.tar.gz" "$NAME") ;;
+            Windows)
+              cp build/Release/MythosEditor.exe "dist/$NAME/"
+              (cd dist && 7z a -tzip "$NAME.zip" "$NAME" > /dev/null) ;;
+          esac
+          rm -rf "dist/$NAME"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MythosEditor-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: editor
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          PRE=""
+          case "$GITHUB_REF_NAME" in *-*) PRE="--prerelease" ;; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" --generate-notes $PRE

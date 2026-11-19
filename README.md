@@ -186,6 +186,8 @@ defaults match.
   fetched at `MYTHOS_IMGUI_TAG`) and is on by default when the engine is the top-level project
   (`MYTHOS_BUILD_EDITOR`); a game that wants it sets `MYTHOS_BUILD_EDITOR=ON` before fetching the engine.
 
+  Each tagged release attaches `MythosEditor` builds for macOS (universal), Linux and Windows, with the engine's assets.
+
   `MythosEditor --project <game repo> [--assets <merged asset stage>]` edits levels, furniture and decor. A game puts
   its own things in it (props, lamps, rooms and spawn points kept in its own JSON files, which levels belong to which
   scenario, how to run the game for the preview) by deriving from `mythos::editor::Adapter`
