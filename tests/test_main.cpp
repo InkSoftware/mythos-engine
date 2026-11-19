@@ -25,6 +25,10 @@
 #include "engine/data/credits.h"
 #include "engine/data/i18n.h"
 #include "engine/data/translation.h"
+#include "engine/editor/adapter.h"
+#include "engine/editor/history.h"
+#include "engine/editor/level_doc.h"
+#include "engine/editor/project.h"
 #include "engine/gfx/flicker.h"
 #include "engine/gfx/font.h"
 #include "engine/gfx/materials.h"
@@ -1475,6 +1479,268 @@ TEST(VfsDetectsTampering) {
   cut.resize(cut.size() - 2);
   CHECK(!vfs::MountMemory(cut, "pak://u", key));  // truncated
   vfs::UnmountAll();
+}
+
+// ---------------------------------------------------------------- level editor
+// (the headless core: level files, the project, undo, adapters)
+
+namespace {
+
+namespace fs = std::filesystem;
+
+// A project of two floors on disk: levels "ground" and "up" (a stair well and
+// the hole over it), the tile legend and one data file, "things.json".
+struct EditorFixture {
+  fs::path root;
+  EditorFixture() {
+    static int n = 0;
+    root = fs::temp_directory_path() /
+           ("mythos_editor_test_" + std::to_string(++n));
+    fs::remove_all(root);
+    fs::create_directories(root / "assets" / "levels");
+    fs::create_directories(root / "assets" / "data");
+    Write("assets/data/tiles.json",
+          "{\n  \"defaultWall\": \"brick\",\n  \"defaultFloor\": \"wood\",\n"
+          "  \"tiles\": {\n    \"#\": {\"solid\": true},\n"
+          "    \"U\": {\"openCeiling\": true},\n"
+          "    \"v\": {\"openFloor\": true}\n  }\n}\n");
+    Write("assets/levels/ground.txt",
+          "[map]\n#####\n#.U.#\n#...#\n#####\n[furniture]\n1 2 table 0\n"
+          "[decor]\n2 2 vase 90 0.25 -0.25 0.9\n");
+    Write("assets/levels/up.txt", "[map]\n#####\n#.v.#\n#...#\n#####\n");
+    Write("assets/data/things.json",
+          "{\n  \"floors\": {\n    \"ground\": 0,\n    \"up\": 1\n  },\n"
+          "  \"things\": [\n    {\n      \"at\": [\n        2.5,\n        1.5\n"
+          "      ],\n      \"model\": \"lamp\",\n      \"lift\": 1.0\n    }\n"
+          "  ]\n}\n");
+  }
+  ~EditorFixture() {
+    std::error_code ec;
+    fs::remove_all(root, ec);
+  }
+  void Write(const std::string& rel, const std::string& text) {
+    std::ofstream(root / rel, std::ios::binary) << text;
+  }
+  std::string Read(const std::string& rel) {
+    return ReadTextFile((root / rel).string());
+  }
+};
+
+constexpr int kThing = editor::kFirstGameKind;
+
+// A game's adapter in miniature: things.json lists things standing on a floor.
+class FakeAdapter : public editor::Adapter {
+ public:
+  std::vector<std::string> DataFiles() const override { return {"things"}; }
+  editor::LevelInfo Info(const editor::DataSet& d,
+                         const std::string& level) const override {
+    editor::LevelInfo info;
+    info.stacked = true;
+    info.group = "Floors";
+    info.floor = d.at("things")["floors"].value(level, 0);
+    return info;
+  }
+  std::vector<std::string> Contexts(const editor::DataSet&) const override {
+    return {"day"};
+  }
+  std::vector<std::pair<int, std::string>> Stack(
+      const editor::DataSet&, const editor::Where&) const override {
+    return {{0, "ground"}, {1, "up"}, {2, "missing"}};
+  }
+  std::vector<editor::EntityRef> Entities(const editor::DataSet& d,
+                                          const editor::Where&) const override {
+    std::vector<editor::EntityRef> out;
+    for (size_t i = 0; i < d.at("things")["things"].size(); ++i)
+      out.push_back({kThing, static_cast<int>(i), ""});
+    return out;
+  }
+  bool Describe(const editor::DataSet& d, const editor::Where&,
+                const editor::EntityRef& r,
+                editor::Visual* out) const override {
+    const json::Value& t =
+        d.at("things")["things"][static_cast<size_t>(r.index)];
+    out->shape = editor::Shape::kModel;
+    out->model = t["model"].get<std::string>();
+    return true;
+  }
+  bool GetPose(const editor::DataSet& d, const editor::Where&,
+               const editor::EntityRef& r, editor::Pose* out) const override {
+    const json::Value& t =
+        d.at("things")["things"][static_cast<size_t>(r.index)];
+    *out = {t["at"][0].get<double>(), t["lift"].get<double>(),
+            t["at"][1].get<double>(), 0, false};
+    return true;
+  }
+  bool SetPose(editor::DataSet& d, const editor::Where&,
+               const editor::EntityRef& r,
+               const editor::Pose& p) const override {
+    json::Value& t = d["things"]["things"][static_cast<size_t>(r.index)];
+    t["at"] = json::Value::array({p.x, p.z});
+    t["lift"] = p.y;
+    return true;
+  }
+  std::string Label(const editor::DataSet&, const editor::Where&,
+                    const editor::EntityRef& r) const override {
+    return "thing " + std::to_string(r.index);
+  }
+};
+
+}  // namespace
+
+TEST(EditorFormatsNumbersLikeLevelFiles) {
+  CHECK(editor::FormatNumber(0.1) == std::string("0.1"));
+  CHECK(editor::FormatNumber(90) == std::string("90"));
+  CHECK(editor::FormatNumber(-0.00001) == std::string("0"));
+  CHECK(editor::FormatNumber(1.23456) == std::string("1.2346"));
+}
+
+TEST(EditorStampsWhatItSavesSoGeneratorsKeepIt) {
+  editor::LevelDoc doc;
+  std::string err;
+  CHECK(editor::ParseLevelDoc("[map]\n#.\n.#\n[furniture]\n[decor]\n", &doc,
+                              &err));
+  CHECK(editor::SerializeLevelDoc(doc).substr(0, 400).find("map_editor") !=
+        std::string::npos);
+  CHECK(!editor::ParseLevelDoc("[map]\n#.\n.\n", &doc, &err));
+}
+
+TEST(EditorResizesALevelAndDropsWhatFallsOff) {
+  editor::LevelDoc doc;
+  std::string err;
+  CHECK(editor::ParseLevelDoc(
+      "[map]\n....\n....\n[furniture]\n3 1 table 0\n0 0 chair 0\n[decor]\n",
+      &doc, &err));
+  doc.Resize(2, 3, '#');
+  CHECK_EQ(doc.Width(), 2);
+  CHECK_EQ(doc.Height(), 3);
+  CHECK(doc.At(0, 2) == '#');
+  CHECK_EQ(doc.furniture.size(), size_t{1});
+}
+
+TEST(EditorEditsLevelsWithNoAdapter) {
+  EditorFixture f;
+  editor::Project p;  // the editor with no game attached
+  std::string err;
+  CHECK(p.Load(f.root.string(), &err));
+  CHECK_EQ(p.LevelNames().size(), size_t{2});
+  CHECK(p.data.empty());
+  CHECK(p.Contexts().empty());
+  const editor::Where w{"ground", ""};
+  // Furniture stands on cells, decor off them.
+  editor::Pose pose;
+  const editor::EntityRef table{editor::kFurniture, 0, ""};
+  CHECK(p.GetPose(w, table, &pose));
+  pose.x = 3.8;
+  pose.z = 1.2;
+  CHECK(p.SetPose(w, table, pose));
+  CHECK_EQ(p.Level("ground")->furniture[0].x, 3);
+  CHECK_EQ(p.Level("ground")->furniture[0].y, 1);
+  const editor::EntityRef vase{editor::kDecor, 0, ""};
+  CHECK(p.GetPose(w, vase, &pose));
+  CHECK(std::abs(pose.x - 2.75) < 1e-9 && std::abs(pose.y - 0.9) < 1e-9);
+  editor::Visual vis;
+  CHECK(p.Describe(w, vase, &vis));
+  CHECK(vis.model == std::string("vase"));
+  CHECK(p.KindName(editor::kDecor) == std::string("Decor"));
+  CHECK(p.IsDirty("ground"));
+  CHECK(!p.IsDirty("up"));
+  CHECK(p.Save(&err));
+  CHECK(!p.Dirty());
+  // Only what changed is rewritten, and a level keeps its stamp.
+  CHECK(f.Read("assets/levels/ground.txt").find("map_editor") !=
+        std::string::npos);
+  CHECK(f.Read("assets/levels/up.txt") ==
+        "[map]\n#####\n#.v.#\n#...#\n#####\n");
+  editor::Project again;
+  CHECK(again.Load(f.root.string(), &err));
+  CHECK_EQ(again.Level("ground")->furniture[0].x, 3);
+  // A new level, walled round; names that are not file names are refused.
+  CHECK(p.CreateLevel("cellar_2", 6, 5));
+  CHECK(p.Level("cellar_2")->At(0, 0) == '#' &&
+        p.Level("cellar_2")->At(2, 2) == '.');
+  CHECK(!p.CreateLevel("a/b", 6, 5));
+  CHECK(!p.CreateLevel("ground", 6, 5));
+}
+
+TEST(EditorChecksFurnitureInWallsMissingModelsAndStairwells) {
+  EditorFixture f;
+  const FakeAdapter adapter;
+  editor::Project p(&adapter);
+  std::string err;
+  CHECK(p.Load(f.root.string(), &err));
+  const editor::Where w{"ground", "day"};
+  const std::vector<std::string> models = {"table", "vase", "lamp"};
+  CHECK(p.Check(w, models).empty());
+  editor::LevelDoc* doc = p.Level("ground");
+  doc->furniture.push_back({0, 0, "table", 0});          // in a wall
+  doc->furniture.push_back({1, 1, "no_such_model", 0});  // no such model
+  bool wall = false, missing = false;
+  for (const auto& pr : p.Check(w, models)) {
+    wall |= pr.text.find("inside a wall") != std::string::npos;
+    missing |= pr.text.find("no_such_model") != std::string::npos;
+  }
+  CHECK(wall);
+  CHECK(missing);
+  // The stair well needs the hole over it, in the floor above.
+  doc->furniture.clear();
+  p.Level("up")->Set(2, 1, '.');
+  bool well = false;
+  for (const auto& pr : p.Check(w, models))
+    well |= pr.text.find("no hole in the floor above") != std::string::npos;
+  CHECK(well);
+}
+
+TEST(EditorStackListsTheFloorsThatExistWithTheOpenOneStandingIn) {
+  EditorFixture f;
+  const FakeAdapter adapter;
+  editor::Project p(&adapter);
+  std::string err;
+  CHECK(p.Load(f.root.string(), &err));
+  const auto stack = p.Stack("day", "up");  // "missing" is no level: left out
+  CHECK_EQ(stack.size(), size_t{2});
+  CHECK_EQ(stack[0].first, 0);
+  CHECK(stack[1].second == std::string("up"));
+  CHECK(p.Info("up").stacked);
+  CHECK_EQ(p.Info("up").floor, 1);
+}
+
+TEST(EditorAdaptersThingsMoveSaveAndUndoLikeLevels) {
+  EditorFixture f;
+  const FakeAdapter adapter;
+  editor::Project p(&adapter);
+  std::string err;
+  CHECK(p.Load(f.root.string(), &err));
+  const editor::Where w{"ground", "day"};
+  CHECK_EQ(p.Entities(w).size(), size_t{3});  // table, vase, thing
+  const editor::EntityRef thing{kThing, 0, ""};
+  CHECK(p.KindName(kThing) == std::string("Things"));
+  editor::Visual vis;
+  CHECK(p.Describe(w, thing, &vis));
+  CHECK(vis.model == std::string("lamp"));
+  editor::History h;
+  h.Reset(p);
+  editor::Pose pose;
+  CHECK(p.GetPose(w, thing, &pose));
+  pose.x = 3.5;
+  CHECK(p.SetPose(w, thing, pose));
+  CHECK(p.Dirty());
+  CHECK(h.Commit(p));
+  CHECK(p.Save(&err));
+  // The data file is written two-space indented with a final newline.
+  editor::Project again(&adapter);
+  CHECK(again.Load(f.root.string(), &err));
+  CHECK(again.data["things"]["things"][0]["at"][0].get<double>() == 3.5);
+  const std::string text = f.Read("assets/data/things.json");
+  CHECK(text == p.data["things"].dump(2) + "\n");
+  // Undo brings the old position back, and marks the file for saving again.
+  CHECK(h.Undo(&p));
+  CHECK(p.data["things"]["things"][0]["at"][0].get<double>() == 2.5);
+  CHECK(p.Dirty());
+  CHECK(h.Redo(&p));
+  CHECK(p.data["things"]["things"][0]["at"][0].get<double>() == 3.5);
+  // What the adapter does not allow is refused: no Remove, no Duplicate.
+  CHECK(!p.Remove(w, thing));
+  CHECK(p.Duplicate(w, thing).index < 0);
 }
 
 }  // namespace mythos

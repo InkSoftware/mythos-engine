@@ -34,11 +34,13 @@ if(PROJECT_IS_TOP_LEVEL)
 endif()
 
 option(MYTHOS_BUILD_PLATFORM "Build the SDL3 platform layer (mythos::engine_platform)" ON)
+option(MYTHOS_BUILD_EDITOR   "Build the level editor (mythos::editor, and MythosEditor when top level; fetches Dear ImGui)" ${PROJECT_IS_TOP_LEVEL})
 option(MYTHOS_BUILD_TESTS "Build the engine's unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(MYTHOS_FETCH_SDL      "Download SDL3 when no installed copy is found" ON)
 option(MYTHOS_LTO            "Link-time optimization for Release builds of the engine libraries, when the compiler supports it" ON)
 option(MYTHOS_PORTABLE       "Link SDL statically so the app runs without SDL installed (for distribution)" OFF)
 set(MYTHOS_SDL_VERSION "3.2.28" CACHE STRING "SDL3 version fetched when MYTHOS_FETCH_SDL is ON")
+set(MYTHOS_IMGUI_TAG "v1.92.9-docking" CACHE STRING "The Dear ImGui tag (docking branch) the level editor is built on")
 
 # ---------------------------------------------------------------- mythos::engine
 add_library(mythos_engine STATIC
@@ -52,6 +54,9 @@ add_library(mythos_engine STATIC
     src/engine/data/engine_strings.cpp
     src/engine/data/i18n.cpp
     src/engine/data/translation.cpp
+    src/engine/editor/adapter.cpp
+    src/engine/editor/level_doc.cpp
+    src/engine/editor/project.cpp
     src/engine/gfx/font.cpp
     src/engine/gfx/materials.cpp
     src/engine/gfx/mesh.cpp
@@ -224,6 +229,54 @@ if(MYTHOS_BUILD_PLATFORM)
         set(MYTHOS_EXE_KIND "${MYTHOS_EXE_KIND}" PARENT_SCOPE)
     endif()
 endif()
+
+# ---------------------------------------------------------------- mythos::editor (the level editor)
+# A native level editor on SDL3, OpenGL and Dear ImGui (docking): a 3D viewport, outliner, inspector, tile
+# palette, asset browser and a game preview. It knows the engine's level files and tile legend; a game adds
+# its own things through an mythos::editor::Adapter (src/engine/editor/adapter.h) and runs the editor with
+# RunEditor() from its own main(). MythosEditor is the editor with no game attached.
+if(MYTHOS_BUILD_PLATFORM AND MYTHOS_BUILD_EDITOR)
+    include(FetchContent)
+    FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG ${MYTHOS_IMGUI_TAG}
+                         GIT_SHALLOW TRUE)
+    FetchContent_MakeAvailable(imgui)  # Dear ImGui has no CMakeLists: this only downloads it
+    add_library(mythos_imgui STATIC
+        ${imgui_SOURCE_DIR}/imgui.cpp ${imgui_SOURCE_DIR}/imgui_draw.cpp ${imgui_SOURCE_DIR}/imgui_tables.cpp
+        ${imgui_SOURCE_DIR}/imgui_widgets.cpp ${imgui_SOURCE_DIR}/imgui_demo.cpp
+        ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+    target_include_directories(mythos_imgui PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+    target_link_libraries(mythos_imgui PUBLIC mythos_engine_platform ${CMAKE_DL_LIBS})
+    if(APPLE)
+        target_link_libraries(mythos_imgui PUBLIC "-framework OpenGL")
+    endif()
+    target_compile_definitions(mythos_imgui PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+    if(MSVC)
+        target_compile_options(mythos_imgui PRIVATE /w)
+    else()
+        target_compile_options(mythos_imgui PRIVATE -w)
+    endif()
+
+    add_library(mythos_editor STATIC
+        src/engine/platform/editor/editor_app.cpp
+        src/engine/platform/editor/run.cpp
+        src/engine/platform/editor/ui_panels.cpp
+        src/engine/platform/editor/viewport.cpp)
+    add_library(mythos::editor ALIAS mythos_editor)
+    target_link_libraries(mythos_editor PUBLIC mythos_engine mythos_engine_platform mythos_imgui)
+    if(MSVC)
+        target_compile_options(mythos_editor PRIVATE /W4)
+    else()
+        target_compile_options(mythos_editor PRIVATE -Wall -Wextra)
+    endif()
+
+    if(PROJECT_IS_TOP_LEVEL)
+        add_executable(mythos_editor_app ${MYTHOS_EXE_KIND} tools/editor/main.cpp)
+        set_target_properties(mythos_editor_app PROPERTIES OUTPUT_NAME "MythosEditor"
+            MACOSX_BUNDLE_BUNDLE_NAME "MythosEditor" MACOSX_BUNDLE_GUI_IDENTIFIER "dev.mythos.editor")
+        target_link_libraries(mythos_editor_app PRIVATE mythos_editor mythos::sdl_main)
+    endif()
+endif()
+
 
 # ---------------------------------------------------------------- mythos_pack
 # Packs a game's assets folder into one file (see src/engine/core/vfs.h). A game's build runs it:

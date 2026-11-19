@@ -38,7 +38,7 @@ headless.
 ```
 src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures, and the basic house and office models, that games share
-tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, level_editor.py, level_editor.html, pack/ (mythos_pack)
+tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, editor/ (MythosEditor), pack/ (mythos_pack)
 tests/        test_main.cpp
 third_party/  stb_truetype, stb_image
 ```
@@ -46,8 +46,9 @@ third_party/  stb_truetype, stb_image
 The sources are in folders by kind: `core/` (math, matrices, JSON, files, packed assets), `world/` (levels, tiles,
 movement, the player, doors, props, the body), `audio/` (sound arithmetic, the sound bank), `data/` (achievements, credits,
 translations), `gfx/` (surfaces, textures and their derived normal maps (or authored `_nrm` / `_rough` companions, light PBR), meshes, models, fonts and text, light arithmetic), `ui/` (overlay, menus,
-settings) and `platform/` (window, input, mixer; `platform/gl/` is the renderer). A folder depends only on the ones
-before it in that list (`gfx/` also on `world/`), apart from `platform/`, which uses them all.
+settings), `editor/` (the level editor's rules: level files, projects, undo, the game adapter) and `platform/` (window,
+input, mixer; `platform/gl/` is the renderer, `platform/editor/` the editor's window and panels). A folder depends only
+on the ones before it in that list (`gfx/` also on `world/`), apart from `platform/`, which uses them all.
 
 ## Using it
 
@@ -174,20 +175,35 @@ defaults match.
   written as OBJ), `Grid` and `write_level` (draw rooms on a character map, write a level file), `GENERIC_MODELS`
   (bed, toilet, shower, fridge, washer, sofa, table, chair, bookshelf, wardrobe, sink, pine; and the figure `body_*`, `flame`) and `write_models`
   (write a set of model builders as OBJ files).
-- **`tools/level_editor.py`** (+ `level_editor.html`): a level editor and previewer for any game laid out as
-  `assets/levels` + `assets/data/tiles.json`. `python3 tools/level_editor.py --project <game repo>` starts a local,
-  standard-library-only server (127.0.0.1) and opens the page in any browser. It paints tiles (with the game's
-  textures, thin walls, windows, stairwells), places furniture and decor (drawn with their real footprints from the
-  OBJs), shows the floors above and below as ghosts, has undo, and checks the level (furniture in walls, missing
-  models, doors without walls, stairwells without a hole above or below). **Render** runs the game's own binary on a
-  throwaway overlay of its asset stage that carries the *unsaved* edits, from a camera you place on the map.
-  Saving stamps a level `map_editor` so a generator script leaves it alone. A game configures it with an optional
-  `<repo>/tools/level_editor.json` (asset and level folders, extra JSON files to edit, where the game binary and the
-  merged asset stage are, the preview's overlay folders) and teaches it its own things with a **plugin**, a script
-  that calls `Editor.plugin({...})` (extra layers and entities with drag, inspector, delete and duplicate; things drawn
-  under the map; checks; the preview command line). The full hook list is the comment at the top of the page's script.
-  Requests must come from the page itself (a custom header and a host check), and writes are limited to the
-  levels and the files `level_editor.json` lists.
+- **The level editor** (`MythosEditor`, the `mythos::editor` library): a native editor in the manner of Unity, Unreal
+  and Blender, for any game laid out as `assets/levels` + `assets/data/tiles.json`. A 3D viewport (orbit and fly
+  camera, a cutaway that hides the ceiling, ghosted floors above and below, a move / rotate gizmo, tile painting,
+  placing models) with dockable panels around it: Levels, Outliner, Inspector (every key of a game's JSON object),
+  Tiles, Assets, Problems (furniture in walls, missing models, stairwells without a hole), Console and a **Game
+  Preview** that runs the game's own screenshot mode on a copy of its assets holding the *unsaved* edits. It has undo
+  and redo, duplicate, delete, new level and resize, and saves only what changed (a level is stamped `map_editor` so a
+  generator script leaves it alone; the data files round-trip byte for byte). It is built with Dear ImGui (docking,
+  fetched at `MYTHOS_IMGUI_TAG`) and is on by default when the engine is the top-level project
+  (`MYTHOS_BUILD_EDITOR`); a game that wants it sets `MYTHOS_BUILD_EDITOR=ON` before fetching the engine.
+
+  `MythosEditor --project <game repo> [--assets <merged asset stage>]` edits levels, furniture and decor. A game puts
+  its own things in it (props, lamps, rooms and spawn points kept in its own JSON files, which levels belong to which
+  scenario, how to run the game for the preview) by deriving from `mythos::editor::Adapter`
+  (`engine/editor/adapter.h`) and calling `mythos::editor::RunEditor(argc, argv, config)` from its own `main()` (the
+  file that includes `<SDL3/SDL_main.h>`), then linking `mythos::editor`:
+
+  ```cpp
+  class MyAdapter : public mythos::editor::Adapter {
+    std::vector<std::string> DataFiles() const override { return {"props"}; }  // assets/data/props.json
+    // Entities, Describe (how the viewport draws a thing), GetPose / SetPose, Label, Data (the Inspector's
+    // JSON), Duplicate / Remove, Info / Contexts / Stack (levels and floors), Preview (the game's command line)...
+  };
+  ```
+
+  The adapter is pure logic over JSON (`DataSet` is the files by name, and the editor loads, saves and undoes them),
+  so it is unit-tested without a window; the engine's own tests do it with a small fake adapter. Every virtual has a
+  default, so an adapter overrides only what its game has. `--shot out.ppm [--size W H] [--frames N] [--camera ...]
+  [--top] [--select furniture:N] [--tool paint] [--preview]` renders the window headless, for checking the UI.
 - **`mythos_pack <out.pak> <assets dir> <key text>`**: packs every file under the folder into one file. At run time,
   `mythos::vfs::mount` serves reads below a root from the pack, and anything outside falls through to the disk. This is
   obfuscation to stop casual editing, not DRM: the key is in the executable.
