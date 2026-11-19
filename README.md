@@ -38,7 +38,7 @@ headless.
 ```
 src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures, and the basic house and office models, that games share
-tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, map_editor.html, pack/ (mythos_pack)
+tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, level_editor.py, level_editor.html, pack/ (mythos_pack)
 tests/        test_main.cpp
 third_party/  stb_truetype, stb_image
 ```
@@ -174,8 +174,20 @@ defaults match.
   written as OBJ), `Grid` and `write_level` (draw rooms on a character map, write a level file), `GENERIC_MODELS`
   (bed, toilet, shower, fridge, washer, sofa, table, chair, bookshelf, wardrobe, sink, pine; and the figure `body_*`, `flame`) and `write_models`
   (write a set of model builders as OBJ files).
-- **`tools/map_editor.html`**: a level editor that runs in the browser (Chrome or Edge). Open it, pick a game's
-  repository root (the one with `assets/levels` and `assets/data/tiles.json`), edit a level and save.
+- **`tools/level_editor.py`** (+ `level_editor.html`): a level editor and previewer for any game laid out as
+  `assets/levels` + `assets/data/tiles.json`. `python3 tools/level_editor.py --project <game repo>` starts a local,
+  standard-library-only server (127.0.0.1) and opens the page in any browser. It paints tiles (with the game's
+  textures, thin walls, windows, stairwells), places furniture and decor (drawn with their real footprints from the
+  OBJs), shows the floors above and below as ghosts, has undo, and checks the level (furniture in walls, missing
+  models, doors without walls, stairwells without a hole above or below). **Render** runs the game's own binary on a
+  throwaway overlay of its asset stage that carries the *unsaved* edits, from a camera you place on the map.
+  Saving stamps a level `map_editor` so a generator script leaves it alone. A game configures it with an optional
+  `<repo>/tools/level_editor.json` (asset and level folders, extra JSON files to edit, where the game binary and the
+  merged asset stage are, the preview's overlay folders) and teaches it its own things with a **plugin**, a script
+  that calls `Editor.plugin({...})` (extra layers and entities with drag, inspector, delete and duplicate; things drawn
+  under the map; checks; the preview command line). The full hook list is the comment at the top of the page's script.
+  Requests must come from the page itself (a custom header and a host check), and writes are limited to the
+  levels and the files `level_editor.json` lists.
 - **`mythos_pack <out.pak> <assets dir> <key text>`**: packs every file under the folder into one file. At run time,
   `mythos::vfs::mount` serves reads below a root from the pack, and anything outside falls through to the disk. This is
   obfuscation to stop casual editing, not DRM: the key is in the executable.
