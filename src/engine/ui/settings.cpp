@@ -18,7 +18,8 @@ const std::vector<int>& SettingsPageItems(SettingsPage page) {
   const static std::vector<int> kGraphics = {
       kSetResolution,  kSetFullscreen, kSetVsync,        kSetFpsCap,
       kSetRenderScale, kSetAntiAlias,  kSetShadows,      kSetMaterials,
-      kSetFilmGrain,   kSetMotionBlur, kSetCameraEffect, kSetBack};
+      kSetFilmGrain,   kSetMotionBlur, kSetVisualFx,
+      kSetCameraEffect, kSetBack};
   const static std::vector<int> kAudio = {kSetMaster, kSetAmbience, kSetEffects,
                                           kSetBack};
   return page == SettingsPage::kGraphics
@@ -112,6 +113,9 @@ bool ApplyToRow(GameSettings& s, SettingsPage& page, int& index,
     case kSetMotionBlur:
       s.motion_blur = StepValue(in, s.motion_blur, 0, kMotionBlurCount - 1);
       break;
+    case kSetVisualFx:
+      if (in.toggle) s.visual_fx = !s.visual_fx;
+      break;
     case kSetCameraEffect:
       if (in.toggle) s.camera_effect = !s.camera_effect;
       break;
@@ -190,6 +194,7 @@ std::map<std::string, std::string> ToKeyValues(const GameSettings& s) {
           {"filmGrain", s.film_grain ? "1" : "0"},
           {"motionBlurScale", std::to_string(kMotionBlurScales[std::clamp(
                                   s.motion_blur, 0, kMotionBlurCount - 1)])},
+          {"visualFx", s.visual_fx ? "1" : "0"},
           {"cameraEffect", s.camera_effect ? "1" : "0"},
           {"fullscreen", s.fullscreen ? "1" : "0"},
           {"vsync", s.vsync ? "1" : "0"},
@@ -229,6 +234,8 @@ void ApplyKeyValues(GameSettings& s,
       for (int i = 0; i < kMotionBlurCount; ++i) {
         if (kMotionBlurScales[i] == pct) s.motion_blur = i;
       }
+    } else if (key == "visualFx") {
+      s.visual_fx = val != "0";
     } else if (key == "cameraEffect") {
       s.camera_effect = val != "0";
     } else if (key == "vsync") {
@@ -250,6 +257,13 @@ void ApplyKeyValues(GameSettings& s,
     } else if (key == "language") {
       s.language = val == "el" ? Lang::kGreek : Lang::kEnglish;
     }
+  }
+  // A file from before the split has "cameraEffect" alone, and it meant the
+  // cinematic look (now "visualFx"): carry its value over and leave the
+  // camcorder look off.
+  if (!values.contains("visualFx") && values.contains("cameraEffect")) {
+    s.visual_fx = s.camera_effect;
+    s.camera_effect = false;
   }
 }
 

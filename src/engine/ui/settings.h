@@ -76,8 +76,10 @@ struct GameSettings {
   bool film_grain = true;
   int motion_blur =
       0;  // index into kMotionBlurScales: how much turning the view smears it
+  bool visual_fx = true;  // the cinematic look: lens colour fringing towards
+                          // the edges of the picture, and bloom
   bool camera_effect =
-      true;  // lens: colour fringing towards the edges of the picture
+      false;  // the camcorder (VHS tape) look, with its REC display
   bool fullscreen = false;
   bool vsync = true;
   int fps_cap = 0;          // index into kFpsCaps
@@ -102,6 +104,7 @@ enum SettingsItem {
   kSetMaterials,
   kSetFilmGrain,
   kSetMotionBlur,
+  kSetVisualFx,
   kSetCameraEffect,
   kSetMaster,
   kSetAmbience,

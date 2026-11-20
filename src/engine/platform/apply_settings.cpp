@@ -41,8 +41,10 @@ void ApplySettings(const GameSettings& s, CameraState& cam) {
   cam.motion_blur =
       kMotionBlurScales[std::clamp(s.motion_blur, 0, kMotionBlurCount - 1)] /
       kPercent;
-  cam.lens_effect = s.camera_effect;
-  cam.bloom = s.camera_effect ? 0.55 : 0.0;  // the cinematic look: glow too
+  cam.lens_effect = s.visual_fx;
+  cam.bloom = s.visual_fx ? 0.55 : 0.0;  // the cinematic look: glow too
+  cam.tape = s.camera_effect;            // the camcorder look (the game may
+                                         // switch it off for a scene)
 }
 
 int LargestFittingResolution(const Window& window) {

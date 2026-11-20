@@ -930,7 +930,8 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
   a.shadows = 5;
   a.materials = 1;
   a.motion_blur = 4;  // 100%
-  a.camera_effect = false;
+  a.camera_effect = true;
+  a.visual_fx = false;
   a.vsync = false;
   a.fps_cap = 4;  // 120
   a.fullscreen = true;
@@ -945,7 +946,15 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
   CHECK_EQ(b.shadows, 5);
   CHECK_EQ(b.materials, 1);
   CHECK_EQ(GameSettings{}.materials, 2);  // full by default
-  CHECK(b.motion_blur == 4 && !b.camera_effect && !b.vsync);
+  CHECK(b.motion_blur == 4 && b.camera_effect && !b.visual_fx && !b.vsync);
+  {  // a file from before the split: cameraEffect was the cinematic look
+    GameSettings old;
+    ApplyKeyValues(old, {{"cameraEffect", "0"}});
+    CHECK(!old.visual_fx && !old.camera_effect);
+    GameSettings old_on;
+    ApplyKeyValues(old_on, {{"cameraEffect", "1"}});
+    CHECK(old_on.visual_fx && !old_on.camera_effect);
+  }
   CHECK_EQ(b.fps_cap, 4);
   CHECK_EQ(b.master_volume, 3);
   CHECK(b.language == Lang::kGreek);
@@ -1011,8 +1020,17 @@ TEST(RuntimeSettingsPageNewRows) {
   index = kSetCameraEffect;
   in = UiInput{};
   in.confirm_pressed = true;
+  CHECK(!s.camera_effect);  // the camcorder look is off by default
   UpdateSettingsPage(s, page, index, in, false, 2);
-  CHECK(!s.camera_effect);
+  CHECK(s.camera_effect && s.visual_fx);  // it leaves the visual effects alone
+  index = kSetVisualFx;
+  UpdateSettingsPage(s, page, index, in, false, 2);
+  CHECK(!s.visual_fx && s.camera_effect);
+  {  // the two are separate rows, visual effects first
+    const auto& rows = SettingsPageItems(SettingsPage::kGraphics);
+    const auto vfx = std::find(rows.begin(), rows.end(), kSetVisualFx);
+    CHECK(vfx != rows.end() && *(vfx + 1) == kSetCameraEffect);
+  }
   // Every page ends with Back, and up / down wrap round its rows.
   for (const SettingsPage p :
        {SettingsPage::kMain, SettingsPage::kGraphics, SettingsPage::kAudio}) {

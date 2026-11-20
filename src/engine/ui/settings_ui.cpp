@@ -86,6 +86,8 @@ Row RowFor(int item, const GameSettings& s, const std::string& language_name) {
       return {
           .label = Tr("settings.motionBlur"),
           .value = blur == 0 ? Tr("common.off") : std::to_string(blur) + "%"};
+    case kSetVisualFx:
+      return {.label = Tr("settings.visualFx"), .value = on_off(s.visual_fx)};
     case kSetCameraEffect:
       return {.label = Tr("settings.cameraEffect"),
               .value = on_off(s.camera_effect)};

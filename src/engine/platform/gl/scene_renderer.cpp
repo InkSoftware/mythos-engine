@@ -906,6 +906,11 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
                          bloom ? static_cast<float>(cam.bloom) : 0.0f);
   composite_program_.Set("uBlur", bx, by);
   composite_program_.Set("uLens", cam.lens_effect ? 1.0f : 0.0f);
+  composite_program_.Set("uTape", cam.tape ? 1.0f : 0.0f);
+  composite_program_.Set("uTapeTime",
+                         static_cast<float>(std::max(0.0, cam.tape_time)));
+  composite_program_.Set("uAspect", static_cast<float>(window_w) /
+                                        static_cast<float>(std::max(1, window_h)));
   // FXAA only on a still picture: a blurred one has no edges to smooth.
   composite_program_.Set(
       "uFxaa", cam.anti_alias == 1 && bx == 0.0f && by == 0.0f ? 1.0f : 0.0f);

@@ -112,6 +112,10 @@ struct CameraState {
       true;  // colour fringing that grows towards the edges of the picture
   double bloom = 0;       // light bleeding round bright parts of the picture: 0
                           // off, ~0.5 a soft glow (the cinematic look)
+  bool tape = false;      // a camcorder (VHS tape) look: colour smear, tracking
+                          // noise, scanlines, a REC / PLAY / battery display
+                          // and a timecode; the game switches it off per scene
+  double tape_time = 0;   // seconds on the tape: the timecode and the noise
   double torch_tint = 0;  // 0..1: the hand light browns and dims as its
                           // battery fails (a game's dying torch)
   bool flash_on = false;  // torch beam
