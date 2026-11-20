@@ -42,6 +42,7 @@ void ApplySettings(const GameSettings& s, CameraState& cam) {
       kMotionBlurScales[std::clamp(s.motion_blur, 0, kMotionBlurCount - 1)] /
       kPercent;
   cam.lens_effect = s.camera_effect;
+  cam.bloom = s.camera_effect ? 0.55 : 0.0;  // the cinematic look: glow too
 }
 
 int LargestFittingResolution(const Window& window) {

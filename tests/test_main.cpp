@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "engine/audio/audio_math.h"
+#include "engine/audio/radio_fx.h"
 #include "engine/audio/sound_bank.h"
 #include "engine/core/fileio.h"
 #include "engine/core/json.h"
@@ -1722,6 +1723,28 @@ TEST(EditorAdaptersThingsMoveSaveAndUndoLikeLevels) {
   // What the adapter does not allow is refused: no Remove, no Duplicate.
   CHECK(!p.Remove(w, thing));
   CHECK(p.Duplicate(w, thing).index < 0);
+}
+
+TEST(RadioFmGlitchesAndStaysFiniteAndRepeatsForASeed) {
+  const int rate = 44100;
+  mythos::RadioFm a(rate, 7), b(rate, 7), c(rate, 8);
+  bool saw[5] = {false, false, false, false, false};
+  double energy = 0;
+  bool same = true, differs = false, finite = true;
+  for (int i = 0; i < rate * 30; ++i) {
+    const float in = 0.5f * std::sin(i * 0.05f) * std::sin(i * 0.0007f);
+    const float ya = a.Process(in), yb = b.Process(in), yc = c.Process(in);
+    same = same && ya == yb;
+    differs = differs || ya != yc;
+    finite = finite && std::isfinite(ya) && std::fabs(ya) <= 2.0f;
+    energy += ya * ya;
+    saw[static_cast<int>(a.Current())] = true;
+  }
+  CHECK(finite);
+  CHECK(same);     // the same seed, the same crackle
+  CHECK(differs);  // another seed, another
+  CHECK(energy > 1.0);
+  for (int k = 1; k < 5; ++k) CHECK(saw[k]);  // every kind of glitch came
 }
 
 }  // namespace mythos

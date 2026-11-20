@@ -24,6 +24,8 @@ extern const char* const kLensAndFxaaFrag;  // motion blur, lens, FXAA
 extern const char* const
     kMirrorGlassFrag;  // the mirror's picture, looked up by screen position
 extern const char* const kOverlayFrag;  // a plain textured quad (the overlay)
+extern const char* const
+    kBloomBlurFrag;  // bloom: bright pass and gaussian blur, at a quarter size
 
 }  // namespace mythos::shaders
 

@@ -14,7 +14,7 @@ listen to and pick up, menus, and a bit of procedural art.
   door panel carries its floor's height: `DoorInstance::y`). The engine has no stairs and no height for the player:
   walking up is the game's rule.
 - **Rendering** (OpenGL 4.1 core): per-pixel lighting with lamps and a hand light (torch or lighter), shadows from
-  distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect, render scale from 300 to 2160
+  distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect with bloom, light scattered in the air (lamp glow, a visible torch beam), a battery-failing tint for the hand light (`CameraState::torch_tint`), render scale from 300 to 2160
   lines, a night sky, a flash of lightning (`CameraState::lightning` lights the world and the sky; with `lightning_zoned` only inside
   `lightning_zones`, the rooms that have a window), culled world
   geometry, SDF text.

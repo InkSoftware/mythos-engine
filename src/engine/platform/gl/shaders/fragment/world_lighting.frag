@@ -9,6 +9,7 @@ uniform vec3 uCam;
 uniform vec3 uFlashDir;
 uniform float uFlashOn;
 uniform float uLighter;
+uniform float uTorchWarm;  // 0..1: a failing battery browns and dims the hand light
 uniform vec3 uFogColor;
 uniform float uFogDensity;
 uniform float uTime;
@@ -142,6 +143,34 @@ vec3 environmentSpecular(vec3 n, vec3 v, vec3 ambient) {
     return ambient * sky * (gF0 * ab.x + ab.y) * occ;
 }
 
+
+// Light in the air. The fog scatters the lamps and the torch towards the eye: a single-scattering integral along the
+// view ray to the surface, closed form for a point light (no shadows, so it only counts a lamp the ray passes near,
+// inside its radius), plus dust hanging in the torch's cone. It is what makes a lamp glow in the dark and a beam
+// visible, rather than only what it lights.
+vec3 airLight(vec3 rd, float dist) {
+    vec3 acc = vec3(0.0);
+    float density = uFogDensity * (uOutdoor == 1 ? 0.6 : 1.0);
+    for (int i = 0; i < uLightCount; ++i) {
+        vec3 L = uLightPos[i] - uCam;
+        float t0 = dot(L, rd);
+        float h = sqrt(max(dot(L, L) - t0 * t0, 0.0144));  // closest approach, never zero
+        float reach = clamp(1.0 - length(L) / (uLightRadius[i] * 1.4), 0.0, 1.0);
+        float seen = (atan((dist - t0) / h) - atan(-t0 / h)) / h;  // 1 / d^2 summed along the ray
+        // The light has to be in front of the surface, not behind it (a lamp in the next room).
+        float inFront = smoothstep(-0.2, 0.6, dist - max(t0, 0.0) + 0.4);
+        acc += uLightColor[i] * (density * 0.30 * seen * reach * reach * inFront);
+    }
+    if (uFlashOn > 0.5) {  // dust in the beam
+        float cone = smoothstep(mix(0.91, 0.30, uLighter), mix(0.985, 0.85, uLighter), dot(rd, normalize(uFlashDir)));
+        vec3 tint = mix(vec3(1.00, 0.80, 0.55), vec3(1.00, 0.62, 0.30), uLighter);
+        tint = mix(tint, vec3(0.95, 0.46, 0.18), uTorchWarm) * (1.0 - 0.45 * uTorchWarm);
+        float along = 1.0 - exp(-0.5 * dist);
+        acc += tint * (density * 3.2 * cone * along / (1.0 + 0.25 * dist));
+    }
+    return acc;
+}
+
 void main() {
     if (dot(vWorld, uClip.xyz) + uClip.w < 0.0) discard;
     vec4 tex = texture(uTex, vUV);
@@ -216,6 +245,7 @@ void main() {
             float wave = sin(uTime * 23.0) * sin(uTime * 7.1);
             float flicker = mix(0.96 + 0.04 * wave, 0.82 + 0.18 * wave * sin(uTime * 31.0), uLighter);
             vec3 tint = mix(vec3(1.00, 0.80, 0.55), vec3(1.00, 0.62, 0.30), uLighter);
+            tint = mix(tint, vec3(0.95, 0.46, 0.18), uTorchWarm) * (1.0 - 0.45 * uTorchWarm);
             float lit = 1.0;
             if (uHandShadow == 1 && cone * falloff > 0.002) lit = shadowFactor(4, uHandPos, geo);
             light += tint * mix(2.4, 2.0, uLighter) * cone * falloff * (0.35 + 0.65 * facing) * flicker * lit;
@@ -227,5 +257,6 @@ void main() {
 
     float fog = 1.0 - exp(-uFogDensity * dist);
     col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
+    col += airLight((vWorld - uCam) / max(dist, 0.001), dist);
     outColor = vec4(finishPixel(col, uTime), 1.0);
 }

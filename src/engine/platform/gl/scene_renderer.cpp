@@ -191,6 +191,8 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
                      {{0, "aPos"}, {2, "aUV"}}, shaders::kToneMapAndGrainFrag);
   mirror_program_.Build(shaders::kMirrorGlassVert, shaders::kMirrorGlassFrag,
                         {{0, "aPos"}});
+  bloom_program_.Build(shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
+                       {{0, "aPos"}, {2, "aUV"}});
   const bool text_ok = text_.Init();
   if (world_program_.Valid()) LookUpWorldUniforms();
   BuildFullscreenQuad();
@@ -213,6 +215,8 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
 
   // Internal scene target (its size is a graphics setting; see setRenderScale).
   target_.Create(kInternalW, kInternalH);
+  bloom_a_.Create(kInternalW / 4, kInternalH / 4);
+  bloom_b_.Create(kInternalW / 4, kInternalH / 4);
   return world_program_.Valid() && quad_program_.Valid() &&
          composite_program_.Valid() && sky_program_.Valid() && text_ok;
 }
@@ -230,6 +234,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.flash_dir = world_program_.Uniform("uFlashDir");
   u.flash_on = world_program_.Uniform("uFlashOn");
   u.lighter = world_program_.Uniform("uLighter");
+  u.torch_warm = world_program_.Uniform("uTorchWarm");
   u.outdoor = world_program_.Uniform("uOutdoor");
   u.moon_dir = world_program_.Uniform("uMoonDir");
   u.fog_color = world_program_.Uniform("uFogColor");
@@ -359,6 +364,8 @@ void SceneRenderer::ResizeTarget(int window_w, int window_h) {
   const int w = std::max(1, static_cast<int>(std::lround(
                                 static_cast<double>(h) * window_w / window_h)));
   target_.Resize(w, h);
+  bloom_a_.Resize(std::max(1, w / 4), std::max(1, h / 4));
+  bloom_b_.Resize(std::max(1, w / 4), std::max(1, h / 4));
 }
 
 GLuint SceneRenderer::TextureFor(const std::string& name) const {
@@ -607,6 +614,8 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform3f(u.flash_dir, f.flash[0], f.flash[1], f.flash[2]);
   Uniform1f(u.flash_on, cam.flash_on ? 1.0f : 0.0f);
   Uniform1f(u.lighter, cam.lighter ? 1.0f : 0.0f);
+  Uniform1f(u.torch_warm,
+            static_cast<float>(std::clamp(cam.torch_tint, 0.0, 1.0)));
   Uniform1i(u.outdoor, cam.outdoor ? 1 : 0);
   Uniform3f(u.moon_dir, f.moon[0], f.moon[1], f.moon[2]);
   Uniform3f(u.fog_color, f.fog[0], f.fog[1], f.fog[2]);
@@ -835,6 +844,40 @@ void SceneRenderer::MotionBlurSmear(const CameraState& cam, const Frame& f,
   have_last_view_ = true;
 }
 
+// Bloom: the bright parts of the (tone mapped) picture, blurred twice along
+// each axis at a quarter of its size, into bloom_b_.
+bool SceneRenderer::BuildBloom(const CameraState& cam) {
+  if (cam.bloom <= 0.0 || !bloom_program_.Valid() || !bloom_a_.Width())
+    return false;
+  Disable(kDepthTest);
+  Disable(kBlend);
+  bloom_program_.Use();
+  bloom_program_.Set("uTex", 0);
+  ActiveTexture(kTexture0);
+  const float tx = 1.0f / static_cast<float>(bloom_a_.Width());
+  const float ty = 1.0f / static_cast<float>(bloom_a_.Height());
+  // Pass 1: bright pass + horizontal blur, picture -> a. Then vertical, a -> b,
+  // and a second round for a wider, smoother glow.
+  struct Pass {
+    const RenderTarget* from;
+    RenderTarget* to;
+    float dx, dy, threshold;
+  };
+  const Pass passes[4] = {{&target_, &bloom_a_, tx * 1.5f, 0.0f, 0.40f},
+                          {&bloom_a_, &bloom_b_, 0.0f, ty * 1.5f, 0.0f},
+                          {&bloom_b_, &bloom_a_, tx * 2.5f, 0.0f, 0.0f},
+                          {&bloom_a_, &bloom_b_, 0.0f, ty * 2.5f, 0.0f}};
+  for (const Pass& p : passes) {
+    p.to->Bind();
+    Viewport(0, 0, p.to->Width(), p.to->Height());
+    p.from->Color().Bind();
+    bloom_program_.Set("uDir", p.dx, p.dy);
+    bloom_program_.Set("uThreshold", p.threshold);
+    DrawQuad();
+  }
+  return true;
+}
+
 // Composite the scene to the window (linear upscale keeps it soft, PS2-like),
 // with the blur and lens.
 void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
@@ -849,10 +892,18 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
   float bx = 0.0f, by = 0.0f;
   MotionBlurSmear(cam, f, bx, by);
 
+  const bool bloom = BuildBloom(cam);
+  RenderTarget::BindWindow();
+  Viewport(0, 0, window_w, window_h);
   composite_program_.Use();
+  ActiveTexture(kTexture0 + 1);
+  bloom_b_.Color().Bind();
   ActiveTexture(kTexture0);
   target_.Color().Bind();
   composite_program_.Set("uTex", 0);
+  composite_program_.Set("uBloomTex", 1);
+  composite_program_.Set("uBloom",
+                         bloom ? static_cast<float>(cam.bloom) : 0.0f);
   composite_program_.Set("uBlur", bx, by);
   composite_program_.Set("uLens", cam.lens_effect ? 1.0f : 0.0f);
   // FXAA only on a still picture: a blurred one has no edges to smooth.

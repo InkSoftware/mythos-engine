@@ -62,6 +62,7 @@ constexpr GLint kNearest = 0x2600;
 constexpr GLint kRepeat = 0x2901;
 constexpr GLint kClampToEdge = 0x812F;
 constexpr GLenum kTexture0 = 0x84C0;
+constexpr GLenum kTexture1 = 0x84C1;
 constexpr GLenum kTextureCubeMap = 0x8513;
 constexpr GLenum kTextureCubeMapPositiveX = 0x8515;
 constexpr GLenum kR32F = 0x822E;

@@ -118,7 +118,8 @@ void AudioEngine::Play(const std::string& name, float gain, float pitch) {
   StartVoice(v);
 }
 
-void AudioEngine::PlayVoice(const std::string& name, float gain, bool spatial) {
+void AudioEngine::PlayVoice(const std::string& name, float gain, bool spatial,
+                            bool radio) {
   if (!stream_) return;
   StopVoice();
   const Clip* clip = FindClip(name);
@@ -128,6 +129,10 @@ void AudioEngine::PlayVoice(const std::string& name, float gain, bool spatial) {
   v.gain = gain * effect_scale_;
   v.voice = true;
   v.spatial = spatial;
+  if (radio) {
+    // A different crackle every time: seeded from how many lines have played.
+    v.radio = std::make_shared<RadioFm>(rate_, 0x9e3779b9u * ++radio_lines_);
+  }
   StartVoice(v);
 }
 
@@ -318,8 +323,9 @@ void AudioEngine::MixVoices(float* out, int frames, float duck_start,
         const float t = static_cast<float>(i) / static_cast<float>(frames);
         scale = loop_scale_ * (duck_start + (duck_end - duck_start) * t);
       }
-      const float sample =
-          samples[static_cast<size_t>(v.pos)] * v.gain * v.fade * scale;
+      float raw = samples[static_cast<size_t>(v.pos)];
+      if (v.radio) raw = v.radio->Process(raw);
+      const float sample = raw * v.gain * v.fade * scale;
       if (v.spatial) {
         v.cur_l = EaseToward(v.cur_l, v.tgt_l, place_ease);
         v.cur_r = EaseToward(v.cur_r, v.tgt_r, place_ease);

@@ -110,6 +110,10 @@ struct CameraState {
                        // GPU lacks is lowered)
   bool lens_effect =
       true;  // colour fringing that grows towards the edges of the picture
+  double bloom = 0;       // light bleeding round bright parts of the picture: 0
+                          // off, ~0.5 a soft glow (the cinematic look)
+  double torch_tint = 0;  // 0..1: the hand light browns and dims as its
+                          // battery fails (a game's dying torch)
   bool flash_on = false;  // torch beam
   double hand_yaw = 0,
          hand_pitch = 0;  // where the hand light points, relative to the view
@@ -271,10 +275,14 @@ class SceneRenderer {
   void Composite(const CameraState& cam, const Frame& f, int window_w,
                  int window_h);
   void DrawOverlay(const Surface& overlay, const TextLayer* text);
+  // Bright pass and blur of the resolved picture into bloom_b_; false when
+  // bloom is off.
+  bool BuildBloom(const CameraState& cam);
 
   GlProgram world_program_, quad_program_, sky_program_, shadow_program_,
-      composite_program_, mirror_program_;
-  RenderTarget mirror_target_;  // what the glass shows
+      composite_program_, mirror_program_, bloom_program_;
+  RenderTarget bloom_a_, bloom_b_;  // the glow, at a quarter of the picture
+  RenderTarget mirror_target_;      // what the glass shows
   GlVertexArray mirror_vao_;
   GlBuffer mirror_vbo_;
   std::vector<BatchList> models_;  // by ModelInstance::model
@@ -333,10 +341,10 @@ class SceneRenderer {
   // The world program's per-frame uniforms, looked up once in init().
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
-              lighter = -1, outdoor = -1, moon_dir = -1, fog_color = -1,
-              fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
-              lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
-              light_count = -1, light_pos = -1, light_color = -1,
+              lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
+              fog_color = -1, fog_density = -1, time = -1, ambient_base = -1,
+              ambient_near = -1, lightning = -1, zone_count = -1, zone_xz = -1,
+              zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
               light_radius = -1, shadow_count = -1, shadow_texel = -1,
               hand_shadow = -1, hand_pos = -1, hand_faces = -1, res = -1,
               grain = -1, materials = -1, clip = -1;

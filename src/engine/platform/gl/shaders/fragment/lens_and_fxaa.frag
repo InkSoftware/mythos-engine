@@ -5,6 +5,8 @@ uniform vec2 uBlur;   // how far the picture moved this frame, in uv; (0, 0) = n
 uniform float uLens;  // 0 off, 1 on
 uniform float uFxaa;  // 1: smooth edges (not while blurring)
 uniform vec2 uTexel;  // one texel of the scene, in uv
+uniform sampler2D uBloomTex;  // the blurred bright parts of the picture, at a quarter size
+uniform float uBloom;         // how much of it is added back (0 = none)
 out vec4 outColor;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -46,6 +48,10 @@ void main() {
         col /= 12.0;
     } else {
         col = sampleLens(vUV);
+    }
+    if (uBloom > 0.0) {  // light bleeding round bright things: the lamps, the lit dial, the beam on a wall
+        vec3 glow = texture(uBloomTex, vUV).rgb;
+        col = 1.0 - (1.0 - col) * (1.0 - glow * uBloom);  // screen blend: never past white
     }
     outColor = vec4(col, 1.0);
 }

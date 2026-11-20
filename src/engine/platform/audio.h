@@ -14,8 +14,11 @@
 #include <SDL3/SDL.h>
 
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "engine/audio/radio_fx.h"
 
 namespace mythos {
 
@@ -52,8 +55,11 @@ class AudioEngine {
   // A `spatial` line is a sound in the world: it is silent until
   // setVoicePlacement says where it is heard (and it ducks the ambience only as
   // much as it is audible).
+  // A `radio` line comes through an FM radio that is not quite tuned
+  // (engine/audio/radio_fx.h): band-limited, hissing, with dropouts, tuning
+  // squeals, stutters and bursts of noise now and then.
   void PlayVoice(const std::string& name, float gain = 1.0f,
-                 bool spatial = false);
+                 bool spatial = false, bool radio = false);
   void StopVoice();
   // The left and right gains of the spatial voice line (0..1, eased like a
   // source's), set every frame from where the listener stands. No effect on a
@@ -95,6 +101,7 @@ class AudioEngine {
     float cur_l = 0,
           cur_r = 0;  // current spatial gains, eased towards the targets
     float tgt_l = 0, tgt_r = 0;
+    std::shared_ptr<RadioFm> radio;  // the FM radio's sound, or null
   };
   struct Source {
     const Clip* clip = nullptr;
@@ -130,6 +137,7 @@ class AudioEngine {
   float voice_duck_ = 1.0f;  // ambience level while a voice line plays
   float duck_level_ = 1.0f;  // current ambience duck, eased towards its target
   bool paused_ = false;
+  uint32_t radio_lines_ = 0;  // radio lines played, to seed each one's crackle
 };
 
 }  // namespace mythos
