@@ -68,6 +68,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/text.cpp
     src/engine/gfx/textures.cpp
     src/engine/ui/menu.cpp
+    src/engine/ui/paging.cpp
     src/engine/ui/settings.cpp
     src/engine/ui/settings_ui.cpp
     src/engine/ui/ui.cpp

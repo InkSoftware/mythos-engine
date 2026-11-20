@@ -16,10 +16,10 @@ const std::vector<int>& SettingsPageItems(SettingsPage page) {
   const static std::vector<int> kMain = {kSetGraphics, kSetAudio, kSetLanguage,
                                          kSetBack};
   const static std::vector<int> kGraphics = {
-      kSetResolution,  kSetFullscreen, kSetVsync,        kSetFpsCap,
-      kSetRenderScale, kSetAntiAlias,  kSetShadows,      kSetMaterials,
-      kSetFilmGrain,   kSetMotionBlur, kSetVisualFx,
-      kSetCameraEffect, kSetBack};
+      kSetResolution,  kSetFullscreen, kSetVsync,    kSetFpsCap,
+      kSetRenderScale, kSetAntiAlias,  kSetShadows,  kSetMaterials,
+      kSetFilmGrain,   kSetMotionBlur, kSetVisualFx, kSetCameraEffect,
+      kSetBack};
   const static std::vector<int> kAudio = {kSetMaster, kSetAmbience, kSetEffects,
                                           kSetBack};
   return page == SettingsPage::kGraphics

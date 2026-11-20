@@ -9,6 +9,8 @@ mythos-engine is MIT-licensed (see LICENSE). Third-party code:
   when no installed copy is found.
 - [GLM](https://github.com/g-truc/glm) 1.0.3 by G-Truc Creation, MIT licence (the Happy Bunny licence is an
   alternative): fetched at configure time when no installed copy is found.
+- [Dear ImGui](https://github.com/ocornut/imgui) 1.92 (docking branch) by Omar Cornut, MIT licence: fetched at configure
+  time, only for the level editor (`MYTHOS_BUILD_EDITOR`); the game does not link it.
 - SDL3 is fetched at configure time when no installed copy is found: [libsdl.org](https://libsdl.org),
   zlib licence.
 

@@ -1,6 +1,7 @@
 #include "engine/platform/app.h"
 
 #include "engine/core/fileio.h"
+#include "engine/core/vfs.h"
 
 namespace mythos {
 
@@ -68,6 +69,23 @@ std::map<std::string, double> ClipLengths(
     if (const double sec = audio.ClipSeconds(name); sec > 0) out[name] = sec;
   }
   return out;
+}
+
+std::string MountAssetPack(const std::string& pack_key) {
+  const char* base =
+      SDL_GetBasePath();  // owned by SDL, with a trailing separator
+  if (!base) return "";
+  const std::string name = "assets.pak";
+  for (const char* rel : {"assets.pak", "../Resources/assets.pak"}) {
+    const std::string pak = std::string(base) + rel;
+    if (!vfs::Exists(pak)) continue;
+    const std::string root = pak.substr(0, pak.size() - name.size()) + "assets";
+    std::string error;
+    if (vfs::Mount(pak, root, vfs::KeyFromString(pack_key), &error))
+      return root;
+    SDL_Log("%s: %s", pak.c_str(), error.c_str());
+  }
+  return "";
 }
 
 }  // namespace mythos

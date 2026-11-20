@@ -41,6 +41,7 @@
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
 #include "engine/ui/menu.h"
+#include "engine/ui/paging.h"
 #include "engine/ui/settings.h"
 #include "engine/ui/ui.h"
 #include "engine/world/body.h"
@@ -103,6 +104,82 @@ struct Registrar {
   } while (0)
 
 }  // namespace
+
+namespace {
+size_t Utf8Length(const std::string& s) {
+  size_t n = 0;
+  for (const unsigned char ch : s) n += (ch & 0xC0) != 0x80;
+  return n;
+}
+}  // namespace
+
+TEST(PaginateTextEdgeCases) {
+  CHECK_EQ(PaginateText("", size_t{10}).size(), 1u);  // always one page
+  CHECK(PaginateText("", size_t{10})[0].empty());
+  CHECK_EQ(PaginateText("short", size_t{10}).size(), 1u);
+  // exactly fitting: ten characters on a ten character page
+  CHECK_EQ(PaginateText("0123456789", size_t{10}).size(), 1u);
+  CHECK_EQ(PaginateText("0123456789 a", size_t{10}).size(), 2u);
+  // one long paragraph breaks at sentences, then words, losing nothing
+  const std::string para =
+      "One two three. Four five six seven. Eight nine ten eleven twelve.";
+  const auto pages = PaginateText(para, size_t{20});
+  CHECK(pages.size() >= 3u);
+  std::string joined;
+  for (const auto& p : pages) {
+    CHECK(!p.empty() && p.size() <= 20u);
+    CHECK(p.front() != ' ' && p.back() != ' ');
+    joined += (joined.empty() ? "" : " ") + p;
+  }
+  CHECK(joined == para);
+  CHECK(pages[0] == "One two three.");  // a sentence boundary, not mid-way
+  // paragraphs (lines) stay together when they fit
+  const auto lines = PaginateText("aaaa\nbbbb\ncccc", size_t{9});
+  CHECK_EQ(lines.size(), 2u);
+  CHECK(lines[0] == "aaaa\nbbbb" && lines[1] == "cccc");
+  // forced breaks: a form feed and the token, however short the text
+  const auto forced = PaginateText("one\ftwo[page]three", size_t{100});
+  CHECK_EQ(forced.size(), 3u);
+  CHECK(forced[1] == "two" && forced[2] == "three");
+  // one word longer than a page is cut, never inside a code point
+  const std::string greek = "αβγδεζηθικλμνξοπρστυφχψω";
+  const auto cut = PaginateText(greek, size_t{5});
+  std::string back;
+  for (const auto& p : cut) {
+    CHECK(p.size() % 2 == 0);  // each Greek letter is two bytes
+    CHECK(!p.empty());
+    back += p;
+  }
+  CHECK(back == greek);
+  const auto gsent =
+      PaginateText("Καλημέρα κόσμε. Τι κάνεις σήμερα;", size_t{16});
+  for (const auto& p : gsent) {
+    CHECK(Utf8Length(p) <= 16u);
+    CHECK(p.find('\xEF') == std::string::npos);
+  }
+}
+
+TEST(PagedEntriesAndClampedPages) {
+  const auto starts = PaginateEntries({50, 50, 50, 50}, 110, 3);
+  CHECK_EQ(starts.size(), 2u);  // two fit (103 <= 110), then the next page
+  CHECK(starts[0] == 0 && starts[1] == 2);
+  CHECK_EQ(PaginateEntries({}, 100, 3).size(), 1u);
+  CHECK_EQ(PaginateEntries({500}, 100, 3).size(), 1u);
+  CHECK_EQ(PaginateEntries({500, 10}, 100, 3).size(), 2u);  // too tall: alone
+  CHECK_EQ(ClampPage(5, 3), 2);
+  CHECK_EQ(ClampPage(-1, 3), 0);
+  CHECK_EQ(ClampPage(2, 0), 0);
+}
+
+TEST(WrapWordsKeepsWordsWholeAndAlwaysGivesALine) {
+  CHECK_EQ(WrapWords("", 10).size(), 1u);
+  const auto lines = WrapWords("alpha beta gamma delta", 11);
+  CHECK_EQ(lines.size(), 2u);
+  CHECK(lines[0] == "alpha beta" && lines[1] == "gamma delta");
+  CHECK_EQ(WrapWords("extraordinarily", 5).size(), 1u);  // too long: whole
+  const auto greek = WrapWords("αβγδ εζηθ ικλμ", 9);     // counts characters
+  CHECK_EQ(greek.size(), 2u);
+}
 
 TEST(OverlayTakesTheWindowShapeAtAWholeScale) {
   int w = 0, h = 0;

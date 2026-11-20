@@ -114,6 +114,13 @@ void PlayCue(AudioEngine& audio, const SoundCue& cue, Rng& rng);
 std::map<std::string, double> ClipLengths(
     const AudioEngine& audio, const std::vector<std::string>& names);
 
+// A packed build ships assets.pak next to the executable (or, in a macOS
+// bundle, in ../Resources) instead of an assets folder. Mounts it under the key
+// `pack_key` (the one mythos_pack was given) and returns the virtual "assets"
+// folder every asset read should go below, so the files are not on disk to
+// edit. Empty if there is no pack or it does not open.
+std::string MountAssetPack(const std::string& pack_key);
+
 }  // namespace mythos
 
 #endif  // MYTHOS_ENGINE_PLATFORM_APP_H_
