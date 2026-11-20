@@ -89,7 +89,7 @@ class ObjParser {
   // position index.
   bool ParseCorner(const std::string& token, Corner& corner) const {
     const size_t first_slash = token.find('/');
-    const int64_t position_index = std::strtol(token.c_str(), nullptr, 10);
+    const int64_t position_index = std::strtoll(token.c_str(), nullptr, 10);
     int64_t uv_index = 0, normal_index = 0;
     size_t position_slot = 0;
     if (!ResolveIndex(position_index, positions_.size(), position_slot)) {
@@ -101,13 +101,13 @@ class ObjParser {
     if (first_slash != std::string::npos) {
       const size_t second_slash = token.find('/', first_slash + 1);
       if (second_slash == std::string::npos) {
-        uv_index = std::strtol(token.c_str() + first_slash + 1, nullptr, 10);
+        uv_index = std::strtoll(token.c_str() + first_slash + 1, nullptr, 10);
       } else {
         if (second_slash > first_slash + 1) {
-          uv_index = std::strtol(token.c_str() + first_slash + 1, nullptr, 10);
+          uv_index = std::strtoll(token.c_str() + first_slash + 1, nullptr, 10);
         }
         normal_index =
-            std::strtol(token.c_str() + second_slash + 1, nullptr, 10);
+            std::strtoll(token.c_str() + second_slash + 1, nullptr, 10);
       }
       size_t uv_slot = 0;
       if (uv_index != 0 && ResolveIndex(uv_index, uvs_.size(), uv_slot)) {

@@ -133,6 +133,9 @@ if(MSVC)
     target_compile_options(mythos_engine PUBLIC /utf-8)
 endif()
 
+if(MSVC)
+    add_compile_options(/MP)  # compile the files of a project in parallel
+endif()
 function(mythos_engine_warnings target)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive-)

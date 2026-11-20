@@ -1,0 +1,8 @@
+# Text files are LF on every platform (tests and tools compare files byte for byte).
+* text=auto eol=lf
+*.bmp binary
+*.wav binary
+*.pak binary
+*.ttf binary
+*.png binary
+*.ppm binary
