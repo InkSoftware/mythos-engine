@@ -3,6 +3,7 @@
 #ifndef MYTHOS_ENGINE_AUDIO_AUDIO_MATH_H_
 #define MYTHOS_ENGINE_AUDIO_AUDIO_MATH_H_
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <string>

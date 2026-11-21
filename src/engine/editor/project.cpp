@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <memory>
 
 #include "engine/core/fileio.h"
 

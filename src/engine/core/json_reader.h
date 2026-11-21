@@ -4,6 +4,7 @@
 #ifndef MYTHOS_ENGINE_CORE_JSON_READER_H_
 #define MYTHOS_ENGINE_CORE_JSON_READER_H_
 
+#include <cmath>
 #include <string>
 #include <utility>
 
