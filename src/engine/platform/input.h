@@ -25,6 +25,16 @@ using PointAt = std::function<int(int x, int y, int* value)>;
 // structs: left stick = move keys, right stick = mouse look (when
 // `relative_mouse`), face and shoulder buttons = the key presses (see
 // input.cpp).
+// Game controller extras (all do nothing without a controller). `Rumble` shakes
+// the motors for `ms` (low and high frequency strengths 0..1), `Led` sets the
+// light bar (a DualSense has one), `GamepadLastUsed` says whether the player's
+// last input came from the controller (so a game can show its buttons rather
+// than the keys).
+void GamepadRumble(double low, double high, int ms);
+void GamepadLed(int r, int g, int b);
+bool GamepadConnected();
+bool GamepadLastUsed();
+
 InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
                     bool relative_mouse, const PointAt& point_at);
 }

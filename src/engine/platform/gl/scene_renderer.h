@@ -61,6 +61,17 @@ struct MirrorState {
   double tint[3] = {0.80, 0.84, 0.86};
 };
 
+// A pane of glass: a vertical rectangle from (x0, z0) to (x1, z1) between the
+// heights y0 and y1, tinted and blended over what is behind it (the windows of
+// a car). It stands in the world's own space without the scroll, like
+// `CameraState::instances`.
+struct GlassPane {
+  double x0 = 0, z0 = 0, x1 = 0, z1 = 0;
+  double y0 = 0, y1 = 0;
+  float tint[3] = {0.55f, 0.65f, 0.75f};
+  float alpha = 0.18f;
+};
+
 // A box (x/z corners and a y range, world units) lit by lightning when
 // `CameraState::lightning_zoned` is set.
 struct LightningZone {
@@ -137,6 +148,15 @@ struct CameraState {
   bool lightning_zoned = false;
 
   std::vector<LightningZone> lightning_zones;
+
+  // Ground mist: 0 off .. 1 thick. It hugs the ground up to about
+  // `mist_height` metres, drifts slowly and swallows the distance (a field at
+  // night, a marsh). Works outdoors and in.
+  double mist = 0;
+  double mist_height = 1.6;
+
+  // Panes of glass drawn over the scene (blended, after the world).
+  std::vector<GlassPane> glass;
   // Model instances to draw this frame, and the optional mirror.
   std::vector<ModelInstance> instances;
   MirrorState mirror;
@@ -204,6 +224,7 @@ class SceneRenderer {
     gl::GLuint material = 0;
     bool emissive = false;
     bool alpha_test = false;
+    float opacity = 1.0f;
     float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
   };
 
@@ -316,6 +337,8 @@ class SceneRenderer {
 
   // Draws the glass quad sampling the mirror target by screen position.
   void DrawMirrorGlass(const CameraState& cam, const Frame& f);
+  // Draws the tinted, blended panes of `cam.glass`.
+  void DrawGlassPanes(const CameraState& cam, const Frame& f);
 
   // (Re)creates the cube maps when the shadow level changes.
   void EnsureShadowMaps(int level);
@@ -334,11 +357,13 @@ class SceneRenderer {
   bool BuildBloom(const CameraState& cam);
 
   GlProgram world_program_, quad_program_, sky_program_, shadow_program_,
-      composite_program_, mirror_program_, bloom_program_;
+      composite_program_, mirror_program_, glass_program_, bloom_program_;
   RenderTarget bloom_a_, bloom_b_;
   RenderTarget mirror_target_;
   GlVertexArray mirror_vao_;
   GlBuffer mirror_vbo_;
+  GlVertexArray glass_vao_;
+  GlBuffer glass_vbo_;
   std::vector<BatchList> models_;
   ShadowCube hand_shadow_;
 
@@ -383,9 +408,13 @@ class SceneRenderer {
     gl::GLuint normal = ~0u;
     gl::GLuint material = ~0u;
     int emissive = -1, alpha_test = -1;
+    float opacity = -1.0f;
   } draw_state_;
+  // The solid pass draws batches with opacity 1, the blended pass the others.
+  bool blend_pass_ = false;
 
-  gl::GLint u_model_ = -1, u_emissive_ = -1, u_alpha_test_ = -1;
+  gl::GLint u_model_ = -1, u_emissive_ = -1, u_alpha_test_ = -1,
+            u_opacity_ = -1;
   // False during shadow passes, which use no normal or material maps.
   bool bind_normals_ = true;
 
@@ -398,7 +427,8 @@ class SceneRenderer {
               zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
               light_radius = -1, shadow_count = -1, shadow_texel = -1,
               hand_shadow = -1, hand_pos = -1, hand_faces = -1, res = -1,
-              grain = -1, materials = -1, clip = -1;
+              grain = -1, materials = -1, clip = -1, mist = -1,
+              mist_height = -1;
   } world_u_;
 };
 }

@@ -242,6 +242,31 @@ TEST(ObjParserReadsQuadsAndGlowMaterials) {
   }
 }
 
+// A `blend<percent>_<texture>` material is drawn blended: the texture after the
+// underscore at that opacity; an ordinary material stays solid.
+TEST(ObjParserReadsBlendMaterialsAsOpacity) {
+  const std::string obj =
+      "v 0 0 0\nv 1 0 0\nv 1 1 0\n"
+      "usemtl blend35_dust\nf 1 2 3\n"
+      "usemtl wood\nf 1 2 3\n"
+      "usemtl blend100_glass\nf 1 2 3\n"
+      "usemtl blendy\nf 1 2 3\n";
+  std::vector<Batch> out;
+  std::string err;
+  CHECK(ParseObj(obj, out, &err));
+  CHECK_EQ(out.size(), 4u);
+  if (out.size() == 4) {
+    CHECK(out[0].texture == "dust");
+    CHECK(std::fabs(out[0].opacity - 0.35f) < 1e-6f);
+    CHECK(out[1].texture == "wood");
+    CHECK_EQ(out[1].opacity, 1.0f);
+    CHECK(out[2].texture == "glass");
+    CHECK_EQ(out[2].opacity, 1.0f);     // 100 percent is solid
+    CHECK(out[3].texture == "blendy");  // not a blend material
+    CHECK_EQ(out[3].opacity, 1.0f);
+  }
+}
+
 TEST(ObjParserRejectsBadFaces) {
   std::vector<Batch> out;
   std::string err;
@@ -820,6 +845,32 @@ TEST(RuntimeWalkerStepsOncePerStride) {
   CHECK(p.pos.x > 2.0 && p.pos.x < 2.2);
   const MoveInput idle;
   CHECK(!w.Update(l, p, 0.1, idle, params));
+}
+
+TEST(RuntimeWalkerSpeedFollowsTheStickAndKeysOverrideIt) {
+  Level l;
+  l.Parse({"#########", "#.......#", "#########"});
+  PlayerParams params;
+  params.walk_speed = 1.0;
+  params.run_speed = 2.0;
+  params.stride_length = 10.0;
+  const auto walked = [&](double forward, double side, bool key) {
+    Player p;
+    p.pos = {.x = 1.5, .y = 1.5};
+    p.angle = 0;
+    MoveInput in;
+    in.analog_forward = forward;
+    in.analog_side = side;
+    in.forward = key;
+    PlayerWalker w;
+    w.Update(l, p, 0.5, in, params);
+    return p.pos.x - 1.5;
+  };
+  CHECK(std::fabs(walked(1.0, 0.0, false) - 0.5) < 1e-9);   // full push
+  CHECK(std::fabs(walked(0.5, 0.0, false) - 0.25) < 1e-9);  // half push
+  CHECK(std::fabs(walked(3.0, 0.0, false) - 0.5) < 1e-9);   // never faster
+  CHECK_EQ(walked(0.0, 0.0, false), 0.0);                   // no push, no move
+  CHECK(std::fabs(walked(0.2, 0.0, true) - 0.5) < 1e-9);    // a key wins
 }
 
 TEST(RuntimeLookClampsPitch) {

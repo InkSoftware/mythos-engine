@@ -39,6 +39,11 @@ struct Batch {
   bool emissive = false;
   // Texels with alpha below 0.5 are discarded (sprites).
   bool alpha_test = false;
+  // 1 is solid. Below 1 the batch is blended over what is behind it, in a pass
+  // after the solid ones (glass, dust, mist cards, a ghost); it casts no
+  // shadow. A model's material "blend<percent>_<texture>" sets it
+  // ("blend35_dust" is the texture dust at 35 percent).
+  float opacity = 1.0f;
   // Three vertices per triangle; there is no index buffer.
   std::vector<Vertex> verts;
 };

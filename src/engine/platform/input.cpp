@@ -3,6 +3,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "engine/world/gamepad.h"
 
@@ -80,6 +81,7 @@ constexpr double kTriggerRun = 0.5;    // L2 pulled this far runs
 
 SDL_Gamepad* g_pad = nullptr;  // the one in use (the first found)
 bool g_pad_started = false;
+bool g_pad_last_used = false;  // the last input was the pad's
 Uint64 g_last_ns = 0;
 bool g_stick_up = false, g_stick_down = false, g_stick_left = false,
      g_stick_right = false;  // for press edges in menus
@@ -105,6 +107,7 @@ void StartGamepads() {
 
 void HandlePadButton(const SDL_GamepadButton button, UiInput& ui,
                      ActionInput& act) {
+  g_pad_last_used = true;
   switch (button) {
     case SDL_GAMEPAD_BUTTON_SOUTH:
       act.interact_pressed = true;
@@ -156,10 +159,12 @@ void ReadGamepad(MoveInput& move, UiInput& ui, ActionInput& act,
   const double ry = StickDeadzone(PadAxis(SDL_GAMEPAD_AXIS_RIGHTY));
   const bool up = ly<-kStickMove, down = ly> kStickMove;
   const bool left = lx<-kStickMove, right = lx> kStickMove;
-  move.forward = move.forward || up;
-  move.back = move.back || down;
-  move.strafe_left = move.strafe_left || left;
-  move.strafe_right = move.strafe_right || right;
+  // The stick walks by its deflection (analog); the keys stay digital.
+  move.analog_forward = -ly;
+  move.analog_side = lx;
+  if (std::fabs(lx) > 0 || std::fabs(ly) > 0 || std::fabs(rx) > 0 ||
+      std::fabs(ry) > 0)
+    g_pad_last_used = true;
   move.run = move.run ||
              SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_STICK) ||
              PadAxis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > kTriggerRun;
@@ -194,6 +199,26 @@ void ReadHeldKeys(MoveInput& move, ActionInput& act) {
 }
 }
 
+void GamepadRumble(const double low, const double high, const int ms) {
+  if (!g_pad) return;
+  const auto motor = [](const double v) {
+    return static_cast<Uint16>(std::clamp(v, 0.0, 1.0) * 65535.0);
+  };
+  SDL_RumbleGamepad(g_pad, motor(low), motor(high),
+                    static_cast<Uint32>(std::max(0, ms)));
+}
+
+void GamepadLed(const int r, const int g, const int b) {
+  if (!g_pad) return;
+  const auto byte = [](const int v) {
+    return static_cast<Uint8>(std::clamp(v, 0, 255));
+  };
+  SDL_SetGamepadLED(g_pad, byte(r), byte(g), byte(b));
+}
+
+bool GamepadConnected() { return g_pad != nullptr; }
+bool GamepadLastUsed() { return g_pad != nullptr && g_pad_last_used; }
+
 InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
                     const bool relative_mouse, const PointAt& point_at) {
   InputPoll out;
@@ -210,6 +235,7 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         out.quit = true;
         break;
       case SDL_EVENT_MOUSE_MOTION:
+        g_pad_last_used = false;
         if (relative_mouse) {
           move.mouse_dx +=
               static_cast<decltype(move.mouse_dx)>(event.motion.xrel);
@@ -224,6 +250,7 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         if (!relative_mouse) HandleMouseDown(event.button, ui, point_at);
         break;
       case SDL_EVENT_KEY_DOWN:
+        g_pad_last_used = false;
         if (!event.key.repeat) HandleKeyDown(event.key.key, ui, act, out);
         break;
       case SDL_EVENT_GAMEPAD_ADDED:

@@ -28,6 +28,11 @@ struct MoveInput {
   bool turn_left = false, turn_right = false;
   bool strafe_left = false, strafe_right = false;
   bool run = false;
+  // An analog move (a game controller's stick), -1..1 with the dead zone
+  // already taken out: forward is +, strafing right is +. Used only while no
+  // movement key is held; the walker's speed follows the deflection.
+  double analog_forward = 0.0;
+  double analog_side = 0.0;
   // Mouse movement since the last frame, in pixels.
   double mouse_dx = 0.0;
   double mouse_dy = 0.0;

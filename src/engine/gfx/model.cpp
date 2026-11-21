@@ -1,5 +1,7 @@
 #include "engine/gfx/model.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -78,6 +80,18 @@ class ObjParser {
     if (material.starts_with(prefix)) {
       batch.texture = material.substr(prefix.size());
       batch.emissive = true;
+    } else if (material.starts_with("blend") && material.size() > 6 &&
+               std::isdigit(static_cast<unsigned char>(material[5]))) {
+      // "blend35_dust": the texture dust, blended at 35 percent.
+      char* end = nullptr;
+      const long percent = std::strtol(material.c_str() + 5, &end, 10);
+      if (end && *end == '_' && *(end + 1) != '\0') {
+        batch.texture = end + 1;
+        batch.opacity =
+            static_cast<float>(std::clamp<long>(percent, 1, 100)) / 100.0f;
+      } else {
+        batch.texture = material;
+      }
     } else {
       batch.texture = material;
     }

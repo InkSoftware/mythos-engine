@@ -16,6 +16,9 @@ uniform float uTime;
 uniform int uEmissive;
 uniform int uMaterials;         // 0 flat look, 1 specular + metal + occlusion, 2 also reflections
 uniform int uAlphaTest;
+uniform float uOpacity;   // 1 solid; below 1 the pixel is blended (the renderer draws those last)
+uniform float uMist;      // ground mist, 0 off .. 1 thick
+uniform float uMistHeight;
 uniform int uOutdoor;
 uniform vec3 uMoonDir;
 uniform vec3 uAmbientBase;
@@ -258,5 +261,16 @@ void main() {
     float fog = 1.0 - exp(-uFogDensity * dist);
     col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
     col += airLight((vWorld - uCam) / max(dist, 0.001), dist);
-    outColor = vec4(finishPixel(col, uTime), 1.0);
+    if (uMist > 0.0) {
+        // Ground mist: thick near the floor, thinning with height (taken at the middle of the view ray), moving in
+        // slow patches, and faintly lit by the sky. It swallows distance the way fog does.
+        float h = max(0.5 * (vWorld.y + uCam.y), 0.0);
+        float cloud = 0.62 + 0.38 * sin(vWorld.x * 0.23 + uTime * 0.11) * sin(vWorld.z * 0.19 - uTime * 0.07)
+                    + 0.18 * sin(vWorld.x * 0.61 - vWorld.z * 0.47 + uTime * 0.17);
+        float dens = uMist * 0.12 * exp(-h / uMistHeight) * clamp(cloud, 0.25, 1.2);
+        float m = 1.0 - exp(-dens * dist);
+        vec3 mistColor = vec3(0.035, 0.042, 0.06) * (uOutdoor == 1 ? 1.0 : 0.5) + uFogColor * 1.5;
+        col = mix(col, mistColor, clamp(m, 0.0, 0.92));
+    }
+    outColor = vec4(finishPixel(col, uTime), uOpacity);
 }

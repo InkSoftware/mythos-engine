@@ -1,5 +1,6 @@
 #include "engine/world/player.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "engine/world/movement.h"
@@ -34,10 +35,19 @@ std::optional<char> PlayerWalker::Update(const Level& level, Player& player,
   const double forward = (in.forward ? 1.0 : 0.0) - (in.back ? 1.0 : 0.0);
   const double side =
       (in.strafe_right ? 1.0 : 0.0) - (in.strafe_left ? 1.0 : 0.0);
-  if (forward == 0 && side == 0) return std::nullopt;
-
-  const double speed = (in.run ? params.run_speed : params.walk_speed) * dt;
-  const Vec2 step = WalkStep(player.angle, forward, side, speed);
+  const double base = (in.run ? params.run_speed : params.walk_speed) * dt;
+  Vec2 step{};
+  if (forward == 0 && side == 0) {
+    // No key: a stick moves him at a speed that follows how far it is pushed.
+    const double h = std::hypot(in.analog_forward, in.analog_side);
+    if (h <= 0.0) return std::nullopt;
+    const double scale = std::min(1.0, h) / h;
+    const Vec2 a = WalkStep(player.angle, in.analog_forward * scale, 0, base);
+    const Vec2 b = WalkStep(player.angle, 0, in.analog_side * scale, base);
+    step = {.x = a.x + b.x, .y = a.y + b.y};
+  } else {
+    step = WalkStep(player.angle, forward, side, base);
+  }
   const Vec2 before = player.pos;
   MoveWithCollision(level, player.pos, step.x, step.y, params.radius);
 

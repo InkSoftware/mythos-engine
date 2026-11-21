@@ -176,6 +176,8 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
                      {{0, "aPos"}, {2, "aUV"}}, shaders::kToneMapAndGrainFrag);
   mirror_program_.Build(shaders::kMirrorGlassVert, shaders::kMirrorGlassFrag,
                         {{0, "aPos"}});
+  glass_program_.Build(shaders::kMirrorGlassVert, shaders::kGlassPaneFrag,
+                       {{0, "aPos"}});
   bloom_program_.Build(shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
                        {{0, "aPos"}, {2, "aUV"}});
   const bool text_ok = text_.Init();
@@ -187,6 +189,11 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
   mirror_vao_.Create();
   mirror_vao_.Bind();
   SetVertexLayout(mirror_vbo_.Id());
+  BindVertexArray(0);
+  glass_vbo_.Upload(nullptr, 6 * sizeof(Vertex), kDynamicDraw);
+  glass_vao_.Create();
+  glass_vao_.Bind();
+  SetVertexLayout(glass_vbo_.Id());
   BindVertexArray(0);
   // The mirror view starts at half size; DrawMirrorView resizes it.
   mirror_target_.Create(kInternalW / 2, kInternalH / 2);
@@ -206,7 +213,10 @@ void SceneRenderer::LookUpWorldUniforms() {
   u_model_ = world_program_.Uniform("uModel");
   u_emissive_ = world_program_.Uniform("uEmissive");
   u_alpha_test_ = world_program_.Uniform("uAlphaTest");
+  u_opacity_ = world_program_.Uniform("uOpacity");
   WorldUniforms& u = world_u_;
+  u.mist = world_program_.Uniform("uMist");
+  u.mist_height = world_program_.Uniform("uMistHeight");
   u.view = world_program_.Uniform("uView");
   u.proj = world_program_.Uniform("uProj");
   u.cam = world_program_.Uniform("uCam");
@@ -407,6 +417,7 @@ void SceneRenderer::UploadBatches(BatchList& dst,
     g.material = MaterialMapFor(b.texture);
     g.emissive = b.emissive;
     g.alpha_test = b.alpha_test;
+    g.opacity = b.opacity;
     dst.push_back(std::move(g));
   }
 }
@@ -463,6 +474,10 @@ void SceneRenderer::BindBatchState(const GpuBatch& b) {
     Uniform1i(u_alpha_test_, alpha_test);
     draw_state_.alpha_test = alpha_test;
   }
+  if (b.opacity != draw_state_.opacity) {
+    Uniform1f(u_opacity_, b.opacity);
+    draw_state_.opacity = b.opacity;
+  }
   b.vao.Bind();
 }
 
@@ -472,6 +487,7 @@ void SceneRenderer::DrawBatches(const BatchList& batches,
                                 const float offset_z) {
   UniformMatrix4fv(u_model_, 1, kFalse, model);
   for (const auto& b : batches) {
+    if ((b.opacity < 1.0f) != blend_pass_) continue;  // solid or blended pass
     if (cull && !BoxInFrustum(*cull, b.bmin, b.bmax, offset_z)) continue;
     bool bound = false;
 
@@ -582,6 +598,8 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform3f(u.fog_color, f.fog[0], f.fog[1], f.fog[2]);
   Uniform1f(u.fog_density, f.fog_density);
   Uniform1f(u.time, static_cast<float>(cam.time));
+  Uniform1f(u.mist, static_cast<float>(std::clamp(cam.mist, 0.0, 1.0)));
+  Uniform1f(u.mist_height, static_cast<float>(std::max(0.1, cam.mist_height)));
   Uniform3f(u.ambient_base, cam.ambient_base[0], cam.ambient_base[1],
             cam.ambient_base[2]);
   Uniform3f(u.ambient_near, cam.ambient_near[0], cam.ambient_near[1],
@@ -627,15 +645,28 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
 
 void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
                               const unsigned views) {
-  float model[16];
-  Mat4Identity(model);
-  DrawBatches(cab_, model, &cull);
-  model[14] = static_cast<float>(cam.scroll_z);
-  DrawBatches(world_, model, &cull, static_cast<float>(cam.scroll_z));
-  DrawBatches(props_, model, &cull, static_cast<float>(cam.scroll_z));
-  DrawDoors(cam, cull, model);
-  if (views == 0) return;
-  DrawInstances(cam, views);
+  const auto draw_all = [&] {
+    float model[16];
+    Mat4Identity(model);
+    DrawBatches(cab_, model, &cull);
+    model[14] = static_cast<float>(cam.scroll_z);
+    DrawBatches(world_, model, &cull, static_cast<float>(cam.scroll_z));
+    DrawBatches(props_, model, &cull, static_cast<float>(cam.scroll_z));
+    DrawDoors(cam, cull, model);
+    if (views != 0) DrawInstances(cam, views);
+  };
+  blend_pass_ = false;
+  draw_all();
+  // Then everything blended (glass, dust, mist cards), over the solid scene.
+  // Shadow passes (no normal maps bound) draw solids only.
+  if (bind_normals_) {
+    blend_pass_ = true;
+    Enable(kBlend);
+    BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
+    draw_all();
+    Disable(kBlend);
+    blend_pass_ = false;
+  }
 }
 
 void SceneRenderer::DrawDoors(const CameraState& cam, const Frustum& cull,
@@ -763,6 +794,37 @@ void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
   BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
   mirror_vao_.Bind();
   DrawArrays(kTriangles, 0, 6);
+  Disable(kBlend);
+}
+
+void SceneRenderer::DrawGlassPanes(const CameraState& cam, const Frame& f) {
+  if (cam.glass.empty() || !glass_program_.Valid()) return;
+  glass_program_.Use();
+  UniformMatrix4fv(glass_program_.Uniform("uView"), 1, kFalse, f.view);
+  UniformMatrix4fv(glass_program_.Uniform("uProj"), 1, kFalse, f.proj);
+  Enable(kDepthTest);
+  DepthFunc(kLequal);
+  Enable(kBlend);
+  BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
+  glass_vao_.Bind();
+  for (const GlassPane& pane : cam.glass) {
+    const auto corner = [&](const double x, const double z, const double y) {
+      Vertex v{};
+      v.px = static_cast<float>(x);
+      v.py = static_cast<float>(y);
+      v.pz = static_cast<float>(z);
+      return v;
+    };
+    const Vertex a = corner(pane.x0, pane.z0, pane.y0),
+                 b = corner(pane.x1, pane.z1, pane.y0),
+                 c = corner(pane.x1, pane.z1, pane.y1),
+                 d = corner(pane.x0, pane.z0, pane.y1);
+    const Vertex quad[6] = {a, b, c, a, c, d};
+    glass_vbo_.Upload(quad, sizeof(quad), kDynamicDraw);
+    glass_program_.Set("uTint", pane.tint[0], pane.tint[1], pane.tint[2]);
+    glass_program_.Set("uAlpha", pane.alpha);
+    DrawArrays(kTriangles, 0, 6);
+  }
   Disable(kBlend);
 }
 
@@ -940,6 +1002,7 @@ void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
   Disable(kBlend);
   if (cam.outdoor) DrawSky(cam, f);
   DrawWorld(cam, f);
+  if (mirrored) DrawGlassPanes(cam, f);
   if (mirrored) DrawMirrorGlass(cam, f);
   target_.Resolve();
 }

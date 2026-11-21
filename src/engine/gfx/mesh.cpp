@@ -15,10 +15,11 @@ struct P3 {
 // The batch in `out` with this texture and flags, created on first use. The
 // reference is invalidated by the next push to `out`.
 Batch& BatchFor(std::vector<Batch>& out, const std::string& texture,
-                const bool emissive, const bool alpha_test) {
+                const bool emissive, const bool alpha_test,
+                const float opacity = 1.0f) {
   for (auto& existing : out) {
     if (existing.texture == texture && existing.emissive == emissive &&
-        existing.alpha_test == alpha_test) {
+        existing.alpha_test == alpha_test && existing.opacity == opacity) {
       return existing;
     }
   }
@@ -27,6 +28,7 @@ Batch& BatchFor(std::vector<Batch>& out, const std::string& texture,
   b.texture = texture;
   b.emissive = emissive;
   b.alpha_test = alpha_test;
+  b.opacity = opacity;
   return b;
 }
 
@@ -180,7 +182,7 @@ void AppendModel(std::vector<Batch>& world, const Model& model,
              origin_z = static_cast<float>(centre_z);
   for (const auto& model_batch : model.batches) {
     Batch& dst = BatchFor(world, model_batch.texture, model_batch.emissive,
-                          model_batch.alpha_test);
+                          model_batch.alpha_test, model_batch.opacity);
     for (const auto& v : model_batch.verts) {
       const float wx = origin_x + v.px * cos_yaw + v.pz * sin_yaw;
       const float wy = v.py + static_cast<float>(lift);

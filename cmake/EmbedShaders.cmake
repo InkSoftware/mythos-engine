@@ -10,6 +10,7 @@ set(_map
         kLensAndFxaaFrag=fragment/lens_and_fxaa.frag
         kMirrorGlassVert=vertex/mirror_glass.vert
         kMirrorGlassFrag=fragment/mirror_glass.frag
+        kGlassPaneFrag=fragment/glass_pane.frag
         kOverlayFrag=fragment/overlay.frag
         kBloomBlurFrag=fragment/bloom_blur.frag)
 set(_out "// Generated from src/engine/platform/gl/shaders/ by cmake/EmbedShaders.cmake. Do not edit.\n#include \"engine/platform/gl/scene_shaders.h\"\n\nnamespace mythos::shaders {\n")
