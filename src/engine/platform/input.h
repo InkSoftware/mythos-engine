@@ -21,6 +21,10 @@ using PointAt = std::function<int(int x, int y, int* value)>;
 // (clicks, key presses) are set in `ui` and `act` and the caller clears them;
 // mouse deltas accumulate into `move`. With `relative_mouse` the mouse looks
 // around, otherwise it hovers and clicks UI items found through `point_at`.
+// A game controller (the first one found, hot-pluggable) feeds the same
+// structs: left stick = move keys, right stick = mouse look (when
+// `relative_mouse`), face and shoulder buttons = the key presses (see
+// input.cpp).
 InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
                     bool relative_mouse, const PointAt& point_at);
 }

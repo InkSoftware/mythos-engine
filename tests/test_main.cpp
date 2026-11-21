@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/world/gamepad.h"
 #include "engine/audio/audio_math.h"
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/sound_bank.h"
@@ -123,6 +124,21 @@ size_t Utf8Length(const std::string& s) {
 
 // Text paging: whole words per page, explicit breaks, and UTF-8 never cut
 // in the middle of a code point.
+TEST(GamepadSticksHaveADeadZoneAndAQuadraticLook) {
+  CHECK_EQ(StickDeadzone(0.0), 0.0);
+  CHECK_EQ(StickDeadzone(0.15), 0.0);   // drift inside the zone is ignored
+  CHECK_EQ(StickDeadzone(-0.2), 0.0);
+  CHECK(std::fabs(StickDeadzone(1.0) - 1.0) < 1e-9);  // the rim still reaches 1
+  CHECK(std::fabs(StickDeadzone(-1.0) + 1.0) < 1e-9);
+  CHECK(StickDeadzone(0.6) > 0.0 && StickDeadzone(0.6) < 0.6);
+  CHECK_EQ(StickAxisToUnit(0), 0.0);
+  CHECK_EQ(StickAxisToUnit(32767), 1.0);
+  CHECK_EQ(StickAxisToUnit(-32768), -1.0);
+  CHECK_EQ(StickLookPixels(1.0, 0.5, 800.0), 400.0);
+  CHECK_EQ(StickLookPixels(-1.0, 0.5, 800.0), -400.0);
+  CHECK(StickLookPixels(0.5, 1.0, 800.0) < 0.5 * 800.0);  // a gentle push is slow
+}
+
 TEST(PaginateTextEdgeCases) {
   CHECK_EQ(PaginateText("", size_t{10}).size(), 1u);
   CHECK(PaginateText("", size_t{10})[0].empty());
