@@ -91,7 +91,7 @@ The engine gives mechanisms; a game gives meaning.
 
 - **Rules**: a class like `Game` that owns a `Level`, a `Player`, a `PlayerWalker`, `RoomDoors`, an
   `Interactor` and a `Progress`-derived state, and turns `Use` outcomes into text, sounds and plot.
-- **Data**: levels (`[map]` + `[furniture]`, and `[decor]` for pieces that block nothing), a tile legend, props, sounds, translations.
+- **Data**: levels (`[map]` + `[furniture]` (a line may end with `offX offZ lift`), and `[decor]` for pieces that block nothing), a tile legend, props, sounds, translations.
   The engine reads the shared formats for you: `LoadSoundBank`, `LoadTranslation`, `LoadAchievementDefs`,
   `LoadCredits`, `LoadPlayerParams`, `LoadFontFiles`, `ParseTileSet`.
 - **Settings**: `GameSettings` with its pages (`UpdateSettingsPage`), `DrawSettingsPage` (give it a `MenuTheme`),
@@ -117,7 +117,8 @@ feet on the floor and centred on the origin, front facing +z. They are baked by 
 assets are laid over these, so a model or texture of the same name replaces the engine's. Sources, authors and licences are
 in `CREDITS.md`; `assets/data/model_credits.json` is the same list for a game's credits page. Colour maps are 256 or 512 px.
 The picture frames show the `painting` texture (a "NO ART YET" placeholder: a game supplies its own). Their glass
-and any other see-through material are left out, since the renderer does not blend.
+and any other see-through (BLEND) material is left out of the baked models unless a `Spec` asks for it; the renderer does blend
+(`blend<percent>_<texture>` materials, a second pass) and cuts leaf cards (`cutout_<texture>`, alpha-tested).
 
 | Model | Size w x h x d (m) | Triangles | Textures | PBR maps | What it is |
 | --- | --- | --- | --- | --- | --- |
