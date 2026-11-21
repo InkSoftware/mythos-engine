@@ -1,7 +1,6 @@
 #include "engine/core/vfs.h"
 
 #include <algorithm>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -10,18 +9,15 @@
 
 namespace mythos::vfs {
 namespace {
-
 constexpr char kMagic[8] = {'D', 'R', 'O', 'M', 'P', 'A', 'K', '1'};
 constexpr size_t kMagicSize = 8;
-constexpr size_t kHeader =
-    kMagicSize + 8 + 8;  // magic, table size, table check
+constexpr size_t kHeader = kMagicSize + 8 + 8;
 
-// FNV-1a 64-bit: the standard offset basis and prime. `seed` lets a caller salt
-// the hash (the pack key).
 constexpr uint64_t kFnvOffsetBasis = 1469598103934665603ull;
 constexpr uint64_t kFnvPrime = 1099511628211ull;
 
-uint64_t Fnv(const char* bytes, size_t count, uint64_t seed = kFnvOffsetBasis) {
+uint64_t Fnv(const char* const bytes, const size_t count,
+             const uint64_t seed = kFnvOffsetBasis) {
   uint64_t hash = seed;
   for (size_t i = 0; i < count; ++i) {
     hash ^= static_cast<unsigned char>(bytes[i]);
@@ -30,25 +26,20 @@ uint64_t Fnv(const char* bytes, size_t count, uint64_t seed = kFnvOffsetBasis) {
   return hash;
 }
 
-uint64_t Mix(uint64_t z) {  // splitmix64 finaliser
+uint64_t Mix(uint64_t z) {
   z += 0x9e3779b97f4a7c15ull;
   z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
   z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
   return z ^ (z >> 31);
 }
 
-// Spreads consecutive keystream block numbers apart before mixing (a 64-bit odd
-// constant).
 constexpr uint64_t kBlockStride = 0x2545f4914f6cdd1dull;
 
-// XORs data with a keystream that depends on the key and a per-stream salt (the
-// file's path).
-void Crypt(std::string& data, uint64_t key, uint64_t salt) {
+void Crypt(std::string& data, const uint64_t key, const uint64_t salt) {
   const uint64_t seed = Mix(key ^ salt);
   size_t pos = 0;
   for (uint64_t block = 0; pos < data.size(); ++block) {
-    const uint64_t keystream =
-        Mix(seed + block * kBlockStride);  // 8 bytes of keystream per block
+    const uint64_t keystream = Mix(seed + block * kBlockStride);
     for (int byte = 0; byte < 8 && pos < data.size(); ++byte, ++pos) {
       data[pos] = static_cast<char>(data[pos] ^
                                     static_cast<char>(keystream >> (8 * byte)));
@@ -56,12 +47,12 @@ void Crypt(std::string& data, uint64_t key, uint64_t salt) {
   }
 }
 
-// Little-endian 64-bit integers.
-void Put64(std::string& out, uint64_t value) {
+void Put64(std::string& out, const uint64_t value) {
   for (int i = 0; i < 8; ++i) {
     out.push_back(static_cast<char>(value >> (8 * i)));
   }
 }
+
 bool Get64(const std::string& in, size_t& pos, uint64_t& value) {
   if (pos + 8 > in.size()) return false;
   value = 0;
@@ -78,10 +69,10 @@ struct Entry {
 };
 
 struct MountedPack {
-  std::string root;  // normalised, no trailing '/'
+  std::string root;
   std::string bytes;
   uint64_t key = 0;
-  std::map<std::string, Entry> files;  // by relative path
+  std::map<std::string, Entry> files;
 };
 
 std::vector<MountedPack>& Mounts() {
@@ -91,7 +82,7 @@ std::vector<MountedPack>& Mounts() {
 
 std::string Normalise(std::string path) {
   std::ranges::replace(path, '\\', '/');
-  std::string out;  // collapse "//", drop "./"
+  std::string out;
   for (size_t i = 0; i < path.size(); ++i) {
     if (path[i] == '/' && !out.empty() && out.back() == '/') continue;
     if (path[i] == '.' && (i == 0 || path[i - 1] == '/') &&
@@ -105,10 +96,9 @@ std::string Normalise(std::string path) {
   return out;
 }
 
-// The mount and relative path a path falls under, or null.
 const MountedPack* Resolve(const std::string& path, std::string& rel) {
   const std::string normalised = Normalise(path);
-  const MountedPack* best = nullptr;  // the deepest mount wins
+  const MountedPack* best = nullptr;
   for (const MountedPack& mount : Mounts()) {
     if (normalised.size() > mount.root.size() &&
         normalised.starts_with(mount.root) &&
@@ -130,12 +120,11 @@ bool ReadDisk(const std::string& path, std::string& out) {
   return true;
 }
 
-bool Fail(std::string* error, const std::string& why) {
+bool Fail(std::string* const error, const std::string& why) {
   if (error) *error = why;
   return false;
 }
-
-}  // namespace
+}
 
 uint64_t KeyFromString(const std::string& text) {
   return Mix(Fnv(text.data(), text.size()));
@@ -143,7 +132,7 @@ uint64_t KeyFromString(const std::string& text) {
 
 std::string BuildPack(
     const std::vector<std::pair<std::string, std::string>>& files,
-    uint64_t key) {
+    const uint64_t key) {
   std::string table;
   std::string blob;
   Put64(table, files.size());
@@ -158,6 +147,8 @@ std::string BuildPack(
     Put64(table, Fnv(content.data(), content.size(), key));
     blob += encrypted;
   }
+  // The table is checksummed before being encrypted so a wrong key is detected
+  // at mount time.
   const uint64_t table_check = Fnv(table.data(), table.size(), key);
   const uint64_t table_size = table.size();
   Crypt(table, key, 0);
@@ -169,8 +160,10 @@ std::string BuildPack(
   return out;
 }
 
-bool MountMemory(std::string bytes, const std::string& root, uint64_t key,
-                 std::string* error) {
+bool MountMemory(std::string bytes, const std::string& root, const uint64_t key,
+                 std::string* const error) {
+  // Every size is checked against the remaining bytes before it is used, so a
+  // hostile pack cannot cause out-of-range reads.
   if (bytes.size() < kHeader ||
       std::memcmp(bytes.data(), kMagic, kMagicSize) != 0) {
     return Fail(error, "not an asset pack");
@@ -221,15 +214,15 @@ bool MountMemory(std::string bytes, const std::string& root, uint64_t key,
   }
   mount.bytes = std::move(bytes);
   auto& all = Mounts();
-  // Mounting the same root again replaces the earlier pack.
+
   std::erase_if(
       all, [&](const MountedPack& other) { return other.root == mount.root; });
   all.push_back(std::move(mount));
   return true;
 }
 
-bool Mount(const std::string& pack_file, const std::string& root, uint64_t key,
-           std::string* error) {
+bool Mount(const std::string& pack_file, const std::string& root,
+           const uint64_t key, std::string* const error) {
   std::string bytes;
   if (!ReadDisk(pack_file, bytes)) {
     return Fail(error, "cannot read " + pack_file);
@@ -267,10 +260,11 @@ std::vector<std::string> List(const std::string& dir) {
   std::set<std::string> names;
   std::string rel;
   const std::string normalised_dir = Normalise(dir);
-  const MountedPack* mount = Resolve(
-      normalised_dir + "/x", rel);  // resolves the directory by probing a child
+  // A dummy file name makes Resolve accept the directory itself; it is stripped
+  // again below.
+  const MountedPack* mount = Resolve(normalised_dir + "/x", rel);
   if (mount) {
-    const std::string prefix = rel.substr(0, rel.size() - 1);  // "dir/" or ""
+    const std::string prefix = rel.substr(0, rel.size() - 1);
     for (const auto& [path, entry] : mount->files) {
       (void)entry;
       if (path.size() <= prefix.size() || !path.starts_with(prefix)) continue;
@@ -287,5 +281,4 @@ std::vector<std::string> List(const std::string& dir) {
   }
   return {names.begin(), names.end()};
 }
-
-}  // namespace mythos::vfs
+}

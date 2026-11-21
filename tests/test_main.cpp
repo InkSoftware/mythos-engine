@@ -1,6 +1,11 @@
-// Unit tests for mythos-engine. No external framework and no display needed,
-// so they run unchanged on macOS, Linux and Windows CI runners.
 
+
+// Unit tests for mythos_engine: a single home-made harness, with no framework.
+// A test is `TEST(name) { ... }`; it registers itself at static-init time and
+// main() runs them all, or only those whose name contains argv[1].
+// CHECK(cond) records a failure and carries on; CHECK_EQ(a, b) compares two
+// integral values and prints both on a mismatch.  The binary links only
+// mythos_engine, so nothing here can touch SDL or OpenGL.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -57,6 +62,7 @@ namespace mythos {
 
 namespace {
 
+// The registry of tests and the running totals; main() reports them.
 struct TestCase {
   const char* name;
   std::function<void()> fn;
@@ -103,24 +109,25 @@ struct Registrar {
     }                                                                      \
   } while (0)
 
-}  // namespace
+}
 
 namespace {
+// Counts code points (not bytes) of a UTF-8 string.
 size_t Utf8Length(const std::string& s) {
   size_t n = 0;
   for (const unsigned char ch : s) n += (ch & 0xC0) != 0x80;
   return n;
 }
-}  // namespace
+}
 
+// Text paging: whole words per page, explicit breaks, and UTF-8 never cut
+// in the middle of a code point.
 TEST(PaginateTextEdgeCases) {
-  CHECK_EQ(PaginateText("", size_t{10}).size(), 1u);  // always one page
+  CHECK_EQ(PaginateText("", size_t{10}).size(), 1u);
   CHECK(PaginateText("", size_t{10})[0].empty());
   CHECK_EQ(PaginateText("short", size_t{10}).size(), 1u);
-  // exactly fitting: ten characters on a ten character page
   CHECK_EQ(PaginateText("0123456789", size_t{10}).size(), 1u);
   CHECK_EQ(PaginateText("0123456789 a", size_t{10}).size(), 2u);
-  // one long paragraph breaks at sentences, then words, losing nothing
   const std::string para =
       "One two three. Four five six seven. Eight nine ten eleven twelve.";
   const auto pages = PaginateText(para, size_t{20});
@@ -132,21 +139,18 @@ TEST(PaginateTextEdgeCases) {
     joined += (joined.empty() ? "" : " ") + p;
   }
   CHECK(joined == para);
-  CHECK(pages[0] == "One two three.");  // a sentence boundary, not mid-way
-  // paragraphs (lines) stay together when they fit
+  CHECK(pages[0] == "One two three.");
   const auto lines = PaginateText("aaaa\nbbbb\ncccc", size_t{9});
   CHECK_EQ(lines.size(), 2u);
   CHECK(lines[0] == "aaaa\nbbbb" && lines[1] == "cccc");
-  // forced breaks: a form feed and the token, however short the text
   const auto forced = PaginateText("one\ftwo[page]three", size_t{100});
   CHECK_EQ(forced.size(), 3u);
   CHECK(forced[1] == "two" && forced[2] == "three");
-  // one word longer than a page is cut, never inside a code point
   const std::string greek = "αβγδεζηθικλμνξοπρστυφχψω";
   const auto cut = PaginateText(greek, size_t{5});
   std::string back;
   for (const auto& p : cut) {
-    CHECK(p.size() % 2 == 0);  // each Greek letter is two bytes
+    CHECK(p.size() % 2 == 0);
     CHECK(!p.empty());
     back += p;
   }
@@ -159,42 +163,48 @@ TEST(PaginateTextEdgeCases) {
   }
 }
 
+// Entry paging by height, and page indices clamped to the valid range.
 TEST(PagedEntriesAndClampedPages) {
   const auto starts = PaginateEntries({50, 50, 50, 50}, 110, 3);
-  CHECK_EQ(starts.size(), 2u);  // two fit (103 <= 110), then the next page
+  CHECK_EQ(starts.size(), 2u);
   CHECK(starts[0] == 0 && starts[1] == 2);
   CHECK_EQ(PaginateEntries({}, 100, 3).size(), 1u);
   CHECK_EQ(PaginateEntries({500}, 100, 3).size(), 1u);
-  CHECK_EQ(PaginateEntries({500, 10}, 100, 3).size(), 2u);  // too tall: alone
+  CHECK_EQ(PaginateEntries({500, 10}, 100, 3).size(), 2u);
   CHECK_EQ(ClampPage(5, 3), 2);
   CHECK_EQ(ClampPage(-1, 3), 0);
   CHECK_EQ(ClampPage(2, 0), 0);
 }
 
+// A word longer than the width stays whole; empty text still yields a line.
 TEST(WrapWordsKeepsWordsWholeAndAlwaysGivesALine) {
   CHECK_EQ(WrapWords("", 10).size(), 1u);
   const auto lines = WrapWords("alpha beta gamma delta", 11);
   CHECK_EQ(lines.size(), 2u);
   CHECK(lines[0] == "alpha beta" && lines[1] == "gamma delta");
-  CHECK_EQ(WrapWords("extraordinarily", 5).size(), 1u);  // too long: whole
-  const auto greek = WrapWords("αβγδ εζηθ ικλμ", 9);     // counts characters
+  CHECK_EQ(WrapWords("extraordinarily", 5).size(), 1u);
+  const auto greek = WrapWords("αβγδ εζηθ ικλμ", 9);
   CHECK_EQ(greek.size(), 2u);
 }
 
+// The overlay grows to the window's aspect ratio but only at an integer
+// scale of the base size, and never below the base size.
 TEST(OverlayTakesTheWindowShapeAtAWholeScale) {
   int w = 0, h = 0;
   OverlaySize(960, 600, 320, 200, w, h);
   CHECK(w == 320 && h == 200);
-  OverlaySize(1920, 1080, 320, 200, w, h);  // 16:9 at scale 5
+  OverlaySize(1920, 1080, 320, 200, w, h);
   CHECK(w == 384 && h == 216);
-  OverlaySize(1280, 720, 320, 200, w, h);  // scale 3
+  OverlaySize(1280, 720, 320, 200, w, h);
   CHECK(w == 426 && h == 240);
-  OverlaySize(800, 1000, 320, 200, w, h);  // taller than wide: scale 2
+  OverlaySize(800, 1000, 320, 200, w, h);
   CHECK(w == 400 && h == 500);
-  OverlaySize(100, 100, 320, 200, w, h);  // never below the page size
+  OverlaySize(100, 100, 320, 200, w, h);
   CHECK(w == 320 && h == 200);
 }
 
+// Quads are split into two triangles; a `glow_<texture>` material is
+// emissive and names the texture after the prefix.
 TEST(ObjParserReadsQuadsAndGlowMaterials) {
   const std::string obj =
       "o test\n"
@@ -210,7 +220,7 @@ TEST(ObjParserReadsQuadsAndGlowMaterials) {
   if (out.size() == 1) {
     CHECK(out[0].emissive);
     CHECK(out[0].texture == "computer");
-    CHECK_EQ(out[0].verts.size(), 6u);  // a quad becomes two triangles
+    CHECK_EQ(out[0].verts.size(), 6u);
   }
 }
 
@@ -221,6 +231,7 @@ TEST(ObjParserRejectsBadFaces) {
   CHECK(!err.empty());
 }
 
+// A malformed [furniture] line fails the whole parse with a message.
 TEST(ZoneParserRejectsBadFurniture) {
   Level l;
   std::string err;
@@ -228,6 +239,8 @@ TEST(ZoneParserRejectsBadFurniture) {
   CHECK(!err.empty());
 }
 
+// [decor] lines are non-solid placements: they never block a cell, are not
+// found by FurnitureAt, and carry an optional offset and lift.
 TEST(ADecorSectionPlacesNonSolidPieces) {
   Level l;
   std::string err;
@@ -236,37 +249,34 @@ TEST(ADecorSectionPlacesNonSolidPieces) {
                   "180 0.25 -0.1 0.78\n2 1 duck 0\n",
                   &err));
   CHECK_EQ(l.Furniture().size(), 3u);
-  CHECK(!l.Passable(0, 0));                     // furniture blocks its cell
-  CHECK(l.Passable(1, 1) && l.Passable(2, 1));  // decor blocks nothing
+  CHECK(!l.Passable(0, 0));
+  CHECK(l.Passable(1, 1) && l.Passable(2, 1));
   CHECK(l.FurnitureAt(1, 1) == nullptr);
   const Placement& vase = l.Furniture()[1];
   CHECK(!vase.solid && vase.model == "vase");
   CHECK(vase.off_x > 0.249 && vase.off_x < 0.251 && vase.off_z < -0.099 &&
         vase.off_z > -0.101);
   CHECK(vase.lift > 0.779 && vase.lift < 0.781);
-  CHECK(l.Furniture()[2].lift == 0.0 &&
-        l.Furniture()[2].off_x == 0.0);  // the offsets are optional
-  CHECK(!l.ParseText("[map]\n...\n[decor]\n5 5 vase 0\n",
-                     &err));  // outside the map
-  CHECK(!l.ParseText("[map]\n...\n[decor]\n1 0 vase\n", &err));  // no yaw
+  CHECK(l.Furniture()[2].lift == 0.0 && l.Furniture()[2].off_x == 0.0);
+  CHECK(!l.ParseText("[map]\n...\n[decor]\n5 5 vase 0\n", &err));
+  CHECK(!l.ParseText("[map]\n...\n[decor]\n1 0 vase\n", &err));
 }
 
-//---- the body and the light in the hand
-
 namespace {
+// Euclidean distance between two points.
 double Dist3(const double a[3], const double b[3]) {
   return std::sqrt((a[0] - b[0]) * (a[0] - b[0]) +
                    (a[1] - b[1]) * (a[1] - b[1]) +
                    (a[2] - b[2]) * (a[2] - b[2]));
 }
-}  // namespace
+}
 
+// The arm solver (two-bone IK) keeps both bone lengths fixed and reaches
+// any target within reach.
 TEST(AnArmKeepsItsBoneLengthsAndReachesWhatIsInReach) {
   const BodyParams bt;
   const double shoulder[3] = {0, 1.4, 0}, bend[3] = {0, -1, 0.3};
-  for (const double target :
-       {0.15, 0.3, 0.5, 0.6,
-        0.9}) {  // the last is out of reach: the hand stops short
+  for (const double target : {0.15, 0.3, 0.5, 0.6, 0.9}) {
     const double t[3] = {target * 0.6, 1.2, target * 0.8};
     const ArmIk ik = SolveArm(shoulder, t, bt.upper_arm, bt.fore_arm, bend);
     CHECK(std::abs(Dist3(shoulder, ik.elbow) - bt.upper_arm) < 1e-6);
@@ -277,25 +287,23 @@ TEST(AnArmKeepsItsBoneLengthsAndReachesWhatIsInReach) {
     } else {
       CHECK(Dist3(shoulder, ik.hand) <= bt.upper_arm + bt.fore_arm);
     }
-    CHECK(ik.elbow[1] <= shoulder[1] + 1e-9);  // the elbow bends down, not up
+    CHECK(ik.elbow[1] <= shoulder[1] + 1e-9);
   }
 }
 
+// The chest yaw trails the view yaw, so the head can turn a little first.
 TEST(TheChestFollowsTheViewButTheHeadMayTurnFirst) {
   const BodyParams bt;
-  CHECK(std::abs(TurnBody(0.0, bt.turn_limit * 0.5, 0.0, false, bt)) <
-        1e-9);  // a small turn: the chest stays
-  const double dragged = TurnBody(0.0, bt.turn_limit + 0.5, 0.0, false,
-                                  bt);  // beyond the limit it is pulled along
+  CHECK(std::abs(TurnBody(0.0, bt.turn_limit * 0.5, 0.0, false, bt)) < 1e-9);
+  const double dragged = TurnBody(0.0, bt.turn_limit + 0.5, 0.0, false, bt);
   CHECK(std::abs(dragged - 0.5) < 1e-9);
   double yaw = 0.0;
   for (int i = 0; i < 300; ++i) {
-    yaw = TurnBody(yaw, 0.6, 0.02, true, bt);  // walking, it catches up
+    yaw = TurnBody(yaw, 0.6, 0.02, true, bt);
   }
   CHECK(std::abs(yaw - 0.6) < 0.01);
   CHECK(std::abs(TurnBody(3.1, -3.1, 0.0, false, bt) - 3.1) < 1e-9 ||
-        std::abs(TurnBody(3.1, -3.1, 0.0, false, bt)) >
-            3.0);  // across the wrap
+        std::abs(TurnBody(3.1, -3.1, 0.0, false, bt)) > 3.0);
 }
 
 TEST(TheBodyStandsBehindTheEyeAndTheHandHoldsTheLightWhereTheViewShowsIt) {
@@ -308,35 +316,33 @@ TEST(TheBodyStandsBehindTheEyeAndTheHandHoldsTheLightWhereTheViewShowsIt) {
   in.body_yaw = 0.7;
   in.raise = 1.0;
   const BodyPose p = PoseBody(in, bt, HeldParams{});
-  // The torso's feet are on the floor, a little behind the eye along the view.
   CHECK(std::abs(p.torso.m[13]) < 1e-6);
   const double dx = p.torso.m[12] - in.eye_x, dz = p.torso.m[14] - in.eye_z;
   CHECK(std::abs(std::hypot(dx, dz) - bt.eye_ahead) < 1e-6);
   CHECK(dx * std::cos(in.yaw) + dz * std::sin(in.yaw) < 0);
-  // The held torch is below the eye and to the right of the view, ahead of it.
   const double hx = p.hand_x - in.eye_x, hz = p.hand_z - in.eye_z;
   CHECK(p.hand_y < in.eye_height);
   CHECK(hx * std::cos(in.yaw) + hz * std::sin(in.yaw) > 0.1);
   CHECK(std::abs(p.held.m[12] - p.hand_x) < 1e-5 &&
         std::abs(p.held.m[14] - p.hand_z) < 1e-5);
-  // The raised right forearm ends at the hand.
   const double wrist_x = p.fore_arm_r.m[12] + p.fore_arm_r.m[8] * bt.fore_arm,
                wrist_z = p.fore_arm_r.m[14] + p.fore_arm_r.m[10] * bt.fore_arm;
   CHECK(std::hypot(wrist_x - p.hand_x, wrist_z - p.hand_z) < 0.05);
-  // Every part's frame is a rotation (unit columns).
   for (const PartMatrix* m :
        {&p.torso, &p.head, &p.leg_l, &p.leg_r, &p.upper_arm_l, &p.fore_arm_l,
         &p.upper_arm_r, &p.fore_arm_r, &p.held}) {
     for (int c = 0; c < 3; ++c) {
+      const size_t o = static_cast<size_t>(c) * 4;
       const double len =
-          std::sqrt(static_cast<double>(m->m[c * 4]) * m->m[c * 4] +
-                    static_cast<double>(m->m[c * 4 + 1]) * m->m[c * 4 + 1] +
-                    static_cast<double>(m->m[c * 4 + 2]) * m->m[c * 4 + 2]);
+          std::sqrt(static_cast<double>(m->m[o]) * m->m[o] +
+                    static_cast<double>(m->m[o + 1]) * m->m[o + 1] +
+                    static_cast<double>(m->m[o + 2]) * m->m[o + 2]);
       CHECK(std::abs(len - 1.0) < 1e-4);
     }
   }
 }
 
+// Body parameters load from JSON and invalid values are rejected.
 TEST(BodyParamsLoadAndRejectNonsense) {
   json::Value v;
   std::string err;
@@ -349,10 +355,10 @@ TEST(BodyParamsLoadAndRejectNonsense) {
   CHECK(p.fore_arm > 0.33 && p.fore_arm < 0.34);
   json::Reader r2(v, "t");
   HeldParams h;
-  CHECK(!LoadHeldParams(r2, "held",
-                        h));  // no \"held\" object: every key is required
+  CHECK(!LoadHeldParams(r2, "held", h));
 }
 
+// The hand lags behind a turn, settles back, and sways while walking.
 TEST(TheHandLagsATurnSettlesAndSwaysAtAWalk) {
   const HandSwayParams p;
   HandSway sway;
@@ -362,18 +368,16 @@ TEST(TheHandLagsATurnSettlesAndSwaysAtAWalk) {
   }
   CHECK(still.walk < 0.01);
   CHECK(std::abs(still.yaw) < 0.05);
-  const HandPose turned = sway.Update(1.0 / 60, 2.0, 5, 5, 0.6, 0.0,
-                                      p);  // a sudden turn left the beam behind
+  const HandPose turned = sway.Update(1.0 / 60, 2.0, 5, 5, 0.6, 0.0, p);
   CHECK(turned.yaw < -0.05);
   HandSway walker;
   HandPose w;
   for (int i = 0; i < 180; ++i) {
-    w = walker.Update(1.0 / 60, i / 60.0, 5 + i * 0.05, 5, 0, 0, p);  // 3 m/s
+    w = walker.Update(1.0 / 60, i / 60.0, 5 + i * 0.05, 5, 0, 0, p);
   }
   CHECK(w.walk > 0.9);
   CHECK(w.stride > 1.0);
-  HandSway jumped;  // a long frame restarts from the pose rather than reading a
-                    // huge turn and speed
+  HandSway jumped;
   jumped.Update(1.0 / 60, 0, 0, 0, 0, 0, p);
   const HandPose j = jumped.Update(1.0, 1.0, 50, 50, 2.0, 0, p);
   CHECK(std::abs(j.yaw) < 0.2 && j.walk < 0.01);
@@ -390,13 +394,15 @@ TEST(TheChestStartsFacingTheViewAndTheArmRisesAndFalls) {
   CHECK(m.Raise() < 0.05);
 }
 
+// A mirror prop is placed only when the eye is near enough and in sight
+// of the glass, and only if the prop has a model.
 TEST(AMirrorShowsOnlyInRangeAndInSight) {
   MirrorParams m;
   m.range = 5;
   Prop mirror;
   mirror.model = "mirror";
   mirror.at = {.x = 2.5, .y = 1.0};
-  mirror.yaw_deg = 0;  // faces south (+z)
+  mirror.yaw_deg = 0;
   mirror.lift = 1.0;
   Level level;
   std::string err;
@@ -405,19 +411,20 @@ TEST(AMirrorShowsOnlyInRangeAndInSight) {
   CHECK(near.on);
   CHECK(std::abs(near.nz - 1.0) < 1e-9 && std::abs(near.nx) < 1e-9);
   CHECK(std::abs(near.y - (1.0 + m.glass_height)) < 1e-9);
-  CHECK(!PlaceMirror(m, mirror, 2.5, 30.0, level).on);  // out of range
+  CHECK(!PlaceMirror(m, mirror, 2.5, 30.0, level).on);
   mirror.model.clear();
-  CHECK(!PlaceMirror(m, mirror, 2.5, 3.0, level).on);  // nothing hangs there
+  CHECK(!PlaceMirror(m, mirror, 2.5, 3.0, level).on);
 }
 
+// The 5x7 bitmap font and the SDF text layout.
 TEST(FontMeasuresText) {
   CHECK_EQ(TextWidth("AB", 1), 11);
   CHECK_EQ(TextWidth("AB", 2), 22);
   CHECK_EQ(TextWidth("", 1), 0);
 }
 
-// The word wrap as it was first written: every candidate line measured from
-// scratch.
+// Reference wrapper for the SDF font test: breaks greedily, remeasuring the
+// whole candidate line each time.
 static std::vector<std::string> WrapByRemeasuring(const SdfFont& font,
                                                   const std::string& text,
                                                   float size, float max_width) {
@@ -429,7 +436,12 @@ static std::vector<std::string> WrapByRemeasuring(const SdfFont& font,
     const std::string word = text.substr(
         start, end == std::string::npos ? std::string::npos : end - start);
     if (!word.empty()) {
-      const std::string candidate = line.empty() ? word : line + " " + word;
+      std::string candidate = word;
+      if (!line.empty()) {
+        candidate = line;
+        candidate += ' ';
+        candidate += word;
+      }
       if (!line.empty() && font.Width(candidate, size) > max_width) {
         lines.push_back(line);
         line = word;
@@ -450,7 +462,9 @@ TEST(SdfFontWrapMatchesRemeasuringEveryCandidate) {
   CHECK(font.LoadFile(
       std::string(MYTHOS_TEST_ASSET_DIR) + "/fonts/Alegreya.ttf", &err));
   if (!font.Loaded()) return;
+  // One long line is split over two literals on purpose.
   const std::string texts[] = {
+      // NOLINTNEXTLINE(bugprone-suspicious-missing-comma)
       "The quick brown fox jumps over the lazy dog, and then AVATAR To Wa yo "
       "walks home",
       "  leading and   repeated   spaces  ",
@@ -466,8 +480,6 @@ TEST(SdfFontWrapMatchesRemeasuringEveryCandidate) {
       }
     }
   }
-  // Asking again (kerning now cached) and through the flat glyph table agree
-  // with the map.
   CHECK_EQ(font.Kerning('A', 'V'), font.Kerning('A', 'V'));
   CHECK(font.GlyphFor('A').advance > 0.0f);
   CHECK(font.GlyphFor(0x3B1).advance > 0.0f);
@@ -483,11 +495,11 @@ TEST(FontDrawsPixelsAndLowercaseMatchesUppercase) {
   CHECK(a.px == b.px);
 }
 
+// JSON parsing and the tile legend loaded from it.
 TEST(EngineJsonParsesValuesAndReportsErrors) {
   json::Value v;
   std::string err;
-  // (The text is kept out of the CHECK: MSVC cannot stringize a raw string with
-  // quotes in a macro argument.)
+
   const std::string text =
       R"({"a": [1, -2.5e1, true, null], "s": "\u0393\u03b5 \"q\" \ud83d\ude00", "o": {}})";
   CHECK(json::Parse(text, v, &err));
@@ -501,13 +513,13 @@ TEST(EngineJsonParsesValuesAndReportsErrors) {
   }
   CHECK(json::Find(v, "s") &&
         json::Find(v, "s")->get<std::string>() == "Γε \"q\" \xF0\x9F\x98\x80");
-  CHECK(v.size() == 3 && std::prev(v.end()).key() == "o");  // key order is kept
-  CHECK(!json::Parse("{\"a\": 1,\n \"a\": 2}", v, &err));   // duplicate key
+  CHECK(v.size() == 3 && std::prev(v.end()).key() == "o");
+  CHECK(!json::Parse("{\"a\": 1,\n \"a\": 2}", v, &err));
   CHECK(err.find("line 2") == 0);
   CHECK(!json::Parse("[1, 2", v, &err));
   CHECK(!json::Parse("{'a': 1}", v, &err));
   CHECK(!json::Parse("01", v, &err));
-  CHECK(!json::Parse("\"\\ud800\"", v, &err));  // unpaired surrogate
+  CHECK(!json::Parse("\"\\ud800\"", v, &err));
 }
 
 TEST(EngineTileLegendLoadsFromJson) {
@@ -532,18 +544,19 @@ TEST(EngineDefaultLegendKnowsOnlyTheHashWall) {
   Level l;
   CHECK(l.Parse({"#####", "#WLI#", "#####"}));
   CHECK(!l.Passable(0, 0));
-  CHECK(l.Passable(1, 1));  // 'W' means nothing without the game's legend
+  CHECK(l.Passable(1, 1));
   CHECK(l.Passable(2, 1));
   const auto tiles = std::make_shared<TileSet>();
   (*tiles)['W'].solid = true;
   l.SetTiles(tiles);
   CHECK(!l.Passable(1, 1));
   CHECK(l.Passable(2, 1));
-  const Level copy = l;  // copies keep their legend
+  const Level copy = l;
   CHECK(!copy.Passable(1, 1));
 }
 
 namespace {
+// A legend with a thin wall `W`, a window `w` and a thin closed door `N`.
 std::shared_ptr<TileSet> ThinLegend() {
   auto tiles = std::make_shared<TileSet>();
   (*tiles)['W'].solid = true;
@@ -555,21 +568,21 @@ std::shared_ptr<TileSet> ThinLegend() {
   (*tiles)['N'].door = DoorKind::kClosed;
   return tiles;
 }
-}  // namespace
+}
 
+// Thin walls and windows: the slab (0.2 m at the middle of the cell) blocks
+// movement and sight, and the mesher builds geometry for it.
 TEST(EngineThinWallsBlockOnlyTheirSlab) {
   Level l;
   CHECK(l.Parse({"#######", "#..W..#", "#..W..#", "#..W..#", "#######"}));
   l.SetTiles(ThinLegend());
-  // The wall column x=3 is a slab 0.2 thick through the middle of the cell.
-  CHECK(CanOccupy(l, 3.2, 2.5, 0.15));    // beside the slab, inside the cell
-  CHECK(!CanOccupy(l, 3.5, 2.5, 0.15));   // on it
-  CHECK(!CanOccupy(l, 3.62, 2.5, 0.15));  // a body straddling it
+  CHECK(CanOccupy(l, 3.2, 2.5, 0.15));
+  CHECK(!CanOccupy(l, 3.5, 2.5, 0.15));
+  CHECK(!CanOccupy(l, 3.62, 2.5, 0.15));
   CHECK(CanOccupy(l, 2.5, 2.5, 0.15));
   Vec2 p{.x = 2.5, .y = 2.5};
-  for (int i = 0; i < 20; ++i)
-    MoveWithCollision(l, p, 0.1, 0.0, 0.15);  // walk into it from the west
-  CHECK(p.x > 3.2 && p.x < 3.3);  // stopped at the slab, not the cell
+  for (int i = 0; i < 20; ++i) MoveWithCollision(l, p, 0.1, 0.0, 0.15);
+  CHECK(p.x > 3.2 && p.x < 3.3);
   CHECK(l.Tiles().Thin('W') && !l.Tiles().Thin('#'));
 }
 
@@ -577,12 +590,12 @@ TEST(EngineThinWallsJoinUpAndBlockSight) {
   Level l;
   CHECK(l.Parse({"#####", "#WWW#", "#...#", "#####"}));
   l.SetTiles(ThinLegend());
-  CHECK_EQ(l.ThinArms(2, 1), 1u + 4u + 8u);   // north (the border), west, east
-  CHECK_EQ(l.ThinRects(2, 1).size(), 4u);     // the post and three arms
-  CHECK(l.ThinRects(2, 2).empty());           // floor
-  CHECK(l.LineOfSight(1.5, 2.5, 3.5, 2.5));   // along the room
-  CHECK(!l.LineOfSight(2.5, 2.5, 2.5, 0.5));  // through the slab
-  CHECK(l.LineOfSight(2.5, 2.5, 2.5, 1.7));   // up to its face, not past it
+  CHECK_EQ(l.ThinArms(2, 1), 1u + 4u + 8u);
+  CHECK_EQ(l.ThinRects(2, 1).size(), 4u);
+  CHECK(l.ThinRects(2, 2).empty());
+  CHECK(l.LineOfSight(1.5, 2.5, 3.5, 2.5));
+  CHECK(!l.LineOfSight(2.5, 2.5, 2.5, 0.5));
+  CHECK(l.LineOfSight(2.5, 2.5, 2.5, 1.7));
 }
 
 TEST(EngineLegendReadsThinAndWindow) {
@@ -593,7 +606,7 @@ TEST(EngineLegendReadsThinAndWindow) {
   TileSet t;
   std::string err;
   CHECK(ParseTileSet(v, t, &err));
-  CHECK(t.Thin('W') && t['w'].window && t.Thin('w'));  // a window is thin
+  CHECK(t.Thin('W') && t['w'].window && t.Thin('w'));
   CHECK(!t.Thin('#'));
 }
 
@@ -606,8 +619,8 @@ TEST(EngineThinWallsAndWindowsBuildGeometry) {
   bool glass = false;
   for (const Batch& b : g.world)
     glass = glass || (b.texture == "glass" && !b.verts.empty());
-  CHECK(glass);  // the window is glazed
-  // A thin wall's faces stand 0.4 and 0.6 into the cell, not on the cell edge.
+  CHECK(glass);
+
   bool slab_face = false;
   for (const Batch& b : g.world)
     for (const auto& v : b.verts)
@@ -616,6 +629,8 @@ TEST(EngineThinWallsAndWindowsBuildGeometry) {
   CHECK(slab_face);
 }
 
+// Floors stacked in one scene and stairwell tiles (openCeiling /
+// openFloor).
 TEST(EngineStairwellTilesOpenTheCeilingAndTheFloor) {
   json::Value v;
   CHECK(json::Parse(R"({"tiles": {"U": {"openCeiling": true},
@@ -650,9 +665,9 @@ TEST(EngineStairwellTilesOpenTheCeilingAndTheFloor) {
     return n;
   };
   const SceneGeometry g = BuildSceneGeometry(l, models, false);
-  CHECK(count_quads_at(g, kWallHeight, 1.0f) > 0);  // a ceiling over the floor
-  CHECK_EQ(count_quads_at(g, kWallHeight, 2.0f), 0);  // none over the well
-  CHECK(count_quads_at(g, 0.0f, 2.0f) > 0);  // its floor is still there
+  CHECK(count_quads_at(g, kWallHeight, 1.0f) > 0);
+  CHECK_EQ(count_quads_at(g, kWallHeight, 2.0f), 0);
+  CHECK(count_quads_at(g, 0.0f, 2.0f) > 0);
 }
 
 TEST(EngineBuildsAFloorHigherUp) {
@@ -665,37 +680,38 @@ TEST(EngineBuildsAFloorHigherUp) {
   float lo = 1e9f;
   for (const Batch& b : up.world)
     for (const auto& v : b.verts) lo = std::min(lo, v.py);
-  CHECK(std::abs(lo - kFloorPitch) < 1e-4f);  // its floor is the pitch up
-  CHECK(kFloorPitch > kWallHeight);           // never in the ceiling's plane
+  CHECK(std::abs(lo - kFloorPitch) < 1e-4f);
+  CHECK(kFloorPitch > kWallHeight);
   SceneGeometry both = BuildSceneGeometry(l, models, false);
   const size_t n = both.world.size();
   AppendSceneGeometry(both, std::move(up));
   CHECK_EQ(both.world.size(), 2 * n);
 }
 
+// Core engine rules: collision, ray tests, stepping, noise, file I/O,
+// image loading.
 TEST(EngineCollisionSlidesAlongWalls) {
   Level l;
   CHECK(l.Parse({"#####", "#...#", "#...#", "#####"}));
   Vec2 p{.x = 1.5, .y = 1.5};
-  MoveWithCollision(l, p, -1.0, 0.5, 0.22);  // into the west wall, and south
-  CHECK(p.x == 1.5);                         // blocked on x
-  CHECK(std::fabs(p.y - 2.0) < 1e-9);        // slid on y
+  MoveWithCollision(l, p, -1.0, 0.5, 0.22);
+  CHECK(p.x == 1.5);
+  CHECK(std::fabs(p.y - 2.0) < 1e-9);
 }
 
 TEST(EngineRayHitsSphere) {
   const Vec3 eye{.x = 0, .y = 0, .z = 0}, ahead{.x = 1, .y = 0, .z = 0};
   CHECK(RayHitsSphere(eye, ahead, {3, 0, 0}, 0.5, 10) == 3.0);
-  CHECK(RayHitsSphere(eye, ahead, {3, 0.4, 0}, 0.5, 10) > 0);  // grazes it
-  CHECK(RayHitsSphere(eye, ahead, {3, 0.6, 0}, 0.5, 10) < 0);  // misses it
-  CHECK(RayHitsSphere(eye, ahead, {-3, 0, 0}, 0.5, 10) < 0);   // behind
-  CHECK(RayHitsSphere(eye, ahead, {30, 0, 0}, 0.5, 10) < 0);   // out of reach
+  CHECK(RayHitsSphere(eye, ahead, {3, 0.4, 0}, 0.5, 10) > 0);
+  CHECK(RayHitsSphere(eye, ahead, {3, 0.6, 0}, 0.5, 10) < 0);
+  CHECK(RayHitsSphere(eye, ahead, {-3, 0, 0}, 0.5, 10) < 0);
+  CHECK(RayHitsSphere(eye, ahead, {30, 0, 0}, 0.5, 10) < 0);
 }
 
 TEST(EngineWalkStep) {
   const Vec2 fwd = WalkStep(0, 1, 0, 2.0);
   CHECK(std::abs(fwd.x - 2.0) < 1e-9 && std::abs(fwd.y) < 1e-9);
-  const Vec2 right =
-      WalkStep(0, 0, 1, 1.0);  // strafing right at angle 0 goes +y
+  const Vec2 right = WalkStep(0, 0, 1, 1.0);
   CHECK(std::abs(right.x) < 1e-9 && std::abs(right.y - 1.0) < 1e-9);
   const Vec2 diag = WalkStep(0, 1, 1, 1.0);
   CHECK(std::hypot(diag.x, diag.y) < 1.001);
@@ -713,13 +729,11 @@ TEST(EngineFileIoRoundTrip) {
           .string();
   CHECK(WriteFileAtomic(path, "hello"));
   CHECK(ReadTextFile(path) == std::string("hello"));
-  CHECK(WriteFileAtomic(path, "", true));  // empty removes it
+  CHECK(WriteFileAtomic(path, "", true));
   CHECK(ReadTextFile(path) == std::string());
 }
 
 TEST(EngineLoadImageDecodesBmpAndOverridesTextures) {
-  // A 2x1 24-bit BMP: a red pixel then a blue one (BMP stores BGR, rows padded
-  // to 4 bytes).
   const unsigned char bmp[] = {
       'B', 'M', 62, 0, 0, 0, 0, 0,  0, 0, 54, 0, 0, 0, 40,  0,   0, 0, 2, 0, 0,
       0,   1,   0,  0, 0, 1, 0, 24, 0, 0, 0,  0, 0, 8, 0,   0,   0, 0, 0, 0, 0,
@@ -766,6 +780,7 @@ TEST(EngineUiAlphaAndHit) {
   CHECK_EQ(s.At(2, 2), 0u);
 }
 
+// Player, walker, interaction verbs and their effects on the progress.
 TEST(RuntimeWalkerStepsOncePerStride) {
   Level l;
   l.Parse({"#####", "#...#", "#####"});
@@ -783,7 +798,7 @@ TEST(RuntimeWalkerStepsOncePerStride) {
   for (int i = 0; i < 6; ++i) {
     if (w.Update(l, p, 0.1, in, params)) ++steps;
   }
-  CHECK_EQ(steps, 1);  // 0.6 walked, one 0.5 stride
+  CHECK_EQ(steps, 1);
   CHECK(p.pos.x > 2.0 && p.pos.x < 2.2);
   const MoveInput idle;
   CHECK(!w.Update(l, p, 0.1, idle, params));
@@ -818,9 +833,9 @@ TEST(RuntimeFindAimedPicksNearestVisibleEnabled) {
                                         .height = 1.0,
                                         .radius = 0.3,
                                         .enabled = false}};
-  CHECK_EQ(FindAimed(l, p, 1.0, 5.0, c), 1);   // nearest enabled
-  CHECK_EQ(FindAimed(l, p, 1.0, 1.0, c), -1);  // out of reach
-  p.angle = kPi;                               // looking away
+  CHECK_EQ(FindAimed(l, p, 1.0, 5.0, c), 1);
+  CHECK_EQ(FindAimed(l, p, 1.0, 1.0, c), -1);
+  p.angle = kPi;
   CHECK_EQ(FindAimed(l, p, 1.0, 5.0, c), -1);
 }
 
@@ -828,7 +843,7 @@ TEST(RuntimeVerbs) {
   Verb v = Verb::kTake;
   CHECK(ParseVerb("read", v) && v == Verb::kRead);
   CHECK(ParseVerb("listen", v) && v == Verb::kListen);
-  CHECK(!ParseVerb("lick", v) && v == Verb::kListen);  // unchanged on failure
+  CHECK(!ParseVerb("lick", v) && v == Verb::kListen);
   Prop p;
   p.id = "thing";
   Interactor it;
@@ -837,7 +852,6 @@ TEST(RuntimeVerbs) {
   CHECK(it.Use(p, false, "", 0.1, true, true, 1.0) == Use::kRead);
   p.verb = Verb::kInspect;
   CHECK(it.Use(p, false, "", 0.1, true, true, 1.0) == Use::kInspect);
-  // The empty place of the held prop puts it back, whatever the verb.
   CHECK(it.Use(p, true, "thing", 0.1, true, true, 1.0) == Use::kPutBack);
   CHECK(it.Use(p, true, "thing", 0.1, false, false, 1.0) == Use::kNone);
 }
@@ -857,14 +871,12 @@ TEST(RuntimeListenHoldsThenWaitsForRelease) {
   p.id = "radio";
   p.verb = Verb::kListen;
   Interactor it;
-  CHECK(it.Use(p, false, "", 0.4, false, false, 1.0) ==
-        Use::kNone);  // not holding
+  CHECK(it.Use(p, false, "", 0.4, false, false, 1.0) == Use::kNone);
   CHECK(it.Use(p, false, "", 0.4, false, true, 1.0) == Use::kListening);
   CHECK(it.ListenTime() > 0.39);
   CHECK(it.Use(p, false, "", 0.4, false, true, 1.0) == Use::kListening);
   CHECK(it.Use(p, false, "", 0.4, false, true, 1.0) == Use::kHeard);
-  CHECK(it.Use(p, false, "", 0.4, false, true, 1.0) ==
-        Use::kNone);  // still holding: no repeat
+  CHECK(it.Use(p, false, "", 0.4, false, true, 1.0) == Use::kNone);
   it.Release(false);
   CHECK(it.Use(p, false, "", 0.4, false, true, 1.0) == Use::kListening);
   it.Idle();
@@ -878,7 +890,7 @@ TEST(RuntimeEffectsWriteTheProgress) {
   e.clue = "clue.a";
   e.flags["seen"] = 1;
   CHECK(ApplyEffects(pr, e));
-  CHECK(!ApplyEffects(pr, e));  // the clue is no longer new
+  CHECK(!ApplyEffects(pr, e));
   CHECK_EQ(pr.notebook.size(), 1u);
   CHECK_EQ(pr.clues.size(), 1u);
   CHECK(pr.Flag("seen") && !pr.Flag("nope"));
@@ -895,33 +907,33 @@ TEST(RuntimePropOverrideAndPlacement) {
   o.ApplyTo(p);
   CHECK(p.model == "mug2");
   CHECK_EQ(p.yaw_deg, 90.0);
-  CHECK_EQ(p.lift, 0.8);  // not given: unchanged
+  CHECK_EQ(p.lift, 0.8);
   const Placement pl = PlacementOf(p);
   CHECK(pl.x == 4 && pl.y == 2 && !pl.solid && pl.id == "mug");
   CHECK(pl.off_x > 0.24 && pl.off_x < 0.26 && pl.off_z < -0.24 &&
         pl.off_z > -0.26);
 }
 
+// Menus and the settings page: keys, clicks, persistence and new rows.
 TEST(RuntimeMenuStepWrapsSkipsAndActivates) {
   int index = 0;
   UiInput in;
   const auto usable = [](int i) { return i != 1; };
   in.down_pressed = true;
   CHECK_EQ(MenuStep(index, 4, in, false, usable), -1);
-  CHECK_EQ(index, 2);  // item 1 is skipped
+  CHECK_EQ(index, 2);
   index = 3;
   CHECK_EQ(MenuStep(index, 4, in, false, usable), -1);
-  CHECK_EQ(index, 0);  // wraps
+  CHECK_EQ(index, 0);
   in = UiInput{};
   in.up_pressed = true;
   MenuStep(index, 4, in, false, usable);
-  CHECK_EQ(index, 3);  // 0 -> back round to 3
+  CHECK_EQ(index, 3);
   in = UiInput{};
-  CHECK_EQ(MenuStep(index, 4, in, true, usable),
-           3);  // activate chooses the selection
+  CHECK_EQ(MenuStep(index, 4, in, true, usable), 3);
   in.hover_item = 1;
   MenuStep(index, 4, in, false, usable);
-  CHECK_EQ(index, 3);  // hovering an unusable item does nothing
+  CHECK_EQ(index, 3);
   in.hover_item = 2;
   MenuStep(index, 4, in, false, usable);
   CHECK_EQ(index, 2);
@@ -929,8 +941,7 @@ TEST(RuntimeMenuStepWrapsSkipsAndActivates) {
   in.click_item = 0;
   CHECK_EQ(MenuStep(index, 4, in, false, usable), 0);
   in.click_item = 1;
-  CHECK_EQ(MenuStep(index, 4, in, false, usable),
-           -1);  // an unusable item cannot be clicked
+  CHECK_EQ(MenuStep(index, 4, in, false, usable), -1);
 }
 
 TEST(RuntimeSettingsPageKeysClicksAndBack) {
@@ -939,21 +950,20 @@ TEST(RuntimeSettingsPageKeysClicksAndBack) {
   int index = kSetGraphics;
   UiInput in;
   in.confirm_pressed = true;
-  CHECK(!UpdateSettingsPage(s, page, index, in, false,
-                            2));  // GRAPHICS opens its page
+  CHECK(!UpdateSettingsPage(s, page, index, in, false, 2));
   CHECK(page == SettingsPage::kGraphics);
   CHECK_EQ(index, kSetResolution);
   in = UiInput{};
   in.right_pressed = true;
   for (int i = 0; i < 6; ++i) UpdateSettingsPage(s, page, index, in, false, 2);
-  CHECK_EQ(s.resolution, 2);  // keys stop at the display's maximum
+  CHECK_EQ(s.resolution, 2);
   in = UiInput{};
   in.click_item = kSetResolution;
   in.click_step = 1;
   UpdateSettingsPage(s, page, index, in, false, 2);
-  CHECK_EQ(s.resolution, 0);  // clicks cycle round
+  CHECK_EQ(s.resolution, 0);
   in = UiInput{};
-  in.click_item = kSetMaster;  // not a row of this page: ignored
+  in.click_item = kSetMaster;
   UpdateSettingsPage(s, page, index, in, false, 2);
   CHECK(page == SettingsPage::kGraphics && index == kSetResolution);
   index = kSetFullscreen;
@@ -962,8 +972,7 @@ TEST(RuntimeSettingsPageKeysClicksAndBack) {
   UpdateSettingsPage(s, page, index, in, false, 2);
   CHECK(s.fullscreen);
   in = UiInput{};
-  in.pause_pressed =
-      true;  // Esc on a sub-page goes back to the main page, on its link
+  in.pause_pressed = true;
   CHECK(!UpdateSettingsPage(s, page, index, in, false, 2));
   CHECK(page == SettingsPage::kMain && index == kSetGraphics);
 
@@ -977,12 +986,10 @@ TEST(RuntimeSettingsPageKeysClicksAndBack) {
   UpdateSettingsPage(s, page, index, in, false, 2);
   CHECK_EQ(s.master_volume, 4);
   UpdateSettingsPage(s, page, index, in, false, 2);
-  CHECK_EQ(s.master_volume,
-           3);  // clicking the lit last pip again turns it down
+  CHECK_EQ(s.master_volume, 3);
   in = UiInput{};
   in.click_item = kSetBack;
-  CHECK(!UpdateSettingsPage(s, page, index, in, false,
-                            2));  // Back: to the main page
+  CHECK(!UpdateSettingsPage(s, page, index, in, false, 2));
   CHECK(page == SettingsPage::kMain && index == kSetAudio);
   index = kSetLanguage;
   in = UiInput{};
@@ -990,11 +997,10 @@ TEST(RuntimeSettingsPageKeysClicksAndBack) {
   UpdateSettingsPage(s, page, index, in, false, 2);
   CHECK(s.language == Lang::kGreek);
   index = kSetBack;
-  CHECK(UpdateSettingsPage(s, page, index, in, false,
-                           2));  // Back on the main page closes
+  CHECK(UpdateSettingsPage(s, page, index, in, false, 2));
   in = UiInput{};
   in.pause_pressed = true;
-  CHECK(UpdateSettingsPage(s, page, index, in, false, 2));  // so does Esc
+  CHECK(UpdateSettingsPage(s, page, index, in, false, 2));
   SetLanguage(Lang::kEnglish);
 }
 
@@ -1006,11 +1012,11 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
   a.anti_alias = 4;
   a.shadows = 5;
   a.materials = 1;
-  a.motion_blur = 4;  // 100%
+  a.motion_blur = 4;
   a.camera_effect = true;
   a.visual_fx = false;
   a.vsync = false;
-  a.fps_cap = 4;  // 120
+  a.fps_cap = 4;
   a.fullscreen = true;
   a.master_volume = 3;
   a.language = Lang::kGreek;
@@ -1022,9 +1028,9 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
   CHECK_EQ(b.anti_alias, 4);
   CHECK_EQ(b.shadows, 5);
   CHECK_EQ(b.materials, 1);
-  CHECK_EQ(GameSettings{}.materials, 2);  // full by default
+  CHECK_EQ(GameSettings{}.materials, 2);
   CHECK(b.motion_blur == 4 && b.camera_effect && !b.visual_fx && !b.vsync);
-  {  // a file from before the split: cameraEffect was the cinematic look
+  {
     GameSettings old;
     ApplyKeyValues(old, {{"cameraEffect", "0"}});
     CHECK(!old.visual_fx && !old.camera_effect);
@@ -1040,9 +1046,9 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
                      {"renderScale", "-4"},
                      {"nonsense", "1"},
                      {"resolution", "bad"}});
-  CHECK_EQ(c.master_volume, 10);  // clamped
+  CHECK_EQ(c.master_volume, 10);
   CHECK_EQ(c.render_scale, 0);
-  CHECK_EQ(c.resolution, 0);  // unparsable: unchanged
+  CHECK_EQ(c.resolution, 0);
   GameSettings d;
   ApplyKeyValues(d, {{"antiAliasing", "99"},
                      {"fpsCap", "77"},
@@ -1050,10 +1056,10 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
                      {"motionBlurScale", "33"},
                      {"materials", "7"}});
   CHECK_EQ(d.anti_alias, kAntiAliasCount - 1);
-  CHECK_EQ(d.fps_cap, 0);  // not an offered limit: none
+  CHECK_EQ(d.fps_cap, 0);
   CHECK_EQ(d.shadows, kShadowLevelCount - 1);
   CHECK_EQ(d.materials, kMaterialLevelCount - 1);
-  CHECK_EQ(d.motion_blur, 0);  // not an offered strength: off
+  CHECK_EQ(d.motion_blur, 0);
 }
 
 TEST(RuntimeSettingsPageNewRows) {
@@ -1068,7 +1074,7 @@ TEST(RuntimeSettingsPageNewRows) {
   in = UiInput{};
   in.right_pressed = true;
   for (int i = 0; i < 20; ++i) UpdateSettingsPage(s, page, index, in, false, 2);
-  CHECK_EQ(s.fps_cap, kFpsCapCount - 1);  // keys stop at the end
+  CHECK_EQ(s.fps_cap, kFpsCapCount - 1);
   index = kSetShadows;
   in = UiInput{};
   in.left_pressed = true;
@@ -1097,18 +1103,17 @@ TEST(RuntimeSettingsPageNewRows) {
   index = kSetCameraEffect;
   in = UiInput{};
   in.confirm_pressed = true;
-  CHECK(!s.camera_effect);  // the camcorder look is off by default
+  CHECK(!s.camera_effect);
   UpdateSettingsPage(s, page, index, in, false, 2);
-  CHECK(s.camera_effect && s.visual_fx);  // it leaves the visual effects alone
+  CHECK(s.camera_effect && s.visual_fx);
   index = kSetVisualFx;
   UpdateSettingsPage(s, page, index, in, false, 2);
   CHECK(!s.visual_fx && s.camera_effect);
-  {  // the two are separate rows, visual effects first
+  {
     const auto& rows = SettingsPageItems(SettingsPage::kGraphics);
-    const auto vfx = std::find(rows.begin(), rows.end(), kSetVisualFx);
+    const auto vfx = std::ranges::find(rows, kSetVisualFx);
     CHECK(vfx != rows.end() && *(vfx + 1) == kSetCameraEffect);
   }
-  // Every page ends with Back, and up / down wrap round its rows.
   for (const SettingsPage p :
        {SettingsPage::kMain, SettingsPage::kGraphics, SettingsPage::kAudio}) {
     CHECK_EQ(SettingsPageItems(p).back(), kSetBack);
@@ -1121,6 +1126,8 @@ TEST(RuntimeSettingsPageNewRows) {
   CHECK_EQ(index, kSetBack);
 }
 
+// The built-in English and Greek strings are the fallback; a game's own
+// translation takes precedence.
 TEST(RuntimeEngineStringsCoverBothLanguagesAndYieldToTheGame) {
   const TranslationTable& en = EngineStrings(Lang::kEnglish);
   const TranslationTable& el = EngineStrings(Lang::kGreek);
@@ -1128,27 +1135,30 @@ TEST(RuntimeEngineStringsCoverBothLanguagesAndYieldToTheGame) {
   for (const auto& [key, text] : en) CHECK(el.count(key) == 1);
   SetLanguage(Lang::kEnglish);
   SetTranslations(Lang::kEnglish, nullptr);
-  CHECK(Tr("settings.vsync") == "VSYNC");  // no game table: the engine's own
+  CHECK(Tr("settings.vsync") == "VSYNC");
   CHECK(Tr("common.on") == "ON");
   const TranslationTable game = {{"settings.vsync", "SYNC"}};
   SetTranslations(Lang::kEnglish, &game);
-  CHECK(Tr("settings.vsync") == "SYNC");  // the game's wins
+  CHECK(Tr("settings.vsync") == "SYNC");
   CHECK(Tr("settings.title") == "SETTINGS");
   SetTranslations(Lang::kEnglish, nullptr);
 }
 
 namespace {
+// Parses text that the test expects to be valid JSON.
 json::Value ParseJson(const std::string& text) {
   json::Value v;
   std::string err;
   CHECK(json::Parse(text, v, &err));
   return v;
 }
-}  // namespace
+}
 
+// Achievements, player params, sound bank, translations and credits load
+// from their documented JSON formats.
 TEST(RuntimeDataLoadersReadTheDocumentedFormats) {
   std::string err;
-  {  // achievements
+  {
     const json::Value v = ParseJson(
         R"({"achievements":{"_c":"x","a":{"event":"loops","count":3}}})");
     std::vector<AchievementDef> defs;
@@ -1161,7 +1171,7 @@ TEST(RuntimeDataLoadersReadTheDocumentedFormats) {
     std::vector<AchievementDef> none;
     CHECK(!LoadAchievementDefs(bad, "f", none, &err));
   }
-  {  // player numbers
+  {
     const json::Value v = ParseJson(
         R"({"player":{"radius":0.2,"walkSpeed":2,"runSpeed":3,"turnSpeed":2.5,
             "strideLength":0.8,"mouseSensitivity":0.002,"maxPitch":1.1}})");
@@ -1175,7 +1185,7 @@ TEST(RuntimeDataLoadersReadTheDocumentedFormats) {
     CHECK(!LoadPlayerParams(r2, "player", q));
     CHECK(r2.Error().find("player.walkSpeed") != std::string::npos);
   }
-  {  // sounds
+  {
     const json::Value v = ParseJson(
         R"({"events":{"Step":{"clips":["a","b"],"gain":0.5,"jitter":true}},
             "ambience":{"house":{"clip":"h","gain":0.3}},
@@ -1189,14 +1199,14 @@ TEST(RuntimeDataLoadersReadTheDocumentedFormats) {
     CHECK(!LoadSoundBank(v, "f", other, {"Missing"}, {"house"}, &err));
     CHECK(!LoadSoundBank(v, "f", other, {"Step"}, {"car"}, &err));
   }
-  {  // translations
+  {
     const json::Value v = ParseJson(
         R"({"language":"en","name":"ENGLISH","strings":{"hud":{"a":"A"},"b":"B"}})");
     Translation t;
     CHECK(LoadTranslation(v, "f", t, &err));
     CHECK(t.strings.at("hud.a") == "A" && t.strings.at("b") == "B");
   }
-  {  // credits
+  {
     const json::Value v = ParseJson(R"({"sections":[{"title":"t","entries":[
             {"name":"n","by":"b","license":"CC0","what":""}]}]})");
     std::vector<CreditSection> secs;
@@ -1206,26 +1216,27 @@ TEST(RuntimeDataLoadersReadTheDocumentedFormats) {
 }
 
 namespace {
-// m * (x, y, z, 1), column-major.
+
+// Multiplies the column-major matrix m by the point (x, y, z, 1).
 void Transform(const float* m, float x, float y, float z, float out[4]) {
   for (int r = 0; r < 4; ++r) {
     out[r] = m[r] * x + m[4 + r] * y + m[8 + r] * z + m[12 + r];
   }
 }
-}  // namespace
+}
 
+// Matrices, frustum and cube-face views.
 TEST(RuntimeMat4ViewProjectionAndFrustum) {
   const float eye[3] = {2, 1.5f, 3}, center[3] = {2, 1.5f, -2},
               up[3] = {0, 1, 0};
   float view[16], proj[16], vp[16], out[4];
   Mat4LookAt(eye, center, up, view);
-  Transform(view, 2, 1.5f, -2, out);  // five metres straight ahead: (0, 0, -5)
+  Transform(view, 2, 1.5f, -2, out);
   CHECK(std::abs(out[0]) < 1e-5f && std::abs(out[1]) < 1e-5f &&
         std::abs(out[2] + 5.0f) < 1e-5f);
   Mat4Perspective(1.2f, 1.6f, 0.05f, 40.0f, proj);
   Mat4Multiply(proj, view, vp);
-  Transform(vp, 2, 1.5f, -2,
-            out);  // the centre of the picture, inside the depth range
+  Transform(vp, 2, 1.5f, -2, out);
   CHECK(std::abs(out[0] / out[3]) < 1e-5f && std::abs(out[1] / out[3]) < 1e-5f);
   CHECK(out[2] / out[3] > -1.0f && out[2] / out[3] < 1.0f);
   Frustum planes;
@@ -1235,11 +1246,10 @@ TEST(RuntimeMat4ViewProjectionAndFrustum) {
   const float behind_min[3] = {1.9f, 1.4f, 5.0f},
               behind_max[3] = {2.1f, 1.6f, 6.0f};
   CHECK(!BoxInFrustum(planes, behind_min, behind_max));
-  CHECK(!BoxInFrustum(planes, in_min, in_max,
-                      -100.0f));  // shifted far out of view
+  CHECK(!BoxInFrustum(planes, in_min, in_max, -100.0f));
   const float far_min[3] = {1.9f, 1.4f, -90.0f},
               far_max[3] = {2.1f, 1.6f, -80.0f};
-  CHECK(!BoxInFrustum(planes, far_min, far_max));  // beyond the far plane
+  CHECK(!BoxInFrustum(planes, far_min, far_max));
 }
 
 TEST(RuntimeCubeFacesLookDownTheirAxis) {
@@ -1254,49 +1264,40 @@ TEST(RuntimeCubeFacesLookDownTheirAxis) {
     CHECK(std::abs(out[0]) < 1e-5f && std::abs(out[1]) < 1e-5f &&
           std::abs(out[2] + 3.0f) < 1e-5f);
   }
-  // GL's cube sampling: +X's right is -Z and its up is -Y; +Z's right is +X
-  // (seen from the eye, looking out).
+
   float view[16], out[4];
   CubeFaceView(0, eye, view);
-  Transform(view, eye[0] + 1, eye[1], eye[2] - 1,
-            out);  // a point towards -Z sits on the right of +X's picture
+  Transform(view, eye[0] + 1, eye[1], eye[2] - 1, out);
   CHECK(out[0] > 0.5f);
   CubeFaceView(4, eye, view);
-  Transform(view, eye[0] + 1, eye[1], eye[2] + 1,
-            out);  // and towards +X on the right of +Z's
+  Transform(view, eye[0] + 1, eye[1], eye[2] + 1, out);
   CHECK(out[0] > 0.5f);
 }
 
+// Audio arithmetic, cue selection and light flicker.
 TEST(RuntimePositionalGainPansFadesAndHushes) {
   const Vec2 me{.x = 5, .y = 5};
-  // Facing +x: a source ahead is centred; one to the right (+z, south) leans
-  // right; to the left, left.
   const StereoGain ahead = PositionalGain(me, 0.0, {.x = 8, .y = 5}, 0);
   CHECK(std::abs(ahead.left - ahead.right) < 1e-4f);
   const StereoGain on_right = PositionalGain(me, 0.0, {.x = 5, .y = 8}, 0);
   const StereoGain on_left = PositionalGain(me, 0.0, {.x = 5, .y = 2}, 0);
   CHECK(on_right.right > on_right.left);
   CHECK(on_left.left > on_left.right);
-  CHECK(on_right.left > 0 && on_left.right > 0);  // the pan is soft, never hard
-  // Farther is quieter.
+  CHECK(on_right.left > 0 && on_left.right > 0);
   const StereoGain near = PositionalGain(me, 0.0, {.x = 6, .y = 5}, 0);
   const StereoGain far = PositionalGain(me, 0.0, {.x = 15, .y = 5}, 0);
   CHECK(near.left > far.left);
-  // A hushed source falls silent close up, and a muted one always.
   const StereoGain hushed = PositionalGain(me, 0.0, {.x = 6, .y = 5}, 2.0);
   CHECK(hushed.left == 0.0f && hushed.right == 0.0f);
   CHECK(PositionalGain(me, 0.0, {8, 5}, 2.0).left > 0.0f);
   CHECK(PositionalGain(me, 0.0, {6, 5}, 0, true).left == 0.0f);
-  // A smaller falloff carries: the same distance is louder, yet near is still
-  // louder than far.
   const StereoGain carries =
       PositionalGain(me, 0.0, {.x = 15, .y = 5}, 0, false, 1.0, 0.1);
   CHECK(carries.left > far.left * 5.0f);
   CHECK(PositionalGain(me, 0.0, {6, 5}, 0, false, 1.0, 0.1).left >
         carries.left);
   CHECK(PositionalGain(me, 0.0, {15, 5}, 0).left ==
-        PositionalGain(me, 0.0, {15, 5}, 0, false, 0.75, 0.5)
-            .left);  // the defaults
+        PositionalGain(me, 0.0, {15, 5}, 0, false, 0.75, 0.5).left);
 }
 
 TEST(RuntimeCuePickKeepsTheDrawOrder) {
@@ -1309,10 +1310,9 @@ TEST(RuntimeCuePickKeepsTheDrawOrder) {
   Rng r1(7), r2(7);
   const CuePick p1 = PickCue(one, r1);
   CHECK_EQ(p1.clip, 0u);
-  CHECK_EQ(p1.pitch, 1.5f);  // no jitter: the cue's own pitch
-  const float jitter_draw =
-      r2.Next();  // one draw for a single clip, as the footsteps always did
-  CHECK_EQ(r1.Next(), r2.Next());  // ...so the streams stay in step
+  CHECK_EQ(p1.pitch, 1.5f);
+  const float jitter_draw = r2.Next();
+  CHECK_EQ(r1.Next(), r2.Next());
   (void)jitter_draw;
   Rng r3(7);
   for (int i = 0; i < 200; ++i) {
@@ -1323,7 +1323,7 @@ TEST(RuntimeCuePickKeepsTheDrawOrder) {
 }
 
 TEST(RuntimeFlickerMatchesItsFormulaAndStaysInRange) {
-  CHECK_EQ(LampGain(12.3, 0, 0.0), 1.0);  // steady
+  CHECK_EQ(LampGain(12.3, 0, 0.0), 1.0);
   int dark = 0;
   for (int slot = 0; slot < 2000; ++slot) {
     const double t = slot / 16.0 + 0.01;
@@ -1337,16 +1337,15 @@ TEST(RuntimeFlickerMatchesItsFormulaAndStaysInRange) {
       ++dark;
     }
   }
-  CHECK(dark > 500 && dark < 1100);  // about 40% of slots at flicker 0.8
+  CHECK(dark > 500 && dark < 1100);
   int lit = 0;
   for (int i = 0; i < 2000; ++i) lit += TorchLit(i / 14.0 + 0.01, 0.5) ? 1 : 0;
-  CHECK(lit > 1300 && lit < 1700);  // about 75% lit
-  CHECK(TorchLit(3.0, 0.0));        // no restlessness: always lit
+  CHECK(lit > 1300 && lit < 1700);
+  CHECK(TorchLit(3.0, 0.0));
 }
 
-// ---- room doors need a legend that has doors: N closed, n open.
-
 namespace {
+// A legend with walls and room doors (`N` closed, `n` open).
 TileSetPtr DoorTiles() {
   json::Value root;
   std::string err;
@@ -1359,15 +1358,16 @@ TileSetPtr DoorTiles() {
   return set;
 }
 
+// Two rooms, each 3 cells wide, joined by one door in the wall at x = 4.
 Level DoorLevel() {
   Level l;
   l.SetTiles(DoorTiles());
-  // A small room on the right, a corridor on the left, a door N between them.
   l.Parse({"#########", "#...#...#", "#...N...#", "#...#...#", "#########"});
   return l;
 }
-}  // namespace
+}
 
+// Room doors swing into the smaller region and never shut on the player.
 TEST(RuntimeRoomDoorSwingsIntoTheSmallerSpaceAndCloses) {
   Level l = DoorLevel();
   RoomDoors doors;
@@ -1375,8 +1375,7 @@ TEST(RuntimeRoomDoorSwingsIntoTheSmallerSpaceAndCloses) {
   std::vector<DoorState> st;
   doors.AppendStates(st);
   CHECK_EQ(st.size(), 1u);
-  CHECK(st[0].passage_along_x);  // walls north and south of it: you walk
-                                 // through along x
+  CHECK(st[0].passage_along_x);
   CHECK_EQ(doors.Use(4, 2), 1);
   CHECK_EQ(doors.Use(9, 9), 0);
   const Vec2 far{.x = 1.5, .y = 1.5};
@@ -1394,35 +1393,32 @@ TEST(RuntimeRoomDoorNeverShutsOnThePlayer) {
   doors.Use(4, 2);
   const Vec2 inside{.x = 4.5, .y = 2.5};
   doors.Update(l, 1.0, inside, 0.25, 0.5, 0.5);
-  doors.Use(4, 2);  // close it
+  doors.Use(4, 2);
   for (int i = 0; i < 20; ++i) doors.Update(l, 0.1, inside, 0.25, 0.5, 0.5);
-  CHECK_EQ(l.At(4, 2), 'n');  // waits, ajar
+  CHECK_EQ(l.At(4, 2), 'n');
   const Vec2 out{.x = 1.5, .y = 2.5};
   for (int i = 0; i < 20; ++i) doors.Update(l, 0.1, out, 0.25, 0.5, 0.5);
   CHECK_EQ(l.At(4, 2), 'N');
 }
 
+// Normal, roughness, metal and occlusion maps (PBR companions).
 TEST(NormalMapIsFlatForAFlatTextureAndTiltsWithASlope) {
   const Surface flat(8, 8, Rgba(120, 120, 120));
   const Surface nf = MakeNormalMap(flat, 3.0f);
   CHECK_EQ(nf.w, 8);
   for (const uint32_t p : nf.px) CHECK_EQ(p, Rgba(128, 128, 255));
 
-  // Brightness rising to the right (+u): the surface leans back towards -x.
   Surface ramp(8, 8);
   for (int y = 0; y < 8; ++y) {
     for (int x = 0; x < 8; ++x) ramp.At(x, y) = Rgba(x * 30, x * 30, x * 30);
   }
   Surface nr = MakeNormalMap(ramp, 3.0f);
   const uint32_t p = nr.At(4, 4);
-  CHECK(((p >> 16) & 0xFF) < 120);  // x tilts negative
-  CHECK(std::abs(static_cast<int>((p >> 8) & 0xFF) - 128) <=
-        1);                 // no slope in y
-  CHECK((p & 0xFF) > 128);  // still faces outwards
-  // No strength, no tilt.
+  CHECK(((p >> 16) & 0xFF) < 120);
+  CHECK(std::abs(static_cast<int>((p >> 8) & 0xFF) - 128) <= 1);
+  CHECK((p & 0xFF) > 128);
   CHECK_EQ(MakeNormalMap(ramp, 0.0f).At(4, 4), Rgba(128, 128, 255));
 
-  // Brightness rising down the image (towards -v): y tilts positive (+v is up).
   Surface down(8, 8);
   for (int y = 0; y < 8; ++y) {
     for (int x = 0; x < 8; ++x) down.At(x, y) = Rgba(y * 30, y * 30, y * 30);
@@ -1433,24 +1429,18 @@ TEST(NormalMapIsFlatForAFlatTextureAndTiltsWithASlope) {
 
 TEST(SurfaceMapUsesAuthoredNormalAndRoughnessOrFallsBack) {
   const Surface albedo(4, 4, Rgba(100, 100, 100));
-  // Nothing authored: the brightness-made normal (flat here) and no gloss, as
-  // before PBR.
   Surface plain = MakeSurfaceMap(albedo, nullptr, nullptr, 3.0f);
   CHECK_EQ(plain.At(1, 1), Rgba(128, 128, 255, 0));
-  // An authored normal map is taken as it is; roughness 64 becomes gloss 191.
   const Surface nrm(4, 4, Rgba(200, 50, 220));
   const Surface rough(4, 4, Rgba(64, 64, 64));
   Surface both = MakeSurfaceMap(albedo, &nrm, &rough, 3.0f);
   CHECK_EQ(both.At(2, 3), Rgba(200, 50, 220, 191));
-  // Roughness alone keeps the generated normal.
   CHECK_EQ(MakeSurfaceMap(albedo, nullptr, &rough, 3.0f).At(0, 0),
            Rgba(128, 128, 255, 191));
-  // A companion of another size is resampled to the albedo's.
   const Surface small(2, 2, Rgba(0, 0, 0));
   Surface sized = MakeSurfaceMap(albedo, nullptr, &small, 3.0f);
   CHECK_EQ(sized.w, 4);
-  CHECK_EQ(sized.At(3, 3),
-           Rgba(128, 128, 255, 255));  // roughness 0: fully glossy
+  CHECK_EQ(sized.At(3, 3), Rgba(128, 128, 255, 255));
   CHECK(MakeSurfaceMap(Surface(), &nrm, &rough, 1.0f).Empty());
   CHECK(IsPbrCompanion("m_sofa_0_nrm"));
   CHECK(IsPbrCompanion("m_sofa_0_rough"));
@@ -1462,17 +1452,14 @@ TEST(SurfaceMapUsesAuthoredNormalAndRoughnessOrFallsBack) {
 
 TEST(MaterialMapPacksMetalAndOcclusionWithOpenDefaults) {
   const Surface albedo(4, 4, Rgba(100, 100, 100));
-  // Neither companion: empty, so the renderer shares one default (metal 0,
-  // occlusion 1).
   CHECK(MakeMaterialMap(albedo, nullptr, nullptr).Empty());
   CHECK(MakeMaterialMap(Surface(), &albedo, &albedo).Empty());
   const Surface metal(4, 4, Rgba(220, 220, 220));
   const Surface ao(4, 4, Rgba(90, 90, 90));
   CHECK_EQ(MakeMaterialMap(albedo, &metal, &ao).At(1, 2), Rgba(220, 90, 255));
   CHECK_EQ(MakeMaterialMap(albedo, &metal, nullptr).At(0, 0),
-           Rgba(220, 255, 255));  // fully open
-  CHECK_EQ(MakeMaterialMap(albedo, nullptr, &ao).At(3, 3),
-           Rgba(0, 90, 255));  // not metal
+           Rgba(220, 255, 255));
+  CHECK_EQ(MakeMaterialMap(albedo, nullptr, &ao).At(3, 3), Rgba(0, 90, 255));
   const Surface small(2, 2, Rgba(255, 255, 255));
   Surface sized = MakeMaterialMap(albedo, &small, nullptr);
   CHECK_EQ(sized.w, 4);
@@ -1487,9 +1474,10 @@ TEST(EngineCommonMaterialsStandAlone) {
     CHECK(lib.Has(n));
   }
   CHECK(lib.IsPlaceholder("poster"));
-  CHECK(!lib.Has("clockface"));  // story art belongs to a game, not the engine
+  CHECK(!lib.Has("clockface"));
 }
 
+// The asset pack: write, mount and read back, and detect tampering.
 TEST(VfsPackRoundTripAndMount) {
   const uint64_t key = vfs::KeyFromString("secret");
   std::string big(5000, 'x');
@@ -1499,38 +1487,33 @@ TEST(VfsPackRoundTripAndMount) {
                                            {"models/c.obj", ""},
                                            {"top.txt", "t"}},
                                           key);
-  CHECK(pack.find("a.json") ==
-        std::string::npos);  // names are not readable in the pack
-  CHECK(pack.find("{\"a\"") == std::string::npos);  // nor the contents
+  CHECK(pack.find("a.json") == std::string::npos);
+  CHECK(pack.find("{\"a\"") == std::string::npos);
 
   vfs::UnmountAll();
   std::string err;
   CHECK(!vfs::MountMemory(pack, "pak://assets", vfs::KeyFromString("wrong"),
-                          &err));  // wrong key
+                          &err));
   CHECK(!vfs::MountMemory("junk", "pak://assets", key, &err));
   CHECK(vfs::MountMemory(pack, "pak://assets", key, &err));
 
   std::string out;
   CHECK(vfs::ReadFile("pak://assets/data/a.json", out));
   CHECK(out == std::string("{\"a\": 1}"));
-  CHECK(vfs::ReadFile("pak://assets//models/b.obj",
-                      out));  // a doubled slash still resolves
+  CHECK(vfs::ReadFile("pak://assets//models/b.obj", out));
   CHECK(out == big);
   CHECK(vfs::ReadFile("pak://assets/models/c.obj", out));
   CHECK(out.empty());
   CHECK(!vfs::ReadFile("pak://assets/data/missing.json", out));
   CHECK(vfs::Exists("pak://assets/top.txt"));
   CHECK(!vfs::Exists("pak://assets/nope"));
-  CHECK(!vfs::Exists(
-      "pak://assetsx/top.txt"));  // a sibling prefix is not under the root
+  CHECK(!vfs::Exists("pak://assetsx/top.txt"));
 
   const auto models = vfs::List("pak://assets/models");
   CHECK_EQ(models.size(), size_t(2));
   CHECK(models[0] == std::string("b.obj"));
-  CHECK_EQ(vfs::List("pak://assets").size(),
-           size_t(1));  // only top.txt: no subfolders listed
+  CHECK_EQ(vfs::List("pak://assets").size(), size_t(1));
 
-  // Paths outside every mount still read from the disk.
   const std::filesystem::path tmp =
       std::filesystem::temp_directory_path() / "mythos_vfs_test.txt";
   {
@@ -1546,27 +1529,22 @@ TEST(VfsDetectsTampering) {
   const uint64_t key = vfs::KeyFromString("k");
   std::string pack =
       vfs::BuildPack({{"a.txt", "hello world, a longer line"}}, key);
-  pack.back() =
-      static_cast<char>(pack.back() ^ 0x40);  // flip a bit in the file's data
+  pack.back() = static_cast<char>(pack.back() ^ 0x40);
   vfs::UnmountAll();
-  CHECK(vfs::MountMemory(pack, "pak://t", key));  // the table is intact
+  CHECK(vfs::MountMemory(pack, "pak://t", key));
   std::string out;
-  CHECK(!vfs::ReadFile("pak://t/a.txt", out));  // but the file fails its check
+  CHECK(!vfs::ReadFile("pak://t/a.txt", out));
   std::string cut = vfs::BuildPack({{"a.txt", "hello"}}, key);
   cut.resize(cut.size() - 2);
-  CHECK(!vfs::MountMemory(cut, "pak://u", key));  // truncated
+  CHECK(!vfs::MountMemory(cut, "pak://u", key));
   vfs::UnmountAll();
 }
-
-// ---------------------------------------------------------------- level editor
-// (the headless core: level files, the project, undo, adapters)
 
 namespace {
 
 namespace fs = std::filesystem;
 
-// A project of two floors on disk: levels "ground" and "up" (a stair well and
-// the hole over it), the tile legend and one data file, "things.json".
+// A temporary project folder with `assets/levels`, removed afterwards.
 struct EditorFixture {
   fs::path root;
   EditorFixture() {
@@ -1605,7 +1583,6 @@ struct EditorFixture {
 
 constexpr int kThing = editor::kFirstGameKind;
 
-// A game's adapter in miniature: things.json lists things standing on a floor.
 class FakeAdapter : public editor::Adapter {
  public:
   std::vector<std::string> DataFiles() const override { return {"things"}; }
@@ -1662,8 +1639,9 @@ class FakeAdapter : public editor::Adapter {
   }
 };
 
-}  // namespace
+}
 
+// The level editor's headless rules: documents, undo, checks and adapters.
 TEST(EditorFormatsNumbersLikeLevelFiles) {
   CHECK(editor::FormatNumber(0.1) == std::string("0.1"));
   CHECK(editor::FormatNumber(90) == std::string("90"));
@@ -1696,14 +1674,13 @@ TEST(EditorResizesALevelAndDropsWhatFallsOff) {
 
 TEST(EditorEditsLevelsWithNoAdapter) {
   EditorFixture f;
-  editor::Project p;  // the editor with no game attached
+  editor::Project p;
   std::string err;
   CHECK(p.Load(f.root.string(), &err));
   CHECK_EQ(p.LevelNames().size(), size_t{2});
   CHECK(p.data.empty());
   CHECK(p.Contexts().empty());
   const editor::Where w{"ground", ""};
-  // Furniture stands on cells, decor off them.
   editor::Pose pose;
   const editor::EntityRef table{editor::kFurniture, 0, ""};
   CHECK(p.GetPose(w, table, &pose));
@@ -1723,7 +1700,6 @@ TEST(EditorEditsLevelsWithNoAdapter) {
   CHECK(!p.IsDirty("up"));
   CHECK(p.Save(&err));
   CHECK(!p.Dirty());
-  // Only what changed is rewritten, and a level keeps its stamp.
   CHECK(f.Read("assets/levels/ground.txt").find("map_editor") !=
         std::string::npos);
   CHECK(f.Read("assets/levels/up.txt") ==
@@ -1731,7 +1707,6 @@ TEST(EditorEditsLevelsWithNoAdapter) {
   editor::Project again;
   CHECK(again.Load(f.root.string(), &err));
   CHECK_EQ(again.Level("ground")->furniture[0].x, 3);
-  // A new level, walled round; names that are not file names are refused.
   CHECK(p.CreateLevel("cellar_2", 6, 5));
   CHECK(p.Level("cellar_2")->At(0, 0) == '#' &&
         p.Level("cellar_2")->At(2, 2) == '.');
@@ -1749,8 +1724,8 @@ TEST(EditorChecksFurnitureInWallsMissingModelsAndStairwells) {
   const std::vector<std::string> models = {"table", "vase", "lamp"};
   CHECK(p.Check(w, models).empty());
   editor::LevelDoc* doc = p.Level("ground");
-  doc->furniture.push_back({0, 0, "table", 0});          // in a wall
-  doc->furniture.push_back({1, 1, "no_such_model", 0});  // no such model
+  doc->furniture.push_back({0, 0, "table", 0});
+  doc->furniture.push_back({1, 1, "no_such_model", 0});
   bool wall = false, missing = false;
   for (const auto& pr : p.Check(w, models)) {
     wall |= pr.text.find("inside a wall") != std::string::npos;
@@ -1758,7 +1733,7 @@ TEST(EditorChecksFurnitureInWallsMissingModelsAndStairwells) {
   }
   CHECK(wall);
   CHECK(missing);
-  // The stair well needs the hole over it, in the floor above.
+
   doc->furniture.clear();
   p.Level("up")->Set(2, 1, '.');
   bool well = false;
@@ -1773,7 +1748,7 @@ TEST(EditorStackListsTheFloorsThatExistWithTheOpenOneStandingIn) {
   editor::Project p(&adapter);
   std::string err;
   CHECK(p.Load(f.root.string(), &err));
-  const auto stack = p.Stack("day", "up");  // "missing" is no level: left out
+  const auto stack = p.Stack("day", "up");
   CHECK_EQ(stack.size(), size_t{2});
   CHECK_EQ(stack[0].first, 0);
   CHECK(stack[1].second == std::string("up"));
@@ -1788,7 +1763,7 @@ TEST(EditorAdaptersThingsMoveSaveAndUndoLikeLevels) {
   std::string err;
   CHECK(p.Load(f.root.string(), &err));
   const editor::Where w{"ground", "day"};
-  CHECK_EQ(p.Entities(w).size(), size_t{3});  // table, vase, thing
+  CHECK_EQ(p.Entities(w).size(), size_t{3});
   const editor::EntityRef thing{kThing, 0, ""};
   CHECK(p.KindName(kThing) == std::string("Things"));
   editor::Visual vis;
@@ -1803,23 +1778,21 @@ TEST(EditorAdaptersThingsMoveSaveAndUndoLikeLevels) {
   CHECK(p.Dirty());
   CHECK(h.Commit(p));
   CHECK(p.Save(&err));
-  // The data file is written two-space indented with a final newline.
   editor::Project again(&adapter);
   CHECK(again.Load(f.root.string(), &err));
   CHECK(again.data["things"]["things"][0]["at"][0].get<double>() == 3.5);
   const std::string text = f.Read("assets/data/things.json");
   CHECK(text == p.data["things"].dump(2) + "\n");
-  // Undo brings the old position back, and marks the file for saving again.
   CHECK(h.Undo(&p));
   CHECK(p.data["things"]["things"][0]["at"][0].get<double>() == 2.5);
   CHECK(p.Dirty());
   CHECK(h.Redo(&p));
   CHECK(p.data["things"]["things"][0]["at"][0].get<double>() == 3.5);
-  // What the adapter does not allow is refused: no Remove, no Duplicate.
   CHECK(!p.Remove(w, thing));
   CHECK(p.Duplicate(w, thing).index < 0);
 }
 
+// The glitching FM radio is finite and repeatable for a given seed.
 TEST(RadioFmGlitchesAndStaysFiniteAndRepeatsForASeed) {
   const int rate = 44100;
   mythos::RadioFm a(rate, 7), b(rate, 7), c(rate, 8);
@@ -1827,7 +1800,8 @@ TEST(RadioFmGlitchesAndStaysFiniteAndRepeatsForASeed) {
   double energy = 0;
   bool same = true, differs = false, finite = true;
   for (int i = 0; i < rate * 30; ++i) {
-    const float in = 0.5f * std::sin(i * 0.05f) * std::sin(i * 0.0007f);
+    const float in = 0.5f * std::sin(static_cast<float>(i) * 0.05f) *
+                     std::sin(static_cast<float>(i) * 0.0007f);
     const float ya = a.Process(in), yb = b.Process(in), yc = c.Process(in);
     same = same && ya == yb;
     differs = differs || ya != yc;
@@ -1836,14 +1810,16 @@ TEST(RadioFmGlitchesAndStaysFiniteAndRepeatsForASeed) {
     saw[static_cast<int>(a.Current())] = true;
   }
   CHECK(finite);
-  CHECK(same);     // the same seed, the same crackle
-  CHECK(differs);  // another seed, another
+  CHECK(same);
+  CHECK(differs);
   CHECK(energy > 1.0);
-  for (int k = 1; k < 5; ++k) CHECK(saw[k]);  // every kind of glitch came
+  for (int k = 1; k < 5; ++k) CHECK(saw[k]);
 }
 
-}  // namespace mythos
+}
 
+// Runs the registered tests whose name contains argv[1] (all by default);
+// exits non-zero if any check failed.
 int main(int argc, char* const* argv) {
   const std::string filter = argc > 1 ? argv[1] : "";
   int ran = 0;

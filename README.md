@@ -65,7 +65,7 @@ target_link_libraries(my_game_rules PUBLIC mythos::engine)
 To work on the engine and a game together, point FetchContent at your checkout:
 `cmake -DFETCHCONTENT_SOURCE_DIR_MYTHOS_ENGINE=/path/to/mythos-engine ...`
 
-Options: `MYTHOS_BUILD_PLATFORM` (SDL layer, default ON), `MYTHOS_BUILD_TESTS` (default ON when top level),
+Options: `MYTHOS_BUILD_PLATFORM` (SDL layer, default ON), `MYTHOS_BUILD_TESTS` (default ON when top level), `MYTHOS_WARNINGS_AS_ERRORS` (warnings in the engine's own code fail the build, default OFF, on in CI),
 `MYTHOS_FETCH_SDL` (download SDL when none is installed, default ON), `MYTHOS_SDL_VERSION` (the SDL release fetched,
 3.2.28), `MYTHOS_PORTABLE` (link SDL statically, always fetched, so the app runs without SDL installed),
 `MYTHOS_LTO` (link-time optimization for Release, on by default). MSVC builds use `/utf-8`, which games inherit.
@@ -228,7 +228,7 @@ ctest --test-dir build --output-on-failure      # or ./build/mythos_engine_tests
 # the tests need no SDL and no display: -DMYTHOS_BUILD_PLATFORM=OFF
 ```
 
-Warnings are on (`-Wall -Wextra -Wpedantic`, `/W4`); keep the build warning-free. The test harness is
+Warnings are on (`-Wall -Wextra -Wpedantic`, `/W4`); keep the build warning-free. Code is formatted with `clang-format` (`.clang-format`, Google style) and checked with `clang-tidy` (`.clang-tidy`); CI fails on any warning, formatting difference or tidy finding. The test harness is
 home-made: `TEST(name) { CHECK(...); CHECK_EQ(a, b); }` in `tests/test_main.cpp`. `.editorconfig` pins the
 style (4 spaces, LF, final newline).
 

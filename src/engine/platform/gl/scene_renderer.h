@@ -1,14 +1,5 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_GL_SCENE_RENDERER_H_
 #define MYTHOS_ENGINE_PLATFORM_GL_SCENE_RENDERER_H_
-// OpenGL 4.1 renderer for a grid world.
-//
-// The world is drawn into an internal framebuffer with per-pixel lighting
-// (torch, moonlight outdoors), distance fog, filmic tone mapping, a vignette
-// and gentle film grain, then scaled to the window. Outdoor zones get a
-// procedural night sky: stars, a moon and drifting clouds. The 2D overlay (HUD,
-// notes, screens) is alpha-blended on top at full window size, and its text is
-// drawn over that from distance-field font atlases at the window's own
-// resolution.
 
 #include <cstdint>
 #include <string>
@@ -25,294 +16,351 @@
 #include "engine/world/room_doors.h"
 
 namespace mythos {
-
-// One swinging door panel to draw this frame: its hinge on the map plane and
-// the absolute angle of its spine (the panel extends kDoorPanelWidth from the
-// hinge).
+// A door panel to draw this frame: its hinge position (world x, z), the height
+// of its floor (y) and the panel's rotation about the vertical axis in radians.
 struct DoorInstance {
   double hinge_x = 0, hinge_z = 0;
-  double y = 0;  // the floor's height (a house of several floors)
+  double y = 0;
   double angle = 0;
 };
 
-// The panel for a door of the level: hinged on the frame face it swings towards
-// (the posts fill 0.30..0.70 of the cell along the passage; the wall stops at
-// 0.15 across it). Shut, it rests against the posts; a quarter turn lays it
-// flat along the wall, clear of posts and wall.
+// Places a door from its game state: the open fraction is eased (smoothstep)
+// into a quarter turn, swinging to the side given by `d.swing`, and the hinge
+// is offset within the doorway cell according to the passage direction.
 DoorInstance MakeDoorInstance(const DoorState& d);
 
-// A small positional lamp (indoors): colour is the light's final linear RGB,
-// already scaled by intensity and any flicker the caller computes this frame.
-// The kMaxShadowLights brightest-and-nearest lamps (see CameraState::shadows)
-// also cast shadows.
+// A point lamp: world position, linear color (may exceed 1) and the radius in
+// world units at which its light fades out.
 struct PointLight {
   double x = 0, y = 0, z = 0;
   double r = 1, g = 1, b = 1;
-  double radius =
-      4;  // reach in world units; light fades smoothly to zero there
+  double radius = 4;
 };
 
-// A model drawn where the caller says, every frame: what moves (the hand's
-// torch, the player's body). Upload its batches once with
-// SceneRenderer::uploadModel. `matrix` is its model-to-world transform
-// (column-major; rotation and uniform scale only, the lighting turns normals
-// with it). `views` says where it shows.
+// One draw of an uploaded model (see SceneRenderer::UploadModel) at a
+// column-major world matrix. `views` selects where it appears: the main view,
+// the mirror reflection or both. Instances are never drawn into shadow maps.
 struct ModelInstance {
-  static constexpr unsigned kMain = 1;    // in the player's own view
-  static constexpr unsigned kMirror = 2;  // in the mirror
-  int model = -1;                         // the id uploadModel returned
+  static constexpr unsigned kMain = 1;
+  static constexpr unsigned kMirror = 2;
+  int model = -1;
   float matrix[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   unsigned views = kMain | kMirror;
 };
 
-// A vertical mirror hung on a wall: its glass centre, the horizontal unit
-// normal facing into the room, and its size. The scene is drawn again as it is
-// seen in it (the lamps and the hand light are real, the picture is reflected),
-// then laid over the glass. Only one mirror at a time; the caller sends the one
-// the player can see.
+// One planar mirror: the glass center (world), its horizontal normal (nx, nz;
+// unit length, pointing into the room), half extents of the glass, and how
+// opaque and how tinted the reflection is.
 struct MirrorState {
   bool on = false;
-  double x = 0, y = 0, z = 0;  // centre of the glass
-  double nx = 0, nz = 1;       // facing (unit, horizontal)
+  double x = 0, y = 0, z = 0;
+  double nx = 0, nz = 1;
   double half_w = 0.3, half_h = 0.4;
-  double alpha = 0.94;  // how much of the glass shows the reflection (the rest
-                        // shows the glass's own texture)
-  double tint[3] = {0.80, 0.84, 0.86};  // the glass dims and cools the picture
+  double alpha = 0.94;
+
+  double tint[3] = {0.80, 0.84, 0.86};
 };
 
-// A box the flash of lightning reaches: a room with a window.
+// A box (x/z corners and a y range, world units) lit by lightning when
+// `CameraState::lightning_zoned` is set.
 struct LightningZone {
-  double x0 = 0, z0 = 0, x1 = 0, z1 = 0;  // on the map plane
-  double y0 = 0, y1 = 0;                  // from the floor to the ceiling
+  double x0 = 0, z0 = 0, x1 = 0, z1 = 0;
+  double y0 = 0, y1 = 0;
 };
 
+// Everything the renderer needs for one frame, supplied by the game. Angles are
+// radians with pitch positive upward; the view direction is (cos yaw cos pitch,
+// sin pitch, sin yaw cos pitch). Lengths are world units (1 cell).
 struct CameraState {
-  double x = 0, z = 0;  // eye position on the map plane (x = column, z = row)
+  double x = 0, z = 0;
   double eye_height = 1.55;
-  double yaw = 0, pitch = 0;        // radians
-  std::vector<DoorInstance> doors;  // animated door panels
-  // Interior light: the base ambient and an extra term near the player
-  // (defaults keep the original dark look), plus up to kMaxLights lamps.
+  double yaw = 0, pitch = 0;
+  std::vector<DoorInstance> doors;
+
+  // Ambient light color far from lamps and near them (linear RGB).
   float ambient_base[3] = {0.060f, 0.052f, 0.046f};
   float ambient_near[3] = {0.085f, 0.075f, 0.065f};
+  // Lamps; only the first `kMaxLights` are used, and the nearest lit ones cast
+  // shadows (see `shadow_level`).
   std::vector<PointLight> lights;
   static constexpr int kMaxLights = 8;
   static constexpr int kMaxLightningZones = 40;
-  static constexpr int kMaxShadowLights =
-      4;                 // lamps that cast shadows: the ones nearest the eye
-  int shadow_level = 3;  // shadow maps: 0 off, 1 very low, 2 low, 3 medium, 4
-                         // max, 5 ultra max (see shadowSpec)
-  int materials = 2;     // 0 off (flat look), 1 specular + metal + occlusion, 2
-                         // also reflections (gfx/pbr.h)
-  double motion_blur = 0;  // how much turning the view smears the picture: 0
-                           // off, 1 normal, 2 double...
-  int anti_alias = 1;  // 0 off, 1 FXAA, 2 / 3 / 4 = MSAA 2x / 4x / 8x (what the
-                       // GPU lacks is lowered)
-  bool lens_effect =
-      true;  // colour fringing that grows towards the edges of the picture
-  double bloom = 0;       // light bleeding round bright parts of the picture: 0
-                          // off, ~0.5 a soft glow (the cinematic look)
-  bool tape = false;      // a camcorder (VHS tape) look: colour smear, tracking
-                          // noise, scanlines, a REC / PLAY / battery display
-                          // and a timecode; the game switches it off per scene
-  double tape_time = 0;   // seconds on the tape: the timecode and the noise
-  double torch_tint = 0;  // 0..1: the hand light browns and dims as its
-                          // battery fails (a game's dying torch)
-  bool flash_on = false;  // torch beam
-  double hand_yaw = 0,
-         hand_pitch = 0;  // where the hand light points, relative to the view
-                          // (radians): it lags and sways
-  double hand_side = 0,
-         hand_down =
-             0;  // and how far the hand has moved from its rest place (metres)
-  bool lighter =
-      false;  // the hand light is a lighter: wide, short, warm and restless
-  double scroll_z = 0;   // the world (not the cab) is drawn this far along z:
-                         // the road going by
-  bool outdoor = false;  // night sky and moonlight instead of a ceiling
-  bool grain = true;     // film grain (a graphics setting)
-  double time = 0;       // seconds, for grain and flicker
-  double lightning = 0;  // 0..1: a flash of lightning lights the world and the
-                         // sky (a thunderstorm; the game decides when)
-  bool lightning_zoned = false;  // true: the flash lights the world only inside
-                                 // lightning_zones (rooms with a window; none
-                                 // at all in a cellar); false: everywhere
-  std::vector<LightningZone> lightning_zones;  // at most kMaxLightningZones
-  std::vector<ModelInstance>
-      instances;  // models drawn this frame (not in the lamps' shadows)
+  static constexpr int kMaxShadowLights = 4;
+  // Index into the shadow quality presets in settings.h (0 = no shadows).
+  int shadow_level = 3;
+
+  // 0 off, 1 basic, 2 full: how much of the metal/roughness/occlusion model the
+  // world shader applies.
+  int materials = 2;
+
+  // Strength of the camera-turn smear in the composite pass; 0 is off.
+  double motion_blur = 0;
+
+  // Index into `kAntiAliasSamples`; 1 selects FXAA, higher entries MSAA.
+  int anti_alias = 1;
+
+  // Lens effects of the composite pass; `bloom` is the glow strength (0 off).
+  bool lens_effect = true;
+  double bloom = 0;
+
+  // Camcorder tape look, drawn in the composite pass (HUD included).
+  bool tape = false;
+
+  // Seconds on the tape counter, shown by the tape look. `torch_tint` (0..1)
+  // warms the hand light toward a flame color.
+  double tape_time = 0;
+  double torch_tint = 0;
+
+  // The hand light (torch or lighter). `hand_yaw` and `hand_pitch` offset its
+  // aim from the view direction.
+  bool flash_on = false;
+  double hand_yaw = 0, hand_pitch = 0;
+
+  // Hand offset from its rest position, in world units, used to place the hand
+  // light's shadow origin.
+  double hand_side = 0, hand_down = 0;
+  bool lighter = false;
+  // Offset added to the z of the world and props, used to scroll a level past
+  // the viewer.
+  double scroll_z = 0;
+
+  // Outdoor scene: draws the night sky and uses outdoor fog.
+  bool outdoor = false;
+  bool grain = true;
+  // Seconds, for animated lamp flicker, sky and grain.
+  double time = 0;
+  // Lightning flash intensity 0..1, added to ambient light and the sky.
+  double lightning = 0;
+
+  // When true the world is lit by lightning only inside `lightning_zones` (up
+  // to `kMaxLightningZones`); an empty list lights nothing.
+  bool lightning_zoned = false;
+
+  std::vector<LightningZone> lightning_zones;
+  // Model instances to draw this frame, and the optional mirror.
+  std::vector<ModelInstance> instances;
   MirrorState mirror;
 };
 
+// Draws a frame: shadow cube maps, optional mirror view, sky and world into a
+// multisampled target, then the composite pass (bloom, motion blur, lens, FXAA)
+// to the window, then the 2D overlay and text. Needs a current GL 4.1 context
+// and loaded GL functions. Not thread-safe.
 class SceneRenderer {
  public:
-  // Creates shaders, textures and framebuffers. The GL context must be current.
+  // Builds the shaders and fixed GL objects and uploads every texture with its
+  // normal and material maps. Returns false if a required program or the text
+  // renderer failed to build.
   bool Init(const TextureLibrary& textures);
+
+  // Replaces the world and prop geometry, split into chunks for culling. Every
+  // upload invalidates the cached shadow maps.
   void UploadWorld(const SceneGeometry& geometry);
-  // A second layer drawn where it stands while the world scrolls past (the cab
-  // of a moving car). An empty geometry clears it.
+
+  // Replaces the extra fixed geometry drawn without the scroll offset (world
+  // and props of `geometry` together).
   void UploadCab(const SceneGeometry& geometry);
+
+  // Sets the door panel mesh, with its hinge at the origin; instanced per door
+  // from `CameraState::doors`.
   void UploadDoorPanel(const std::vector<Batch>& batches);
-  // A model for ModelInstance: returns its id (kept until the renderer goes).
-  // The batches are in model space.
+
+  // Uploads a model and returns its id for `ModelInstance::model`.
   int UploadModel(const std::vector<Batch>& batches);
-  // overlay may be null. Its size is taken from the Surface and it is stretched
-  // over the window. text (may be null) is laid out in overlay pixels and drawn
-  // over it at the window's full resolution; its fonts must have been
-  // registered with addFont.
+
+  // Renders one frame to the default framebuffer of window_w x window_h pixels.
+  // The overlay (a BGRA surface covering the window) and text layer are
+  // optional and drawn last.
   void Render(const CameraState& cam, int window_w, int window_h,
               const Surface* overlay, const TextLayer* text = nullptr);
-  // Uploads a font's distance-field atlas. The font must outlive the renderer's
-  // use of it.
+
   void AddFont(const SdfFont& font) { text_.AddFont(font); }
-  // Graphics setting: 0 low (300 lines), 1 medium (600), 2 high (900). The
-  // internal target takes the window's aspect ratio, so the view widens instead
-  // of stretching.
+
+  // Chooses the internal render height from `kRenderScaleLines`; the width
+  // follows the window's aspect ratio.
   void SetRenderScale(int preset);
 
+  // Initial size of the internal render target before the first Render().
   static constexpr int kInternalW = 960;
   static constexpr int kInternalH = 600;
 
  private:
-  // One texture's geometry: a single VAO + VBO, set up once at upload, holding
-  // its triangles sorted by chunk so that each chunk is one contiguous range to
-  // cull and draw.
+  // A contiguous vertex range of a batch inside one 8x8 cell column, with its
+  // bounding box for frustum culling.
   struct GpuChunk {
-    int first = 0, count = 0;  // vertex range in the batch's buffer
+    int first = 0, count = 0;
     float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
   };
+
+  // All geometry of one texture and material state: one VAO and VBO, with its
+  // chunks stored contiguously so that neighboring visible chunks merge into a
+  // single draw. Texture ids are non-owning (owned by the maps below).
   struct GpuBatch {
     GlVertexArray vao;
     GlBuffer vbo;
     std::vector<GpuChunk> chunks;
-    gl::GLuint texture = 0;  // not owned: see textures_
-    gl::GLuint normal = 0;   // its normal + gloss map, likewise
-    gl::GLuint material =
-        0;  // its metal + occlusion map (the shared default when it has none)
+    gl::GLuint texture = 0;
+    gl::GLuint normal = 0;
+    gl::GLuint material = 0;
     bool emissive = false;
     bool alpha_test = false;
-    float bmin[3] = {0, 0, 0},
-          bmax[3] = {0, 0,
-                     0};  // bounds of all chunks in model space, for culling
+    float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
   };
+
   using BatchList = std::vector<GpuBatch>;
 
-  // Everything the frame's passes share, worked out once in render().
+  // Per-frame derived values shared by the passes: eye and directions, fog,
+  // matrices, culling planes, and the mirror's clip plane (xyz normal, w
+  // offset) and which instance views the pass draws.
   struct Frame {
     float eye[3], dir[3], flash[3], moon[3], fog[3];
     float fog_density, fov_y, aspect, grain;
     int materials;
     float view[16], proj[16];
-    Frustum planes;                // the view frustum, world space
-    float clip[4] = {0, 0, 0, 1};  // a plane: what lies on its negative side is
-                                   // not drawn (the mirror's back)
-    unsigned views = ModelInstance::kMain;  // which instances this pass shows
+    Frustum planes;
+    float clip[4] = {0, 0, 0, 1};
+
+    unsigned views = ModelInstance::kMain;
   };
 
-  // init() steps.
   void LookUpWorldUniforms();
+
   void BuildFullscreenQuad();
+
   void UploadTextures(const TextureLibrary& textures);
+
+  // Creates a repeating, trilinear-filtered texture with mipmaps.
   static GlTexture MakeMipmappedTexture(
       int w, int h, const void* rgba, gl::GLenum internal_format = gl::kRgba8);
 
-  // render() steps.
+  // Derives the main view's `Frame` from the camera state.
   Frame MakeFrame(const CameraState& cam) const;
+
+  // Draws sky and world (and the mirror glass) into the main target and
+  // resolves multisampling.
   void DrawMainView(const CameraState& cam, const Frame& f, bool mirrored);
+
+  // Computes the screen-space smear from the view change since the last frame,
+  // in fractions of the screen, and remembers the current view.
   void MotionBlurSmear(const CameraState& cam, const Frame& f, float& smear_x,
                        float& smear_y);
+
+  // Uploads the chosen lamps (nearest-shadowed first) to the world shader.
   void SetLampUniforms();
+
+  // Binds the lamp and hand-light cube maps to their texture units.
   void BindShadowCubes();
+
+  // Draws each visible door; `model` is scratch space for its matrix.
   void DrawDoors(const CameraState& cam, const Frustum& cull, float* model);
+
   void DrawInstances(const CameraState& cam, unsigned views);
 
-  // Splits each batch into spatial chunks (kChunk cells square) so draws can be
-  // culled.
+  // Splits batches into 8-cell chunks, uploads them and resolves their texture
+  // maps by name (falling back to "missing").
   void UploadBatches(BatchList& dst, const std::vector<Batch>& src);
-  // Binds a batch's textures, flags and VAO, skipping what drawState_ says is
-  // already set.
+
+  // Binds a batch's textures and flags, skipping what `draw_state_` shows is
+  // already bound.
   void BindBatchState(const GpuBatch& batch);
-  // Draws the batches. With a Frame, chunks outside its frustum (shifted by
-  // offsetZ) are skipped.
+
+  // Draws batches with the given model matrix, culling against `cull` when
+  // given (`offset_z` shifts the boxes to match a scrolled model matrix).
   void DrawBatches(const BatchList& batches, const float* model,
                    const Frustum* cull = nullptr, float offset_z = 0.0f);
+
+  // Draws the fullscreen quad.
   void DrawQuad();
+
   gl::GLuint TextureFor(const std::string& name) const;
+
   gl::GLuint NormalMapFor(const std::string& name) const;
-  gl::GLuint MaterialMapFor(const std::string& name)
-      const;  // the shared default when it has no map of its own
+
+  gl::GLuint MaterialMapFor(const std::string& name) const;
+
+  // Uploads the overlay when it changed since the last frame.
   void UploadOverlay(const Surface& overlay);
-  // Reallocates the internal target when the preset or the window's aspect
-  // needs another size.
+
   void ResizeTarget(int window_w, int window_h);
 
-  // Picks the lamps for this frame (shadow casters first) into lamps_ /
-  // shadowCount_.
+  // Picks the lamps for this frame, nearest to the eye first among lit ones,
+  // and how many of them cast shadows, and sets up the hand light's shadow.
   void ChooseLamps(const CameraState& cam, const Frame& f);
-  // Hand light: its position and reach, and the cube faces its beam can reach
-  // (handPos_, handReach_, handFaces_).
+
+  // Computes the hand light's position and reach and which cube faces its cone
+  // can touch.
   void PlaceHandShadow(const CameraState& cam, const Frame& f);
-  // Renders the distance cube maps of each shadow-casting lamp and of the hand
-  // light.
+
+  // Refreshes the shadow cube faces whose lamp or scene changed.
   void DrawShadows(const CameraState& cam);
-  // One lamp's cube map: the scene's distance from `pos` out to `reach`, six
-  // faces. Draws the faces in faceMask (bit i = face i), skipping any whose
-  // entry in keys[6] already equals baseKey (same lamp, same scene); the
-  // entries of the faces drawn are set to baseKey.
+
+  // Renders the faces in `face_mask` of one cube from `pos`, skipping each face
+  // whose entry in `keys` already equals `base_key`.
   void DrawShadowCube(const CameraState& cam, ShadowCube& cube,
                       const float* pos, float reach, unsigned face_mask,
                       uint64_t* keys, uint64_t base_key);
-  // What the scene looks like to a shadow map: the geometry, the scroll and the
-  // doors. Equal keys (with the same lamp) mean the cube is still right.
+
+  // Hash of everything that moves shadow casters: the geometry revision, scroll
+  // and door angles.
   uint64_t SceneKey(const CameraState& cam) const;
-  // views: the ModelInstance::k* bits to show (0 for the shadow passes: nothing
-  // held casts a shadow).
+
+  // Draws all geometry (cab, world, props, doors, and instances shown in
+  // `views`, none when 0) with the current program and state.
   void DrawScene(const CameraState& cam, const Frustum& cull, unsigned views);
-  // The mirror: whether it is in view this frame, the scene as the glass shows
-  // it, and the glass itself.
+
+  // True if the mirror is on, faces the eye and is within the frustum.
   bool MirrorVisible(const CameraState& cam, const Frame& f) const;
+
+  // Renders the reflected world into the mirror target.
   void DrawMirrorView(const CameraState& cam, const Frame& f);
+
+  // Draws the glass quad sampling the mirror target by screen position.
   void DrawMirrorGlass(const CameraState& cam, const Frame& f);
-  // (Re)creates the shadow cube maps for a level when it changes.
+
+  // (Re)creates the cube maps when the shadow level changes.
   void EnsureShadowMaps(int level);
+
   void DrawSky(const CameraState& cam, const Frame& f);
+
   void DrawWorld(const CameraState& cam, const Frame& f);
+
   void Composite(const CameraState& cam, const Frame& f, int window_w,
                  int window_h);
+
   void DrawOverlay(const Surface& overlay, const TextLayer* text);
-  // Bright pass and blur of the resolved picture into bloom_b_; false when
-  // bloom is off.
+
+  // Runs the bright pass and blur into `bloom_b_`; returns false when bloom is
+  // off or unavailable.
   bool BuildBloom(const CameraState& cam);
 
   GlProgram world_program_, quad_program_, sky_program_, shadow_program_,
       composite_program_, mirror_program_, bloom_program_;
-  RenderTarget bloom_a_, bloom_b_;  // the glow, at a quarter of the picture
-  RenderTarget mirror_target_;      // what the glass shows
+  RenderTarget bloom_a_, bloom_b_;
+  RenderTarget mirror_target_;
   GlVertexArray mirror_vao_;
   GlBuffer mirror_vbo_;
-  std::vector<BatchList> models_;  // by ModelInstance::model
-  ShadowCube hand_shadow_;         // the torch's or lighter's
-  // What each cube was last drawn for (0 = nothing): a static lamp in a still
-  // scene is not redrawn. Kept per cube face: the hand light only draws the
-  // faces its beam can reach.
+  std::vector<BatchList> models_;
+  ShadowCube hand_shadow_;
+
+  // Per-face cache keys: a face is redrawn only when its key changes.
   uint64_t shadow_key_[CameraState::kMaxShadowLights][6] = {};
   uint64_t hand_key_[6] = {};
-  unsigned hand_faces_ =
-      0x3F;  // the faces of the hand light's cube the beam can reach this frame
-  uint64_t scene_revision_ = 1;  // bumped by every upload of geometry
+  // Bit mask of the hand light's cube faces that are drawn (bit i = face i).
+  unsigned hand_faces_ = 0x3F;
+  // Bumped by every upload so cached shadow faces are redrawn.
+  uint64_t scene_revision_ = 1;
   bool hand_shadow_on_ = false;
-  float hand_pos_[3] = {0, 0, 0};  // where the hand light is held this frame
+  float hand_pos_[3] = {0, 0, 0};
   float hand_reach_ = 10.0f;
-  int shadow_built_ = -1;  // the level shadow_ was made for
-  int shadow_size_ = 512;  // texels per side of a face at that level
-  int shadow_limit_ = 0;   // lamps that cast shadows at that quality
+  int shadow_built_ = -1;
+  int shadow_size_ = 512;
+  int shadow_limit_ = 0;
   bool have_last_view_ = false;
-  double last_yaw_ = 0,
-         last_pitch_ = 0;     // the previous frame's view, for motion blur
-  DepthBuffer shadow_depth_;  // shared by every cube: they are drawn one face
-                              // after another
+  double last_yaw_ = 0, last_pitch_ = 0;
+  DepthBuffer shadow_depth_;
+
   ShadowCube shadow_[CameraState::kMaxShadowLights];
-  std::vector<PointLight>
-      lamps_;  // this frame's lamps, the shadow casters first
+  std::vector<PointLight> lamps_;
   int shadow_count_ = 0;
   GlVertexArray quad_vao_;
   GlBuffer quad_vbo_;
@@ -320,29 +368,28 @@ class SceneRenderer {
   int render_scale_ = 1;
   GlTexture overlay_tex_;
   int overlay_w_ = 0, overlay_h_ = 0;
-  std::vector<uint32_t>
-      overlay_pixels_;  // what is in overlayTex_, to skip identical frames
+  std::vector<uint32_t> overlay_pixels_;
   TextRenderer text_;
   std::vector<std::pair<std::string, GlTexture>> textures_;
-  std::vector<std::pair<std::string, GlTexture>>
-      normal_maps_;  // made from textures_ (gfx/pbr.h)
-  std::vector<std::pair<std::string, GlTexture>>
-      material_maps_;  // only for textures with a metal or ao companion
-  GlTexture
-      default_material_;  // metal 0, occlusion 1: what every other texture uses
+  std::vector<std::pair<std::string, GlTexture>> normal_maps_;
+  std::vector<std::pair<std::string, GlTexture>> material_maps_;
+  GlTexture default_material_;
   BatchList world_, props_, cab_, door_;
-  // The state last set by drawBatches, so repeated batches skip redundant GL
-  // calls.
+
+  // The texture and flag state currently bound, to skip redundant GL calls;
+  // reset when the program changes.
   struct DrawState {
     gl::GLuint texture = ~0u;
     gl::GLuint normal = ~0u;
     gl::GLuint material = ~0u;
     int emissive = -1, alpha_test = -1;
   } draw_state_;
+
   gl::GLint u_model_ = -1, u_emissive_ = -1, u_alpha_test_ = -1;
-  bool bind_normals_ =
-      true;  // false in the shadow pass, which has no use for them
-  // The world program's per-frame uniforms, looked up once in init().
+  // False during shadow passes, which use no normal or material maps.
+  bool bind_normals_ = true;
+
+  // Cached uniform locations of the world program.
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
@@ -354,7 +401,6 @@ class SceneRenderer {
               grain = -1, materials = -1, clip = -1;
   } world_u_;
 };
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_PLATFORM_GL_SCENE_RENDERER_H_
+#endif

@@ -4,10 +4,9 @@
 #include <vector>
 
 namespace mythos {
-
 namespace {
-
-// Height = luma in 0..1. Transparent texels (sprites) count as flat ground.
+// Height field of `albedo`, 0..1 row by row: perceived luma (Rec. 601 weights)
+// scaled by alpha, so transparent texels are low.
 std::vector<float> LumaHeights(const Surface& albedo) {
   const int width = albedo.w, rows = albedo.h;
   std::vector<float> height(
@@ -21,26 +20,25 @@ std::vector<float> LumaHeights(const Surface& albedo) {
                   a = static_cast<float>(pixel >> 24) / 255.0f;
       height[static_cast<size_t>(y) * static_cast<size_t>(width) +
              static_cast<size_t>(x)] =
-          (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f * a;  // Rec. 601 luma
+          (0.299f * r + 0.587f * g + 0.114f * b) / 255.0f * a;
     }
   }
   return height;
 }
 
-// A unit normal's component (-1..1) as a colour byte.
-int NormalToByte(float component) {
+// Maps a unit-vector component in [-1, 1] to a byte.
+int NormalToByte(const float component) {
   return static_cast<int>(std::lround((component * 0.5f + 0.5f) * 255.0f));
 }
+}
 
-}  // namespace
-
-Surface MakeNormalMap(const Surface& albedo, float strength) {
+Surface MakeNormalMap(const Surface& albedo, const float strength) {
   if (albedo.Empty()) return {};
   const int w = albedo.w, h = albedo.h;
 
+  // Neighbor indices wrap, because the texture repeats.
   const std::vector<float> height = LumaHeights(albedo);
-  // Wrapped neighbour indices, worked out once instead of two modulos per
-  // sample.
+
   std::vector<int> left_of(static_cast<size_t>(w)),
       right_of(static_cast<size_t>(w));
   for (int x = 0; x < w; ++x) {
@@ -50,7 +48,6 @@ Surface MakeNormalMap(const Surface& albedo, float strength) {
 
   Surface out(w, h);
   for (int y = 0; y < h; ++y) {
-    // The three rows of the Sobel kernel (the texture wraps top to bottom).
     const float* row_above =
         &height[static_cast<size_t>(y == 0 ? h - 1 : y - 1) *
                 static_cast<size_t>(w)];
@@ -60,18 +57,22 @@ Surface MakeNormalMap(const Surface& albedo, float strength) {
         &height[static_cast<size_t>(y == h - 1 ? 0 : y + 1) *
                 static_cast<size_t>(w)];
     for (int x = 0; x < w; ++x) {
-      const size_t l = static_cast<size_t>(left_of[static_cast<size_t>(x)]),
-                   r = static_cast<size_t>(right_of[static_cast<size_t>(x)]),
-                   c = static_cast<size_t>(x);
-      // Sobel, scaled so a full black-to-white step over one texel is a slope
-      // of 1.
+      const auto l = static_cast<size_t>(left_of[static_cast<size_t>(x)]),
+                 r = static_cast<size_t>(right_of[static_cast<size_t>(x)]),
+                 c = static_cast<size_t>(x);
+
+      // Sobel filter: the slope of the height along x and along y, divided by 8
+      // so that a unit step in height reads as a slope of about 1 per pixel.
       const float dx = ((row_above[r] + 2.0f * row_here[r] + row_below[r]) -
                         (row_above[l] + 2.0f * row_here[l] + row_below[l])) /
                        8.0f;
       const float dy = ((row_below[l] + 2.0f * row_below[c] + row_below[r]) -
                         (row_above[l] + 2.0f * row_above[c] + row_above[r])) /
                        8.0f;
-      // Image rows run downwards but v runs up, so the y slope changes sign.
+
+      // The normal leans away from the rising side. Columns grow with x, so
+      // nx = -dx; y points up the image while dy is measured downwards, so
+      // the two signs cancel and ny = +dy.
       float nx = -dx * strength, ny = dy * strength, nz = 1.0f;
       const float inverse_length =
           1.0f / std::sqrt(nx * nx + ny * ny + nz * nz);
@@ -84,5 +85,4 @@ Surface MakeNormalMap(const Surface& albedo, float strength) {
   }
   return out;
 }
-
-}  // namespace mythos
+}

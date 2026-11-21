@@ -4,11 +4,10 @@
 
 namespace mythos {
 namespace {
-
-constexpr float kVolumeSteps = 10.0f;  // volumes are stored as 0..10
+// Volume settings are integers 0..10.
+constexpr float kVolumeSteps = 10.0f;
 constexpr double kPercent = 100.0;
-
-}  // namespace
+}
 
 GameSettings LoadSettings(const UserFiles& files, const std::string& file) {
   GameSettings settings;
@@ -42,16 +41,15 @@ void ApplySettings(const GameSettings& s, CameraState& cam) {
       kMotionBlurScales[std::clamp(s.motion_blur, 0, kMotionBlurCount - 1)] /
       kPercent;
   cam.lens_effect = s.visual_fx;
-  cam.bloom = s.visual_fx ? 0.55 : 0.0;  // the cinematic look: glow too
-  cam.tape = s.camera_effect;            // the camcorder look (the game may
-                                         // switch it off for a scene)
+  cam.bloom = s.visual_fx ? 0.55 : 0.0;
+  cam.tape = s.camera_effect;
 }
 
 int LargestFittingResolution(const Window& window) {
   int dw = 0, dh = 0;
   window.UsableDisplaySize(dw, dh);
   if (dw <= 0 || dh <= 0) {
-    return kResolutionCount - 1;  // unknown display: no limit
+    return kResolutionCount - 1;
   }
   int largest = 0;
   for (int i = 0; i < kResolutionCount; ++i) {
@@ -59,5 +57,4 @@ int LargestFittingResolution(const Window& window) {
   }
   return largest;
 }
-
-}  // namespace mythos
+}

@@ -1,56 +1,69 @@
 #ifndef MYTHOS_ENGINE_EDITOR_LEVEL_DOC_H_
 #define MYTHOS_ENGINE_EDITOR_LEVEL_DOC_H_
-// A level file as the editor holds it: the glyph rows and the two placement
-// lists, with the comment header kept. No SDL, GL or UI: it is unit-tested.
 
 #include <string>
 #include <vector>
 
 namespace mythos::editor {
-
-// One line of [furniture] (solid, one cell, off and lift 0) or [decor].
+// One `[furniture]` or `[decor]` line of a level: the cell (x = column, y =
+// row), model name and yaw in degrees. The offsets (world units from the cell
+// center) and `lift` (height above the floor) are used by decor only.
 struct Item {
   int x = 0, y = 0;
   std::string model;
-  double yaw = 0;               // degrees; 0 faces south (+z), 90 east
-  double off_x = 0, off_z = 0;  // metres from the cell centre (decor)
-  double lift = 0;              // metres above the floor (decor)
+  double yaw = 0;
+  double off_x = 0, off_z = 0;
+  double lift = 0;
+
   bool operator==(const Item&) const = default;
 };
 
+// An editable level file: the `[map]` glyph rows (all the same width) and the
+// two item lists. `header` keeps the leading `;` comment lines so that saving
+// does not lose them.
 struct LevelDoc {
-  std::string name;                 // file stem: "house_1963"
-  std::vector<std::string> header;  // comment lines before [map], without ';'
+  std::string name;
+  std::vector<std::string> header;
   std::vector<std::string> rows;
   std::vector<Item> furniture, decor;
 
-  int Width() const {
+  [[nodiscard]] int Width() const {
     return rows.empty() ? 0 : static_cast<int>(rows[0].size());
   }
-  int Height() const { return static_cast<int>(rows.size()); }
-  bool InBounds(int x, int y) const {
+
+  [[nodiscard]] int Height() const { return static_cast<int>(rows.size()); }
+
+  [[nodiscard]] bool InBounds(const int x, const int y) const {
     return y >= 0 && y < Height() && x >= 0 && x < Width();
   }
-  char At(int x, int y) const { return InBounds(x, y) ? rows[y][x] : '#'; }
-  // False when out of bounds.
+
+  // The glyph at a cell; cells outside the map read as wall ('#').
+  [[nodiscard]] char At(const int x, const int y) const {
+    return InBounds(x, y) ? rows[y][x] : '#';
+  }
+
+  // Sets a cell; returns false when it is outside the map.
   bool Set(int x, int y, char glyph);
-  // Adds or removes whole rows and columns at the bottom / right edge.
+
+  // Crops or grows the map, filling new cells with `fill` and dropping items
+  // that end up outside. Ignores sizes below 1.
   void Resize(int width, int height, char fill);
 
   bool operator==(const LevelDoc&) const = default;
 };
 
-// Parses level text (the format of mythos::Level::ParseText).
+// Parses level file text. Returns false and describes the problem in `error`
+// (when non-null) on a malformed line or rows of unequal length; `out` is
+// untouched then.
 bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error);
-// Text that mythos::Level parses back to the same level. A level the editor
-// saved is stamped "map_editor" in its first lines, so tools/generate_assets.py
-// leaves it alone.
+
+// Writes the level file text, stamping a header line when the file does not
+// already carry one from the map editor.
 std::string SerializeLevelDoc(const LevelDoc& doc);
 
-// A number the way a level file writes it: at most 4 decimals, no trailing
-// zeros.
+// Formats a number with at most four decimals and no trailing zeros, so saved
+// files stay stable and readable.
 std::string FormatNumber(double v);
+}
 
-}  // namespace mythos::editor
-
-#endif  // MYTHOS_ENGINE_EDITOR_LEVEL_DOC_H_
+#endif

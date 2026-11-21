@@ -1,51 +1,58 @@
+// Per-sample FM radio effect for voice lines: slow fading, pitch warble, band-
+// limiting and saturation, with random glitches (dropouts, squeals, stutters,
+// static washes) scheduled at intervals.
 #ifndef MYTHOS_ENGINE_AUDIO_RADIO_FX_H_
 #define MYTHOS_ENGINE_AUDIO_RADIO_FX_H_
-// The sound of a voice coming out of an FM radio that is not quite tuned: a
-// narrow band (a small cloth speaker), a little drive, a constant hiss, a slow
-// fade and warble of the carrier (multipath), and now and then a glitch:
-//   dropout   the signal falls away into a crackle,
-//   squeal    a tuning whistle sweeps through,
-//   stutter   the last few dozen milliseconds loop,
-//   wash      a burst of noise drowns the voice.
-// Headless arithmetic, one sample at a time, so it can run inside an audio
-// callback and be tested without a device. Deterministic for a seed.
+
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
+#include <numbers>
 #include <vector>
 
 namespace mythos {
-
+// Mono streaming filter. Feed it one sample at a time with Process(); it keeps
+// all state (delay line, noise generator, glitch schedule) internally and
+// allocates only in the constructor. Deterministic for a given seed. Not
+// thread-safe.
 class RadioFm {
  public:
+  // The kind of glitch in progress.
   enum class Glitch { kNone, kDropout, kSqueal, kStutter, kWash };
 
-  // `intensity` 0..1: how often the glitches come and how hard the hiss is.
-  explicit RadioFm(int sample_rate, uint32_t seed = 1, float intensity = 0.6f)
+  // `sample_rate` is clamped to at least 8 kHz. `seed` of 0 is replaced by 1
+  // (xorshift cannot start at 0). `intensity` is clamped to [0, 1] and scales
+  // glitch frequency, warble, drive and hiss. The delay line holds half a
+  // second.
+  explicit RadioFm(const int sample_rate, const uint32_t seed = 1,
+                   const float intensity = 0.6f)
       : rate_(std::max(8000, sample_rate)),
         rng_(seed ? seed : 1u),
         intensity_(std::clamp(intensity, 0.0f, 1.0f)),
         delay_(static_cast<size_t>(rate_ / 2), 0.0f) {
+    // Telephone-like band, roughly 260 Hz to 3.4 kHz.
     lp_a_ = OnePole(3400.0f);
     hp_a_ = OnePole(260.0f);
     ScheduleNext();
   }
 
-  Glitch Current() const { return glitch_; }
+  // The glitch being applied now, kNone between glitches.
+  [[nodiscard]] Glitch Current() const { return glitch_; }
 
-  float Process(float in) {
+  // Returns the processed version of one input sample.
+  float Process(const float in) {
     const float t = static_cast<float>(sample_) / static_cast<float>(rate_);
     ++sample_;
 
-    // The carrier: a slow fade (the station drifting) and a quick warble.
+    // Slow, shallow fading of the signal strength, as from a weak carrier.
     const float fade = 0.80f + 0.20f * std::sin(6.2831853f * 0.31f * t + 1.3f) *
                                    std::sin(6.2831853f * 0.07f * t);
+    // Warble: a short modulated delay read, which bends the pitch like a
+    // drifting tuner.
     const float warble_ms = 0.35f + 0.5f * intensity_;
     const float warble =
         warble_ms * 0.001f * static_cast<float>(rate_) *
         (0.5f + 0.5f * std::sin(6.2831853f * 5.3f * t + 0.6f * std::sin(t)));
 
-    // The line in, through a short delay whose length wobbles (the warble).
     delay_[write_] = in;
     const float read_at = static_cast<float>(write_) +
                           static_cast<float>(delay_.size()) - (4.0f + warble);
@@ -54,13 +61,13 @@ class RadioFm {
     const float frac = read_at - std::floor(read_at);
     float x = delay_[i0] * (1.0f - frac) + delay_[i1] * frac;
 
-    // A glitch in progress changes what is heard.
-    float noise = White();
+    // Glitches change the gain, add a generated signal, or replace the sample.
+    const float noise = White();
     float gain = fade;
     float add = 0.0f;
     if (remaining_ > 0) {
-      const float k = static_cast<float>(remaining_) /
-                      static_cast<float>(length_);  // 1 -> 0 over the glitch
+      const float k =
+          static_cast<float>(remaining_) / static_cast<float>(length_);
       switch (glitch_) {
         case Glitch::kDropout:
           gain *= 0.04f;
@@ -71,11 +78,12 @@ class RadioFm {
           phase_ += 6.2831853f * f / static_cast<float>(rate_);
           if (phase_ > 6.2831853f) phase_ -= 6.2831853f;
           gain *= 0.45f;
-          add = std::sin(phase_) * 0.22f * std::sin(3.14159265f * (1.0f - k));
+          add = std::sin(phase_) * 0.22f *
+                std::sin(std::numbers::pi_v<float> * (1.0f - k));
           break;
         }
+        // Replays a short slice of the delay line over and over.
         case Glitch::kStutter: {
-          // Hold a short window of the line and loop it.
           x = delay_[(stutter_start_ + held_ % stutter_span_) % delay_.size()];
           ++held_;
           break;
@@ -96,7 +104,8 @@ class RadioFm {
     }
     write_ = (write_ + 1) % delay_.size();
 
-    // The little speaker: band-limited, a touch of drive, and always the hiss.
+    // Two cascaded low-passes and a high-pass shape the band, then tanh adds
+    // soft clipping and a hiss floor.
     float y = x * gain + add;
     lp1_ += lp_a_ * (y - lp1_);
     lp2_ += lp_a_ * (lp1_ - lp2_);
@@ -108,29 +117,36 @@ class RadioFm {
   }
 
  private:
-  float OnePole(float hz) const {
+  // Coefficient of a one-pole filter with cutoff `hz`.
+  [[nodiscard]] float OnePole(const float hz) const {
     return 1.0f - std::exp(-6.2831853f * hz / static_cast<float>(rate_));
   }
+
+  // Xorshift32 step.
   uint32_t Next() {
     rng_ ^= rng_ << 13;
     rng_ ^= rng_ >> 17;
     rng_ ^= rng_ << 5;
     return rng_;
   }
-  float Unit() { return (Next() & 0xFFFFFF) / 16777216.0f; }
+
+  float Unit() { return static_cast<float>(Next() & 0xFFFFFF) / 16777216.0f; }
   float White() { return Unit() * 2.0f - 1.0f; }
-  // Crackle: the noise comes in uneven clumps.
+  // Randomly gates the dropout noise into crackling bursts.
   float Crackle() { return Unit() < 0.35f ? 1.0f : 0.15f; }
 
+  // Picks the quiet gap before the next glitch; higher intensity means shorter
+  // gaps.
   void ScheduleNext() {
-    // Seconds to the next glitch: shorter the more intense the setting.
     const float lo = 1.4f - 0.9f * intensity_, hi = 4.8f - 3.0f * intensity_;
     until_next_ = static_cast<int64_t>((lo + (hi - lo) * Unit()) *
                                        static_cast<float>(rate_));
   }
+
+  // Chooses a glitch kind by weighted odds and sets its length and parameters.
   void StartGlitch() {
     const float r = Unit();
-    float seconds = 0.1f;
+    float seconds;
     if (r < 0.34f) {
       glitch_ = Glitch::kDropout;
       seconds = 0.06f + 0.16f * Unit();
@@ -151,8 +167,8 @@ class RadioFm {
       glitch_ = Glitch::kWash;
       seconds = 0.2f + 0.3f * Unit();
     }
-    length_ = remaining_ =
-        std::max<int64_t>(1, static_cast<int64_t>(seconds * rate_));
+    length_ = remaining_ = std::max<int64_t>(
+        1, static_cast<int64_t>(seconds * static_cast<float>(rate_)));
   }
 
   int rate_;
@@ -167,7 +183,6 @@ class RadioFm {
   size_t stutter_span_ = 2048, held_ = 0, stutter_start_ = 0;
   float lp_a_ = 0.4f, hp_a_ = 0.04f, lp1_ = 0, lp2_ = 0, hp_ = 0;
 };
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_AUDIO_RADIO_FX_H_
+#endif

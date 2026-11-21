@@ -6,22 +6,21 @@
 
 namespace mythos {
 namespace {
-
-constexpr int kPipCount = 10;  // a volume meter is 0..10
-constexpr int kPipPitch = 6;   // overlay pixels from one pip to the next
+constexpr int kPipCount = 10;
+constexpr int kPipPitch = 6;
 constexpr int kPipSize = 4;
-constexpr float kHintMargin =
-    20.0f;  // gap kept between the last row and the hint
+constexpr float kHintMargin = 20.0f;
 
-// One row: what it is called, what it shows at the right (or a 0..10 meter),
-// whether it opens a page.
+// What a row shows: label and value text, a volume meter (0..10, or -1 for
+// none) and whether it opens a subpage.
 struct Row {
   std::string label, value;
   int meter = -1;
   bool link = false;
 };
 
-Row RowFor(int item, const GameSettings& s, const std::string& language_name) {
+Row RowFor(const int item, const GameSettings& s,
+           const std::string& language_name) {
   const std::string scales[kRenderScaleCount] = {
       Tr("settings.low"),      Tr("settings.medium"), Tr("settings.high"),
       Tr("settings.veryHigh"), Tr("settings.ultra"),  Tr("settings.ultraMax")};
@@ -32,7 +31,9 @@ Row RowFor(int item, const GameSettings& s, const std::string& language_name) {
       Tr("common.off"), "FXAA", "MSAA 2X", "MSAA 4X", "MSAA 8X"};
   const std::string material_names[kMaterialLevelCount] = {
       Tr("common.off"), Tr("settings.basic"), Tr("settings.full")};
-  const auto on_off = [](bool v) { return Tr(v ? "common.on" : "common.off"); };
+  const auto on_off = [](const bool v) {
+    return Tr(v ? "common.on" : "common.off");
+  };
   const Resolution res =
       kResolutions[std::clamp(s.resolution, 0, kResolutionCount - 1)];
   const int fps = kFpsCaps[std::clamp(s.fps_cap, 0, kFpsCapCount - 1)];
@@ -109,35 +110,38 @@ Row RowFor(int item, const GameSettings& s, const std::string& language_name) {
       return {.label = Tr("settings.back"), .value = ""};
   }
 }
-
-}  // namespace
+}
 
 void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
-                      SettingsPage page, int index,
-                      const std::string& language_name, double time_sec) {
+                      const SettingsPage page, const int index,
+                      const std::string& language_name, const double time_sec) {
   Surface& fb = c.fb;
   FillRect(fb, 0, 0, fb.w, fb.h, t.backdrop);
   const int px = (fb.w - t.page_w) / 2, py = (fb.h - t.page_h) / 2;
+  const auto fpx = static_cast<float>(px), fpy = static_cast<float>(py),
+             fw = static_cast<float>(fb.w), fh = static_cast<float>(fb.h);
   const char* titles[3] = {"settings.title", "settings.graphics",
                            "settings.audio"};
-  c.Text(t.heading, fb.w / 2.0f, py + t.title_y,
+  c.Text(t.heading, fw / 2.0f, fpy + t.title_y,
          Tr(titles[static_cast<int>(page)]), Align::kCenter);
 
   Style row_style = t.item;
   row_style.size = t.row_size;
-  float y = py + t.first_row_y;
-  // A long page squeezes its rows so that Back stays clear of the hint at the
-  // bottom.
+  float y = fpy + t.first_row_y;
   const int rows = static_cast<int>(SettingsPageItems(page).size());
+  // Squeezes the rows together when the window is too short for the usual
+  // pitch.
   const float pitch = std::min(
-      t.row_pitch, (fb.h - t.hint_from_bottom - kHintMargin - t.back_gap - y) /
+      t.row_pitch, (fh - t.hint_from_bottom - kHintMargin - t.back_gap - y) /
                        static_cast<float>(std::max(rows - 1, 1)));
-  const float left = px + t.margin, right = px + t.page_w - t.margin;
+  const float left = fpx + t.margin,
+              right = fpx + static_cast<float>(t.page_w) - t.margin;
   for (const int i : SettingsPageItems(page)) {
-    if (i == kSetBack) y += t.back_gap;  // Back stands apart
+    if (i == kSetBack) y += t.back_gap;
     const Row r = RowFor(i, s, language_name);
     const bool selected = index == i;
-    // The resolution only applies to a window; in fullscreen it waits, dimmed.
+
+    // Resolution is grayed out in fullscreen, where the desktop size is used.
     const bool idle = i == kSetResolution && s.fullscreen;
     Style st =
         row_style.Recolored(selected ? t.selected : (idle ? t.dim : t.text));
@@ -147,8 +151,7 @@ void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
     }
     c.Text(st, left, y, r.label);
     c.Hot(i, left - 12, y - 1, right + 4, y + 10);
-    if (r.meter >=
-        0) {  // a row of pips, lit up to the volume; each one is clickable
+    if (r.meter >= 0) {
       const int pips_left = static_cast<int>(right) - kPipCount * kPipPitch + 2,
                 pips_top = static_cast<int>(y + 3.5f);
       for (int pip = 0; pip < kPipCount; ++pip) {
@@ -157,11 +160,12 @@ void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
             pip < r.meter ? (selected ? t.selected : t.pip_on) : t.pip_off;
         FillRect(fb, pip_x, pips_top, pip_x + kPipSize, pips_top + kPipSize,
                  color);
-        c.Hot(i, pip_x - 1.0f, pips_top - 4.0f, pip_x + 5.0f, pips_top + 8.0f,
-              pip + 1);
+        c.Hot(i, static_cast<float>(pip_x) - 1.0f,
+              static_cast<float>(pips_top) - 4.0f,
+              static_cast<float>(pip_x) + 5.0f,
+              static_cast<float>(pips_top) + 8.0f, pip + 1);
       }
-    } else if (i == kSetResolution &&
-               !s.fullscreen) {  // lining figures for the window size
+    } else if (i == kSetResolution && !s.fullscreen) {
       Style digits = st;
       digits.font = t.number.font;
       digits.size = t.number_size;
@@ -171,8 +175,7 @@ void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
     }
     y += pitch;
   }
-  c.Text(t.hint, fb.w / 2.0f, fb.h - t.hint_from_bottom, Tr("settings.hint"),
+  c.Text(t.hint, fw / 2.0f, fh - t.hint_from_bottom, Tr("settings.hint"),
          Align::kCenter);
 }
-
-}  // namespace mythos
+}

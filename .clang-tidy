@@ -1,0 +1,30 @@
+---
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-signed-bitwise,
+  -bugprone-reserved-identifier,
+  -bugprone-exception-escape,
+  -bugprone-throwing-static-initialization,
+  performance-*,
+  -performance-enum-size,
+  -performance-no-int-to-ptr,
+  -clang-analyzer-optin.performance.Padding,
+  modernize-use-nullptr,
+  modernize-use-auto,
+  modernize-use-ranges,
+  modernize-use-integer-sign-comparison,
+  modernize-avoid-c-style-cast,
+  modernize-return-braced-init-list,
+  modernize-use-emplace,
+  modernize-raw-string-literal,
+  modernize-use-std-numbers
+CheckOptions:
+  # Int to float is ordinary in graphics and layout maths; float to int and
+  # double to float (real precision loss) still warn.
+  - key: bugprone-narrowing-conversions.WarnOnIntegerToFloatingPointNarrowingConversion
+    value: false
+HeaderFilterRegex: 'src/engine/.*'
+FormatStyle: file

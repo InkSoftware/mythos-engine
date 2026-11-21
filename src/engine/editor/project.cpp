@@ -8,28 +8,27 @@
 #include "engine/core/fileio.h"
 
 namespace mythos::editor {
-
 namespace fs = std::filesystem;
 
 namespace {
-
+// The adapter used when none is given: no game data.
 const Adapter& NullAdapter() {
   static const Adapter null_adapter;
   return null_adapter;
 }
 
-double Round3(double v) { return std::round(v * 1000) / 1000; }
+// Rounds to millimeters, so offsets saved in level files stay tidy.
+double Round3(const double v) { return std::round(v * 1000) / 1000; }
 
-bool ListIndexOk(const std::vector<Item>& list, int index) {
+bool ListIndexOk(const std::vector<Item>& list, const int index) {
   return index >= 0 && static_cast<size_t>(index) < list.size();
 }
+}
 
-}  // namespace
-
-Project::Project(const Adapter* adapter)
+Project::Project(const Adapter* const adapter)
     : adapter_(adapter ? adapter : &NullAdapter()) {}
 
-bool Project::Load(const std::string& root, std::string* error) {
+bool Project::Load(const std::string& root, std::string* const error) {
   root_ = root;
   levels_.clear();
   data.clear();
@@ -58,13 +57,17 @@ bool Project::Load(const std::string& root, std::string* error) {
       !ParseTileSet(tiles, *tileset, error))
     return false;
   tiles_ = tileset;
-  for (const std::string& name : adapter_->DataFiles())
-    if (!json::ParseFile(dir + "/data/" + name + ".json", data[name], error))
-      return false;
+  for (const std::string& name : adapter_->DataFiles()) {
+    std::string path = dir;
+    path += "/data/";
+    path += name;
+    path += ".json";
+    if (!json::ParseFile(path, data[name], error)) return false;
+  }
   return true;
 }
 
-bool Project::Save(std::string* error) {
+bool Project::Save(std::string* const error) {
   for (const auto& name : dirty_levels_) {
     const auto it = levels_.find(name);
     if (it == levels_.end()) continue;
@@ -90,10 +93,9 @@ bool Project::Save(std::string* error) {
   return true;
 }
 
-// ---------------------------------------------------------------- levels
-
 std::vector<std::string> Project::LevelNames() const {
   std::vector<std::string> out;
+  out.reserve(levels_.size());
   for (const auto& [name, doc] : levels_) out.push_back(name);
   return out;
 }
@@ -102,6 +104,7 @@ LevelDoc* Project::Level(const std::string& name) {
   const auto it = levels_.find(name);
   return it == levels_.end() ? nullptr : &it->second;
 }
+
 const LevelDoc* Project::Level(const std::string& name) const {
   const auto it = levels_.find(name);
   return it == levels_.end() ? nullptr : &it->second;
@@ -115,15 +118,17 @@ std::vector<std::pair<int, std::string>> Project::Stack(
     if (name.empty() || !Level(name)) continue;
     out.emplace_back(floor, floor == mine.floor ? level : name);
   }
+  // A stacked level always appears in its own stack, even if the adapter left
+  // it out.
   if (!out.empty() && mine.stacked &&
-      std::none_of(out.begin(), out.end(),
-                   [&](const auto& p) { return p.first == mine.floor; }))
+      std::ranges::none_of(
+          out, [&](const auto& p) { return p.first == mine.floor; }))
     out.emplace_back(mine.floor, level);
-  std::sort(out.begin(), out.end());
+  std::ranges::sort(out);
   return out;
 }
 
-bool Project::CreateLevel(const std::string& name, int w, int h) {
+bool Project::CreateLevel(const std::string& name, const int w, const int h) {
   if (name.empty() || levels_.contains(name) || w < 3 || h < 3 || w > 200 ||
       h > 200)
     return false;
@@ -145,6 +150,8 @@ std::vector<char> Project::Glyphs() const {
   std::vector<char> out = {'.'};
   for (int c = 33; c < 127; ++c) {
     const TileInfo& t = (*tiles_)[static_cast<char>(c)];
+    // Printable ASCII only (33..126; space is not a glyph). Glyphs with no
+    // behavior or look in the tile set are left out.
     const bool named = t.solid || t.door != DoorKind::kNone || t.thin ||
                        t.window || t.open_ceiling || t.open_floor || t.empty ||
                        !t.wall.empty() || !t.floor.empty() || !t.sprite.empty();
@@ -152,8 +159,6 @@ std::vector<char> Project::Glyphs() const {
   }
   return out;
 }
-
-// ---------------------------------------------------------------- entities
 
 std::vector<EntityRef> Project::Entities(const Where& w) const {
   std::vector<EntityRef> out;
@@ -172,7 +177,8 @@ json::Value* Project::Data(const Where& w, const EntityRef& r) {
   return adapter_->Data(data, w, r);
 }
 
-bool Project::Describe(const Where& w, const EntityRef& r, Visual* out) const {
+bool Project::Describe(const Where& w, const EntityRef& r,
+                       Visual* const out) const {
   if (r.kind == kFurniture || r.kind == kDecor) {
     const LevelDoc* doc = Level(w.level);
     if (!doc) return false;
@@ -180,13 +186,14 @@ bool Project::Describe(const Where& w, const EntityRef& r, Visual* out) const {
     if (!ListIndexOk(list, r.index)) return false;
     Visual v;
     v.model = list[static_cast<size_t>(r.index)].model;
-    *out = v;
+    *out = std::move(v);
     return true;
   }
   return adapter_->Describe(data, w, r, out);
 }
 
-bool Project::GetPose(const Where& w, const EntityRef& r, Pose* out) const {
+bool Project::GetPose(const Where& w, const EntityRef& r,
+                      Pose* const out) const {
   if (r.kind == kFurniture || r.kind == kDecor) {
     const LevelDoc* doc = Level(w.level);
     if (!doc) return false;
@@ -239,7 +246,7 @@ std::string Project::Label(const Where& w, const EntityRef& r) const {
   return adapter_->Label(data, w, r);
 }
 
-std::string Project::KindName(int kind) const {
+std::string Project::KindName(const int kind) const {
   if (kind == kFurniture) return "Furniture";
   if (kind == kDecor) return "Decor";
   return adapter_->KindName(kind);
@@ -264,7 +271,7 @@ EntityRef Project::AddDecor(const std::string& level, const Item& item) {
 }
 
 EntityRef Project::Duplicate(const Where& w, const EntityRef& r) {
-  const EntityRef none{r.kind, -1, ""};
+  EntityRef none{r.kind, -1, ""};
   if (r.kind == kFurniture || r.kind == kDecor) {
     LevelDoc* doc = Level(w.level);
     if (!doc) return none;
@@ -272,13 +279,11 @@ EntityRef Project::Duplicate(const Where& w, const EntityRef& r) {
     if (!ListIndexOk(list, r.index)) return none;
     Item i = list[static_cast<size_t>(r.index)];
     if (r.kind == kFurniture) {
-      // Furniture takes a whole cell: put the copy on the next free one.
       for (int d = 1; d < doc->Width(); ++d) {
         const int nx = i.x + d;
         if (!doc->InBounds(nx, i.y)) break;
-        const bool taken =
-            std::any_of(list.begin(), list.end(),
-                        [&](const Item& o) { return o.x == nx && o.y == i.y; });
+        const bool taken = std::ranges::any_of(
+            list, [&](const Item& o) { return o.x == nx && o.y == i.y; });
         if (!taken && !Tiles().Solid(doc->At(nx, i.y))) {
           i.x = nx;
           break;
@@ -311,21 +316,19 @@ bool Project::Remove(const Where& w, const EntityRef& r) {
   return true;
 }
 
-// ---------------------------------------------------------------- problems
-
 std::vector<Problem> Project::Check(
     const Where& w, const std::vector<std::string>& model_names) const {
   std::vector<Problem> out;
   const LevelDoc* doc = Level(w.level);
   if (!doc) return out;
   auto has_model = [&](const std::string& m) {
-    return std::find(model_names.begin(), model_names.end(), m) !=
-           model_names.end();
+    return std::ranges::find(model_names, m) != model_names.end();
   };
-  auto add = [&](const std::string& text, EntityRef ref, double x, double z) {
+  auto add = [&](const std::string& text, const EntityRef& ref, const double x,
+                 const double z) {
     out.push_back({text, ref, ref.index >= 0 || !ref.id.empty(), x, z});
   };
-  auto in_wall = [&](int x, int y) {
+  auto in_wall = [&](const int x, const int y) {
     return Tiles().Solid(doc->At(x, y)) && !Tiles().Thin(doc->At(x, y)) &&
            !Tiles().IsDoor(doc->At(x, y));
   };
@@ -366,8 +369,7 @@ std::vector<Problem> Project::Check(
     else if (v.wall_check && in_wall(cx, cy))
       add(name + " is inside a wall", r, p.x, p.z);
   }
-  // Stairwells: an open ceiling needs an open floor straight above it, and the
-  // other way round, in the floors of the context.
+
   const LevelInfo info = Info(w.level);
   if (info.stacked) {
     for (const auto& [floor, other_name] : Stack(w.context, w.level)) {
@@ -379,6 +381,8 @@ std::vector<Problem> Project::Check(
         for (int x = 0; x < doc->Width(); ++x) {
           const auto& mine = Tiles()[doc->At(x, y)];
           const auto& theirs = Tiles()[other->At(x, y)];
+          // A stairwell needs a hole in the floor of the level above it, and a
+          // hole in the floor needs a stairwell in the level below.
           if (above && mine.open_ceiling && !theirs.open_floor)
             add("stairwell (" + std::to_string(x) + "," + std::to_string(y) +
                     ") has no hole in the floor above",
@@ -394,8 +398,6 @@ std::vector<Problem> Project::Check(
   return out;
 }
 
-// ---------------------------------------------------------------- changes
-
 void Project::Touch(const std::string& level) {
   dirty_levels_.insert(level);
   ++revision_;
@@ -408,6 +410,7 @@ void Project::TouchData() {
 
 Snapshot Project::Take() const { return {levels_, data}; }
 
+// Marks dirty only the levels and data that differ from the current state.
 void Project::Restore(const Snapshot& s) {
   for (const auto& [name, doc] : s.levels) {
     const auto it = levels_.find(name);
@@ -418,5 +421,4 @@ void Project::Restore(const Snapshot& s) {
   data = s.data;
   ++revision_;
 }
-
-}  // namespace mythos::editor
+}

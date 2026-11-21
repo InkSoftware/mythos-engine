@@ -1,6 +1,4 @@
-// mythos_pack <out.pak> <assets dir> <key text>
-// Packs every file under the assets dir (recursively) into one pack file for
-// mythos::vfs.
+
 
 #include <algorithm>
 #include <cstdio>
@@ -13,7 +11,11 @@
 
 #include "engine/core/vfs.h"
 
-int main(int argc, char* const* argv) {
+// Packs a folder of assets into one encrypted .pak that the engine's VFS can
+// mount. Usage: mythos_pack <out.pak> <assets dir> <key text>. Dot files are
+// skipped and entries are sorted by path so the output is reproducible. Returns
+// 2 on bad usage and 1 on an I/O error.
+int main(const int argc, char* const* const argv) {
   namespace fs = std::filesystem;
   if (argc != 4) {
     std::fprintf(stderr,
@@ -30,14 +32,14 @@ int main(int argc, char* const* argv) {
   for (const auto& entry : fs::recursive_directory_iterator(dir)) {
     if (!entry.is_regular_file()) continue;
     const std::string name = entry.path().filename().string();
-    if (name.empty() || name[0] == '.') continue;  // .DS_Store and friends
+    if (name.empty() || name[0] == '.') continue;
     const std::ifstream in(entry.path(), std::ios::binary);
     std::ostringstream ss;
     ss << in.rdbuf();
     files.emplace_back(fs::relative(entry.path(), dir).generic_string(),
                        ss.str());
   }
-  std::ranges::sort(files);  // the same folder always makes the same bytes
+  std::ranges::sort(files);
   const std::string bytes =
       mythos::vfs::BuildPack(files, mythos::vfs::KeyFromString(argv[3]));
   std::error_code ec;

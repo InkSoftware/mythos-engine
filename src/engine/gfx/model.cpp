@@ -5,42 +5,44 @@
 #include <filesystem>
 #include <map>
 #include <sstream>
+#include <utility>
 
 #include "engine/core/vfs.h"
 
 namespace mythos {
 namespace {
-
 struct Pos {
   float x, y, z;
 };
+
 struct Uv {
   float u, v;
 };
 
-// One corner of a face: position, texture coordinate and normal, already looked
-// up.
+// One face corner after resolving its indices.
 struct Corner {
   Pos position;
   Uv uv;
   Pos normal;
 };
 
-// Resolves a 1-based OBJ index (negative = relative to the end) into a 0-based
-// index.
-bool ResolveIndex(long idx, size_t count, size_t& out) {
+// Turns a 1-based OBJ index (negative counts back from the end) into a 0-based
+// slot of a list of `count` items. False if it is out of range.
+bool ResolveIndex(long idx, const size_t count, size_t& out) {
   if (idx < 0) idx = static_cast<long>(count) + idx + 1;
-  if (idx < 1 || static_cast<size_t>(idx) > count) return false;
+  if (idx < 1 || std::cmp_greater(idx, count)) return false;
   out = static_cast<size_t>(idx - 1);
   return true;
 }
 
-// Reads an OBJ file line by line into batches (one per material).
+// Reads OBJ lines one at a time into batches, one per material. Vertex data is
+// global to the file; faces refer to it by index.
 class ObjParser {
  public:
   explicit ObjParser(std::vector<Batch>& out) : out_(out) {}
 
-  // Handles one line. False if it is malformed.
+  // Handles one line whose first token `tag` is already read. Unknown tags are
+  // ignored; false means a malformed known line.
   bool ParseLine(std::istringstream& line, const std::string& tag) {
     if (tag == "v") {
       Pos p{};
@@ -62,13 +64,12 @@ class ObjParser {
     } else if (tag == "f") {
       return ParseFace(line);
     }
-    // Other tags (o, g, s, mtllib, ...) are ignored.
     return true;
   }
 
  private:
-  // The batch for a material name, created on first use. "glow_x" means texture
-  // x, emissive.
+  // Index of the batch for a material, created on first use. A "glow_" prefix
+  // makes it emissive and names the texture after the rest.
   size_t BatchFor(const std::string& material) {
     const auto it = batch_index_.find(material);
     if (it != batch_index_.end()) return it->second;
@@ -85,8 +86,9 @@ class ObjParser {
     return out_.size() - 1;
   }
 
-  // Parses a face corner token: "v", "v/t", "v//n" or "v/t/n". False on a bad
-  // position index.
+  // Parses one face corner token ("p", "p/t", "p//n" or "p/t/n"). Only the
+  // position index must be valid; a missing or out-of-range uv or normal falls
+  // back to (0, 0) and +y.
   bool ParseCorner(const std::string& token, Corner& corner) const {
     const size_t first_slash = token.find('/');
     const int64_t position_index = std::strtoll(token.c_str(), nullptr, 10);
@@ -122,6 +124,8 @@ class ObjParser {
     return true;
   }
 
+  // Triangulates a polygon as a fan around its first corner, which is right for
+  // the convex quads the tools write.
   bool ParseFace(std::istringstream& line) {
     if (!have_material_) current_ = BatchFor("missing");
     std::vector<Corner> corners;
@@ -132,7 +136,6 @@ class ObjParser {
       corners.push_back(corner);
     }
     if (corners.size() < 3) return false;
-    // Fan triangulation (quads become two triangles).
     Batch& batch = out_[current_];
     for (size_t i = 1; i + 1 < corners.size(); ++i) {
       const Corner* triangle[3] = {&corners[0], &corners[i], &corners[i + 1]};
@@ -158,11 +161,11 @@ class ObjParser {
   size_t current_ = 0;
   bool have_material_ = false;
 };
+}
 
-}  // namespace
-
+// Lines are split on LF, with a trailing CR dropped; '#' lines are comments.
 bool ParseObj(const std::string& text, std::vector<Batch>& out,
-              std::string* error) {
+              std::string* const error) {
   ObjParser parser(out);
   std::istringstream in(text);
   std::string line;
@@ -183,7 +186,7 @@ bool ParseObj(const std::string& text, std::vector<Batch>& out,
   return true;
 }
 
-bool ModelLibrary::LoadDir(const std::string& dir, std::string* error) {
+bool ModelLibrary::LoadDir(const std::string& dir, std::string* const error) {
   const std::vector<std::string> files = vfs::List(dir);
   if (files.empty()) {
     if (error) *error = "missing model folder " + dir;
@@ -193,15 +196,22 @@ bool ModelLibrary::LoadDir(const std::string& dir, std::string* error) {
     const std::filesystem::path name(file);
     if (name.extension() != ".obj") continue;
     std::string text;
-    if (!vfs::ReadFile(dir + "/" + file, text)) {
-      if (error) *error = dir + "/" + file + ": cannot read";
+    std::string path = dir;
+    path += '/';
+    path += file;
+    if (!vfs::ReadFile(path, text)) {
+      if (error) *error = path + ": cannot read";
       return false;
     }
     Model m;
     m.name = name.stem().string();
     std::string err;
     if (!ParseObj(text, m.batches, &err)) {
-      if (error) *error = dir + "/" + file + ": " + err;
+      if (error) {
+        *error = path;
+        *error += ": ";
+        *error += err;
+      }
       return false;
     }
     models_[m.name] = std::move(m);
@@ -213,5 +223,4 @@ const Model* ModelLibrary::Find(const std::string& name) const {
   const auto it = models_.find(name);
   return it != models_.end() ? &it->second : nullptr;
 }
-
-}  // namespace mythos
+}

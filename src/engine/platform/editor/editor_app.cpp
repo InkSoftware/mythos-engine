@@ -5,27 +5,38 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <numbers>
 #include <sstream>
 
 #include "engine/core/fileio.h"
 #include "engine/gfx/mesh.h"
 #include "engine/platform/gl/gl_api.h"
 
+// Editor state, scene building, picking, tools and the game preview. The
+// panels are drawn in ui_panels.cpp.
 namespace mythos::editor {
-
 namespace fs = std::filesystem;
 using mythos::json::Value;
 
 namespace {
+// Whole-string number parse; `fallback` when the text is not a number.
+int ParseInt(const std::string& text, const int fallback = 0) {
+  char* end = nullptr;
+  const int64_t v = std::strtoll(text.c_str(), &end, 10);
+  return end != text.c_str() && *end == '\0' ? static_cast<int>(v) : fallback;
+}
 
-constexpr float kPi = 3.14159265358979f;
-float Rad(float deg) { return deg * kPi / 180.0f; }
-// The box code turns about y the other way round from the level files' yaw.
-float BoxYaw(float game_deg) { return -Rad(game_deg); }
+constexpr float kPi = std::numbers::pi_v<float>;
+float Rad(const float deg) { return deg * kPi / 180.0f; }
+
+// Game yaw (degrees, 0 faces +z, 90 faces +x) as the box yaw of RayHitsBox and
+// WireBox, which turn the other way about y.
+float BoxYaw(const float game_deg) { return -Rad(game_deg); }
 
 const Rgba kYellow{1.0f, 0.82f, 0.2f, 1};
 const Rgba kWhite{1, 1, 1, 0.9f};
@@ -33,7 +44,8 @@ const Rgba kRed{0.95f, 0.28f, 0.28f, 1};
 const Rgba kGreen{0.4f, 0.85f, 0.35f, 1};
 const Rgba kBlue{0.3f, 0.5f, 1.0f, 1};
 
-float DistToSegment(ImVec2 p, ImVec2 a, ImVec2 b) {
+// Distance in pixels from a point to a screen-space segment.
+float DistToSegment(const ImVec2 p, const ImVec2 a, const ImVec2 b) {
   const float dx = b.x - a.x, dy = b.y - a.y;
   const float l2 = dx * dx + dy * dy;
   float t = l2 > 0 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2 : 0;
@@ -42,8 +54,10 @@ float DistToSegment(ImVec2 p, ImVec2 a, ImVec2 b) {
   return std::sqrt(cx * cx + cy * cy);
 }
 
-bool ReadPpm(const std::string& path, int* w, int* h,
-             std::vector<uint8_t>* rgba) {
+// Reads a binary P6 PPM (the game's screenshot format) into opaque RGBA.
+// Returns false when the file is missing, malformed or truncated.
+bool ReadPpm(const std::string& path, int* const w, int* const h,
+             std::vector<uint8_t>* const rgba) {
   std::ifstream in(path, std::ios::binary);
   std::string magic;
   int maxv = 0;
@@ -63,13 +77,12 @@ bool ReadPpm(const std::string& path, int* w, int* h,
   }
   return true;
 }
+}
 
-}  // namespace
-
-// ---------------------------------------------------------------- setup
-
-bool EditorApp::Init(const EditorArgs& args, const Adapter* adapter,
-                     std::string* error) {
+// The first level is the one asked for, else the adapter's start level, else
+// the first one in the project.
+bool EditorApp::Init(const EditorArgs& args, const Adapter* const adapter,
+                     std::string* const error) {
   args_ = args;
   project_ = Project(adapter);
   if (!project_.Load(args.project_dir, error)) return false;
@@ -83,7 +96,7 @@ bool EditorApp::Init(const EditorArgs& args, const Adapter* adapter,
   for (const auto& e : fs::directory_iterator(args.stage_dir + "/models", ec))
     if (e.path().extension() == ".obj")
       model_names_.push_back(e.path().stem().string());
-  std::sort(model_names_.begin(), model_names_.end());
+  std::ranges::sort(model_names_);
   if (!viewport_.Init(&textures_)) {
     if (error) *error = "cannot start the viewport renderer";
     return false;
@@ -105,15 +118,15 @@ bool EditorApp::Init(const EditorArgs& args, const Adapter* adapter,
   if (args.tool == "rotate") tool_ = Tool::kRotate;
   if (args.tool == "paint") tool_ = Tool::kPaint;
   if (args.tool == "place") tool_ = Tool::kPlace;
-  if (!args.select.empty()) {  // "furniture:3", "decor:7", or a thing's name
+  if (!args.select.empty()) {
     const auto colon = args.select.find(':');
     const std::string kind = args.select.substr(0, colon),
                       what = args.select.substr(colon + 1);
     EntityRef r;
     if (kind == "furniture")
-      r = {kFurniture, std::atoi(what.c_str()), ""};
+      r = {kFurniture, ParseInt(what), ""};
     else if (kind == "decor")
-      r = {kDecor, std::atoi(what.c_str()), ""};
+      r = {kDecor, ParseInt(what), ""};
     else
       for (const EntityRef& e : project_.Entities(Here()))
         if (e.id == what) r = e;
@@ -131,13 +144,13 @@ bool EditorApp::Init(const EditorArgs& args, const Adapter* adapter,
   return true;
 }
 
+// Candidates are the adapter's executable paths relative to the editor's own
+// folder.
 std::string EditorApp::FindGame() const {
   std::vector<std::string> cands;
   if (const char* base = SDL_GetBasePath()) {
     for (const std::string& rel : project_.adapter().GameExecutables())
-      cands.push_back((fs::path(base) / rel)
-                          .lexically_normal()
-                          .string());  // Resources/ may not exist
+      cands.push_back((fs::path(base) / rel).lexically_normal().string());
   }
   for (const auto& c : cands) {
     std::error_code ec;
@@ -164,15 +177,13 @@ void EditorApp::RequestQuit() {
     quit_ = true;
 }
 
-// ---------------------------------------------------------------- levels and
-// scene
-
+// Keeps the current context when the new level supports it, else takes the
+// level's first context.
 void EditorApp::OpenLevel(const std::string& name) {
   if (!project_.Level(name)) return;
   level_ = name;
   const LevelInfo info = project_.Info(name);
-  if (std::find(info.contexts.begin(), info.contexts.end(), context_) ==
-      info.contexts.end()) {
+  if (std::ranges::find(info.contexts, context_) == info.contexts.end()) {
     if (!info.contexts.empty())
       context_ = info.contexts.front();
     else if (context_.empty() && !project_.Contexts().empty())
@@ -191,12 +202,15 @@ void EditorApp::SetContext(const std::string& context) {
   RefreshProblems();
 }
 
+// Levels of a stacked building are drawn at their floor's height.
 float EditorApp::FloorY() const {
   const LevelInfo info = project_.Info(level_);
   return info.stacked ? static_cast<float>(info.floor) * mythos::kFloorPitch
                       : 0.0f;
 }
 
+// Looks at the level from the south at a raised angle, backed off to fit the
+// larger side.
 void EditorApp::FrameLevel() {
   const LevelDoc* doc = project_.Level(level_);
   if (!doc) return;
@@ -207,7 +221,10 @@ void EditorApp::FrameLevel() {
   cam_.pitch = 0.95f;
 }
 
-void EditorApp::ModelBounds(const std::string& model, Vec3* lo, Vec3* hi) {
+// Computed once per model from its vertices. A missing model gets a
+// half-meter stand-in box so it can still be picked.
+void EditorApp::ModelBounds(const std::string& model, Vec3* const lo,
+                            Vec3* const hi) {
   auto it = bounds_.find(model);
   if (it == bounds_.end()) {
     Vec3 a{1e9f, 1e9f, 1e9f}, b{-1e9f, -1e9f, -1e9f};
@@ -228,6 +245,12 @@ void EditorApp::ModelBounds(const std::string& model, Vec3* lo, Vec3* hi) {
   *hi = it->second.second;
 }
 
+// Layer 0 is the level being edited; the other floors of its stack take the
+// slots above (ghosts). A floor is re-meshed only when its document changed,
+// the level or context switched, or its slot held something else. Model
+// props of the game's entities are baked into the entity layer, rotated by
+// their yaw. The cutaway clips everything above the ceiling line
+// (2.46 m up, just under the ceiling at kWallHeight).
 void EditorApp::RebuildScene() {
   const LevelInfo info = project_.Info(level_);
   const bool house = info.stacked;
@@ -278,7 +301,6 @@ void EditorApp::RebuildScene() {
     slot_valid_[s] = false;
   }
 
-  // The models of the game's things (they are not part of the level file).
   std::vector<mythos::Batch> props;
   for (const EntityRef& r : project_.Entities(Here())) {
     if (r.kind < kFirstGameKind) continue;
@@ -315,15 +337,12 @@ void EditorApp::RebuildScene() {
   built_revision_ = project_.Revision();
 }
 
-// ---------------------------------------------------------------- selection
-// and picking
-
 void EditorApp::Select(const EntityRef& r) {
   sel_ = r;
   has_sel_ = true;
 }
 
-bool EditorApp::SelectedPose(Pose* p) const {
+bool EditorApp::SelectedPose(Pose* const p) const {
   return has_sel_ && project_.GetPose(Here(), sel_, p);
 }
 
@@ -332,8 +351,10 @@ std::string EditorApp::ModelOf(const EntityRef& r) {
   return VisualOf(r, &v) && v.shape == Shape::kModel ? v.model : "";
 }
 
-bool EditorApp::EntityBox(const EntityRef& r, Vec3* centre, Vec3* half,
-                          float* yaw) {
+// Models use their bounds turned about the pose; lights, markers and actors
+// use fixed-size boxes; a region spans its rectangle at floor height.
+bool EditorApp::EntityBox(const EntityRef& r, Vec3* const centre,
+                          Vec3* const half, float* const yaw) {
   Pose p;
   Visual v;
   if (!project_.GetPose(Here(), r, &p) || !VisualOf(r, &v)) return false;
@@ -376,12 +397,15 @@ bool EditorApp::EntityBox(const EntityRef& r, Vec3* centre, Vec3* half,
   return false;
 }
 
-bool EditorApp::PickEntity(const Ray& ray, EntityRef* out, float* dist) {
+// Skips entities that are not pickable, hidden lights, and (with the cutaway)
+// those entirely above the cut.
+bool EditorApp::PickEntity(const Ray& ray, EntityRef* const out,
+                           float* const dist) {
   float best = 1e30f;
   bool found = false;
   for (const EntityRef& r : project_.Entities(Here())) {
     Visual vis;
-    if (!VisualOf(r, &vis) || !vis.pickable) continue;  // see the outliner
+    if (!VisualOf(r, &vis) || !vis.pickable) continue;
     if (vis.shape == Shape::kLight && !show_lights_) continue;
     Vec3 c, h;
     float yaw;
@@ -398,14 +422,19 @@ bool EditorApp::PickEntity(const Ray& ray, EntityRef* out, float* dist) {
   return found;
 }
 
-bool EditorApp::RayLevel(const Ray& ray, Vec3* hit, int* cx, int* cz) {
+// Marches the ray in 5 cm steps up to the floor plane (or 250 m), looking
+// for a solid cell between the floor and the cutaway height, so clicking a
+// wall picks the wall's cell rather than the floor behind it.
+bool EditorApp::RayLevel(const Ray& ray, Vec3* const hit, int* const cx,
+                         int* const cz) {
   const LevelDoc* doc = project_.Level(level_);
   if (!doc) return false;
   const float fy = FloorY();
   const float t_ground = RayHitsHorizontalPlane(ray, fy);
   const float t_end = t_ground >= 0 ? t_ground : 250.0f;
-  for (float t = 0; t < t_end; t += 0.05f) {
-    const Vec3 p = ray.At(t);
+  const int steps = static_cast<int>(std::ceil(t_end / 0.05f));
+  for (int step = 0; step < steps; ++step) {
+    const Vec3 p = ray.At(static_cast<float>(step) * 0.05f);
     const int x = static_cast<int>(std::floor(p.x)),
               z = static_cast<int>(std::floor(p.z));
     if (doc->InBounds(x, z) && p.y > fy && p.y < fy + 2.46f &&
@@ -423,14 +452,14 @@ bool EditorApp::RayLevel(const Ray& ray, Vec3* hit, int* cx, int* cz) {
   return doc->InBounds(*cx, *cz);
 }
 
-float EditorApp::SnapValue(float v, bool fine) const {
+float EditorApp::SnapValue(const float v, const bool fine) const {
   if (snap_ <= 0 || fine) return v;
   return std::round(v / snap_) * snap_;
 }
 
-// ---------------------------------------------------------------- edits
-
-void EditorApp::Nudge(float dx, float dz, float dy) {
+// Furniture moves by whole cells; everything else by the snap step (or
+// 5 cm when snapping is off).
+void EditorApp::Nudge(const float dx, const float dz, const float dy) {
   Pose p;
   if (!SelectedPose(&p)) return;
   const bool cell = sel_.kind == kFurniture;
@@ -441,6 +470,7 @@ void EditorApp::Nudge(float dx, float dz, float dy) {
   project_.SetPose(Here(), sel_, p);
 }
 
+// Some entities cannot be removed (the project refuses); say why.
 void EditorApp::DeleteSelected() {
   if (!has_sel_) return;
   if (!project_.Remove(Here(), sel_)) {
@@ -477,6 +507,8 @@ void EditorApp::Save() {
     Log("Save failed: " + err);
 }
 
+// The edits are restored from a snapshot, so the selection may point at
+// something gone; checks must be redone.
 void EditorApp::Undo() {
   if (history_.Undo(&project_)) {
     if (has_sel_) {
@@ -514,7 +546,10 @@ void EditorApp::GoTo(const Problem& p) {
   }
 }
 
-void EditorApp::PaintCells(int x0, int z0, int x1, int z1, char glyph) {
+// Only touches the project when a cell actually changes, so repainting a
+// glyph adds no undo step.
+void EditorApp::PaintCells(const int x0, const int z0, const int x1,
+                           const int z1, const char glyph) {
   LevelDoc* doc = project_.Level(level_);
   if (!doc) return;
   bool changed = false;
@@ -527,11 +562,11 @@ void EditorApp::PaintCells(int x0, int z0, int x1, int z1, char glyph) {
   if (changed) project_.Touch(level_);
 }
 
-// ---------------------------------------------------------------- viewport
-// interaction
-
-void EditorApp::PaintInput(const Ray& ray, bool pressed, bool down,
-                           bool released) {
+// A drag draws a Bresenham line from the last cell to the hovered one, so a
+// fast stroke leaves no gaps (guarded to 400 steps). Shift-drag defers the
+// fill to the release.
+void EditorApp::PaintInput(const Ray& ray, const bool pressed, const bool down,
+                           const bool released) {
   (void)ray;
   const ImGuiIO& io = ImGui::GetIO();
   const LevelDoc* doc = project_.Level(level_);
@@ -540,7 +575,7 @@ void EditorApp::PaintInput(const Ray& ray, bool pressed, bool down,
     return;
   }
   const int b = std::max(1, brush_);
-  auto stamp = [&](int cx, int cz) {
+  auto stamp = [&](const int cx, const int cz) {
     PaintCells(cx - (b - 1) / 2, cz - (b - 1) / 2, cx + b / 2, cz + b / 2,
                glyph_);
   };
@@ -559,8 +594,6 @@ void EditorApp::PaintInput(const Ray& ray, bool pressed, bool down,
       stamp(hover_x_, hover_z_);
     }
   } else if (down && drag_ == Drag::kPaint) {
-    // Fill the cells between the last and this one so a fast stroke has no
-    // gaps.
     int x = rect_x0_, z = rect_z0_;
     const int dx = std::abs(hover_x_ - x), dz = std::abs(hover_z_ - z);
     const int sx = x < hover_x_ ? 1 : -1, sz = z < hover_z_ ? 1 : -1;
@@ -588,7 +621,10 @@ void EditorApp::PaintInput(const Ray& ray, bool pressed, bool down,
   }
 }
 
-void EditorApp::PlaceInput(const Ray& ray, bool pressed) {
+// Furniture snaps to a free, non-wall cell. Decor keeps the point hit as an
+// offset from the cell center and, when the ray hits a prop first, a lift to
+// the top of that prop (decor on a table).
+void EditorApp::PlaceInput(const Ray& ray, const bool pressed) {
   if (!pressed || place_model_.empty()) return;
   Vec3 hit;
   int cx, cz;
@@ -625,7 +661,7 @@ void EditorApp::PlaceInput(const Ray& ray, bool pressed) {
     float yaw;
     EntityBox(onto, &c, &h, &yaw);
     p = ray.At(t_entity);
-    lift = (c.y + h.y) - FloorY();  // on top of what was hit
+    lift = (c.y + h.y) - FloorY();
   } else if (!ground) {
     return;
   }
@@ -637,13 +673,18 @@ void EditorApp::PlaceInput(const Ray& ray, bool pressed) {
   Select(project_.AddDecor(level_, item));
 }
 
-void EditorApp::GizmoInput(const Ray& ray, ImVec2 mouse, ImVec2 size) {
+// Handle ids in hover_axis_: 0, 1, 2 are the x, y, z arrows, 3 the rotate
+// ring, 4 the floor-plane square. Handles are hit-tested in screen space
+// (a few pixels), and their length scales with the camera distance so they
+// keep a constant on-screen size. A drag stores the pose at the press and
+// computes every update from it, so snapping never accumulates drift.
+void EditorApp::GizmoInput(const Ray& ray, const ImVec2 mouse,
+                           const ImVec2 size) {
   const ImGuiIO& io = ImGui::GetIO();
   Pose pose;
   const bool have = SelectedPose(&pose);
   const bool gizmo = have && (tool_ == Tool::kMove || tool_ == Tool::kRotate);
 
-  // Handle under the mouse.
   hover_axis_ = -1;
   Vec3 origin{};
   float len = 1;
@@ -666,7 +707,7 @@ void EditorApp::GizmoInput(const Ray& ray, ImVec2 mouse, ImVec2 size) {
         }
       }
       if (hover_axis_ < 0 && std::hypot(m.x - sx, m.y - sy) < 9.0f)
-        hover_axis_ = 4;  // the plane
+        hover_axis_ = 4;
     } else if (tool_ == Tool::kRotate && pose.has_yaw) {
       float px = 0, py = 0;
       bool first = true;
@@ -693,7 +734,6 @@ void EditorApp::GizmoInput(const Ray& ray, ImVec2 mouse, ImVec2 size) {
     }
   }
 
-  // Entity under the mouse.
   hover_entity_valid_ = !gizmo || hover_axis_ < 0
                             ? PickEntity(ray, &hover_entity_, nullptr)
                             : false;
@@ -764,7 +804,7 @@ void EditorApp::GizmoInput(const Ray& ray, ImVec2 mouse, ImVec2 size) {
         const Vec3 p = ray.At(t) + drag_offset_;
         np.x = SnapValue(p.x, fine);
         np.z = SnapValue(p.z, fine);
-        if (sel_.kind == kFurniture) {  // a whole cell: follow the pointer
+        if (sel_.kind == kFurniture) {
           np.x = std::floor(p.x) + 0.5f;
           np.z = std::floor(p.z) + 0.5f;
         }
@@ -787,7 +827,12 @@ void EditorApp::GizmoInput(const Ray& ray, ImVec2 mouse, ImVec2 size) {
     drag_ = Drag::kNone;
 }
 
-void EditorApp::ViewportInput(ImVec2 size, bool hovered, bool active) {
+// Camera: middle mouse or Alt + left orbits (Shift pans), right mouse looks
+// and flies with W A S D Q E, the wheel zooms. Otherwise the tool handles
+// the mouse; the single-key shortcuts apply only while the viewport is
+// hovered and no text field has focus.
+void EditorApp::ViewportInput(const ImVec2 size, const bool hovered,
+                              const bool active) {
   (void)active;
   ImGuiIO& io = ImGui::GetIO();
   const ImVec2 mouse{io.MousePos.x - view_origin_.x,
@@ -796,8 +841,6 @@ void EditorApp::ViewportInput(ImVec2 size, bool hovered, bool active) {
   const Ray ray =
       cam_.PickRay(mouse.x / size.x * 2 - 1, 1 - mouse.y / size.y * 2, aspect);
 
-  // Camera: middle button orbits (shift pans), alt + left is the same, the
-  // right button looks around and W A S D Q E fly, the wheel zooms.
   if (hovered && !cam_drag_) {
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) ||
         (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyAlt)) {
@@ -838,7 +881,6 @@ void EditorApp::ViewportInput(ImVec2 size, bool hovered, bool active) {
     if (io.MouseWheelH != 0) cam_.Pan(-io.MouseWheelH * 40.0f, 0, size.y);
   }
 
-  // What is under the mouse.
   Vec3 hit;
   int cx = 0, cz = 0;
   hover_cell_valid_ = hovered && !cam_drag_ && RayLevel(ray, &hit, &cx, &cz);
@@ -874,8 +916,6 @@ void EditorApp::ViewportInput(ImVec2 size, bool hovered, bool active) {
       break;
   }
 
-  // Keys (only while the pointer is over the view and no field is being typed
-  // in).
   if (hovered && !io.WantTextInput && !(cam_drag_)) {
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
       if (ImGui::IsKeyPressed(ImGuiKey_Q, false)) tool_ = Tool::kSelect;
@@ -918,9 +958,8 @@ void EditorApp::ViewportInput(ImVec2 size, bool hovered, bool active) {
   }
 }
 
-// ---------------------------------------------------------------- overlay
-
-void EditorApp::DrawOverlay(ImVec2 size) {
+// Everything drawn here is rebuilt each frame from the editor state.
+void EditorApp::DrawOverlay(const ImVec2 size) {
   (void)size;
   viewport_.ClearOverlay();
   const LevelDoc* doc = project_.Level(level_);
@@ -993,12 +1032,12 @@ void EditorApp::DrawOverlay(ImVec2 size) {
           selected || hover);
   }
 
-  // Tool previews.
   if (tool_ == Tool::kPaint && hover_cell_valid_) {
     const int b = std::max(1, brush_);
-    const float x0 = static_cast<float>(hover_x_ - (b - 1) / 2),
-                z0 = static_cast<float>(hover_z_ - (b - 1) / 2);
-    float x1 = x0 + b, z1 = z0 + b;
+    const int half_brush = (b - 1) / 2;
+    const auto x0 = static_cast<float>(hover_x_ - half_brush),
+               z0 = static_cast<float>(hover_z_ - half_brush);
+    float x1 = x0 + static_cast<float>(b), z1 = z0 + static_cast<float>(b);
     float rx0 = x0, rz0 = z0;
     if (drag_ == Drag::kRect) {
       rx0 = static_cast<float>(std::min(rect_x0_, hover_x_));
@@ -1029,12 +1068,13 @@ void EditorApp::DrawOverlay(ImVec2 size) {
                       {0.4f, 0.85f, 1, 1}, true);
   }
 
-  // Gizmo.
   Pose pose;
   if (SelectedPose(&pose) && (tool_ == Tool::kMove || tool_ == Tool::kRotate)) {
     const Vec3 o = WorldPos(pose);
     const float len = std::clamp(Length(o - cam_.Eye()) * 0.18f, 0.35f, 6.0f);
-    auto lit = [&](Rgba c, bool on) { return on ? Rgba{1, 1, 0.45f, 1} : c; };
+    auto lit = [&](const Rgba c, const bool on) {
+      return on ? Rgba{1, 1, 0.45f, 1} : c;
+    };
     if (tool_ == Tool::kMove) {
       viewport_.Arrow(o, o + Vec3{len, 0, 0},
                       lit(kRed, hover_axis_ == 0 || (drag_ == Drag::kAxis &&
@@ -1065,11 +1105,13 @@ void EditorApp::DrawOverlay(ImVec2 size) {
   }
 }
 
-void EditorApp::DrawScreenOverlay(ImVec2 origin, ImVec2 size) {
+// Labels of the selected, hovered (or, if enabled, all) entities, the axis
+// widget in the bottom right corner, and the status line.
+void EditorApp::DrawScreenOverlay(const ImVec2 origin, const ImVec2 size) {
   ImDrawList* dl = ImGui::GetWindowDrawList();
   const ImU32 text = IM_COL32(230, 230, 235, 255),
               dim = IM_COL32(150, 155, 165, 255);
-  auto label = [&](Vec3 p, const std::string& s, ImU32 col) {
+  auto label = [&](const Vec3 p, const std::string& s, const ImU32 col) {
     float sx, sy;
     if (!cam_.Project(p, size.x, size.y, &sx, &sy)) return;
     const ImVec2 sz = ImGui::CalcTextSize(s.c_str());
@@ -1091,7 +1133,6 @@ void EditorApp::DrawScreenOverlay(ImVec2 origin, ImVec2 size) {
     }
   }
 
-  // The view's axes, bottom right.
   const ImVec2 c{origin.x + size.x - 56, origin.y + size.y - 56};
   const OrbitCamera& cam = cam_;
   const Vec3 f = cam.Forward(), r = cam.Right(), u = Cross(r, f);
@@ -1110,7 +1151,6 @@ void EditorApp::DrawScreenOverlay(ImVec2 origin, ImVec2 size) {
     dl->AddText({e.x - 3.5f, e.y - 7}, IM_COL32(15, 15, 15, 255), a.name);
   }
 
-  // Status line, bottom left.
   const LevelDoc* doc = project_.Level(level_);
   std::string s = std::string(tool_ == Tool::kSelect   ? "Select"
                               : tool_ == Tool::kMove   ? "Move"
@@ -1128,8 +1168,7 @@ void EditorApp::DrawScreenOverlay(ImVec2 origin, ImVec2 size) {
   dl->AddText({origin.x + 10, origin.y + size.y - 24}, dim, s.c_str());
 }
 
-// ---------------------------------------------------------------- game preview
-
+// The picture is read back from the game's PPM and uploaded as a texture.
 void EditorApp::PollGamePreview() {
   if (!preview_running_ || !preview_job_.valid()) return;
   if (preview_job_.wait_for(std::chrono::seconds(0)) !=
@@ -1140,8 +1179,6 @@ void EditorApp::PollGamePreview() {
   int w, h;
   std::vector<uint8_t> rgba;
   if (ok && ReadPpm(preview_ppm_, &w, &h, &rgba)) {
-    // The PPM is stored top row first, which is how a texture's v = 0 end is
-    // shown by ImGui::Image: upload it as it is.
     if (!preview_tex_) gl::GenTextures(1, &preview_tex_);
     gl::BindTexture(gl::kTexture2D, preview_tex_);
     gl::TexImage2D(gl::kTexture2D, 0, gl::kRgba8, w, h, 0, gl::kRgba,
@@ -1161,6 +1198,10 @@ void EditorApp::PollGamePreview() {
   Log(preview_log_);
 }
 
+// Builds a throwaway asset folder in the temp directory: the unsaved levels
+// and data files written out, everything else of the stage linked in (or
+// copied where symlinks are not allowed). The game then runs on it with the
+// adapter's command line, in a worker thread, as a blocking system() call.
 void EditorApp::RunGamePreview() {
   if (preview_running_) return;
   if (game_exe_.empty()) game_exe_ = FindGame();
@@ -1178,8 +1219,6 @@ void EditorApp::RunGamePreview() {
   fs::create_directories(dir / "levels", ec);
   fs::create_directories(dir / "data", ec);
 
-  // The game's command line, and the data files it runs on (the adapter may
-  // edit its copy: for instance, so the open level is the one that loads).
   PreviewRequest req;
   req.where = Here();
   req.x = cam_.target.x;
@@ -1196,8 +1235,6 @@ void EditorApp::RunGamePreview() {
     return;
   }
 
-  // A copy of the asset stage (symlinks where it can) with the unsaved levels
-  // and data files written over it.
   const fs::path stage = fs::absolute(args_.stage_dir, ec);
   auto link_or_copy = [&](const fs::path& from, const fs::path& to) {
     std::error_code e;
@@ -1236,8 +1273,11 @@ void EditorApp::RunGamePreview() {
 #endif
   preview_running_ = true;
   preview_log_ = "Running the game...";
-  preview_job_ = std::async(std::launch::async,
-                            [line] { return std::system(line.c_str()) == 0; });
+  preview_job_ = std::async(std::launch::async, [line] {
+    // The command is built from the user's own preview settings.
+    // NOLINTNEXTLINE(bugprone-command-processor)
+    const int status = std::system(line.c_str());
+    return status == 0;
+  });
 }
-
-}  // namespace mythos::editor
+}

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <numbers>
+#include <utility>
 
 #include "engine/core/mat4.h"
 #include "engine/gfx/normalmap.h"
@@ -14,7 +15,6 @@
 
 namespace mythos {
 namespace {
-
 using gl::ActiveTexture;
 using gl::BindBuffer;
 using gl::BindTexture;
@@ -71,80 +71,67 @@ using gl::UniformMatrix4fv;
 using gl::VertexAttribPointer;
 using gl::Viewport;
 
-// Door panel hinged at (hingeX, hingeZ), its spine turned to absolute `angle`
-// on the map plane.
-void DoorModel(double hinge_x, double hinge_y, double hinge_z, double angle,
-               float* m) {
-  const float c = static_cast<float>(std::cos(angle)),
-              s = static_cast<float>(std::sin(angle));
+// Model matrix of a door: a rotation about the y axis at the hinge.
+void DoorModel(const double hinge_x, const double hinge_y, const double hinge_z,
+               const double angle, float* const m) {
+  const auto c = static_cast<float>(std::cos(angle)),
+             s = static_cast<float>(std::sin(angle));
   Mat4Identity(m);
   m[0] = c;
-  m[2] = s;  // local +x (the spine) -> (cos a, 0, sin a)
+  m[2] = s;
   m[8] = -s;
-  m[10] = c;  // local +z (the thickness) stays perpendicular
+  m[10] = c;
   m[12] = static_cast<float>(hinge_x);
   m[13] = static_cast<float>(hinge_y);
   m[14] = static_cast<float>(hinge_z);
 }
 
+// Vertical field of view and clip planes of the main view.
 constexpr float kFovY = 62.0f * std::numbers::pi_v<float> / 180.0f;
-constexpr float
-    kNearPlane = 0.05f,
-    kFarPlane = 80.0f;  // metres; far is past the longest sightline in a house
+constexpr float kNearPlane = 0.05f, kFarPlane = 80.0f;
 constexpr double kTwoPi = 6.283185307179586;
 constexpr double kHalfPi = 1.5707963;
-constexpr float kBoundsEmpty =
-    1e30f;  // starting value of a min/max box (anything shrinks it)
-constexpr float kRoomFogDensity = 0.075f,
-                kOutdoorFogDensity = 0.040f;  // outdoors the air is clearer
-constexpr double kMaxHandPitch = 1.5;  // radians: the lagging hand light never
-                                       // points quite straight up or down
+constexpr float kBoundsEmpty = 1e30f;
+constexpr float kRoomFogDensity = 0.075f, kOutdoorFogDensity = 0.040f;
+constexpr double kMaxHandPitch = 1.5;
 
-// How far past the panel's own size the door's culling box reaches, in metres.
+// Slack added to a door's culling box.
 constexpr float kDoorCullMargin = 0.1f;
 
-// Door hinge placement within its cell (see doorInstance): kHingeAcross is the
-// hinge's offset on the axis across the passage; the other axis is kHingeBase,
-// shifted by the swing side (-1 or 1).
+// Hinge placement within a doorway cell: across the cell, and along it a base
+// position shifted by the swing side.
 constexpr double kHingeAcross = 0.175, kHingeBase = 0.5, kHingeSwingShift = 0.2;
 
-// Mirror tuning (metres unless noted).
-constexpr double kMirrorMinFront =
-    0.02;  // the eye must be this far in front of the glass to see it
-constexpr float kMirrorClipOffset =
-    0.015f;  // the reflection keeps what is this far behind the plane, so the
-             // frame's own face drops out
-constexpr float kMirrorGlassOffset =
-    0.004f;  // the glass quad floats this far off the prop's face (no z-fight)
-constexpr int kMirrorMinSide =
-    16;  // texels; the reflection target never shrinks below this
-// The reflection is drawn at three quarters of the main target's size.
+// The mirror is skipped when the eye is nearly in its plane. The clip plane is
+// pulled 1.5 cm behind the glass to hide the wall and prop face, and the glass
+// quad sits 4 mm in front of the surface to avoid z-fighting.
+constexpr double kMirrorMinFront = 0.02;
+constexpr float kMirrorClipOffset = 0.015f;
+
+constexpr float kMirrorGlassOffset = 0.004f;
+constexpr int kMirrorMinSide = 16;
+
+// The mirror target is 3/4 of the main target's size.
 constexpr int kMirrorScaleNum = 3, kMirrorScaleDen = 4;
 
-// Motion blur: the smear is capped at this fraction of the picture (more for
-// stronger settings).
+// Largest smear, as a fraction of the screen, at motion blur strength 1.
 constexpr double kMotionBlurCap = 0.08;
 
-// The moon hangs over the house to the north, low enough to sit in view on the
-// walk to the front door; the moonlight in the world shader comes from the same
-// direction.
+// Direction toward the moon (unit vector) used for outdoor light and sky.
 constexpr float kMoonDir[3] = {0.148f, 0.417f, -0.897f};
 
-constexpr float kNormalStrength =
-    2.5f;  // how far a texture's brightness tilts its surface
-constexpr float kChunk = 8.0f;  // cells per side of a culling chunk
-constexpr GLsizei kVertexStride =
-    32;  // bytes: 3 floats position, 3 normal, 2 uv
-constexpr int kNormalUnit = 6,
-              kMaterialUnit =
-                  7;  // texture units of a batch's normal and material maps
-constexpr int kFirstShadowUnit = 1,
-              kHandShadowUnit =
-                  5;  // the lamps' cubes on 1..4, the hand light's on 5
+// Strength of normal maps made from texture brightness.
+constexpr float kNormalStrength = 2.5f;
+// Chunk edge in world units for culling.
+constexpr float kChunk = 8.0f;
+// Vertex layout: position (3 floats), normal (3), uv (2).
+constexpr GLsizei kVertexStride = 32;
+// Texture units: color 0, lamp shadow cubes 1-4, hand shadow cube 5, then the
+// surface (normal and gloss) map and the material map.
+constexpr int kNormalUnit = 6, kMaterialUnit = 7;
+constexpr int kFirstShadowUnit = 1, kHandShadowUnit = 5;
 
-// Binds the interleaved position / normal / uv layout of a Vertex to the bound
-// VAO.
-void SetVertexLayout(GLuint vbo) {
+void SetVertexLayout(const GLuint vbo) {
   BindBuffer(kArrayBuffer, vbo);
   EnableVertexAttribArray(0);
   VertexAttribPointer(0, 3, kFloat, kFalse, kVertexStride, nullptr);
@@ -156,26 +143,24 @@ void SetVertexLayout(GLuint vbo) {
                       reinterpret_cast<const void*>(24));
 }
 
-void ResetBounds(float* bmin, float* bmax) {
+// Empty box that any point grows.
+void ResetBounds(float* const bmin, float* const bmax) {
   for (int k = 0; k < 3; ++k) {
     bmin[k] = kBoundsEmpty;
     bmax[k] = -kBoundsEmpty;
   }
 }
 
-void GrowBounds(float* bmin, float* bmax, const float* other_min,
-                const float* other_max) {
+void GrowBounds(float* const bmin, float* const bmax,
+                const float* const other_min, const float* const other_max) {
   for (int k = 0; k < 3; ++k) {
     bmin[k] = std::min(bmin[k], other_min[k]);
     bmax[k] = std::max(bmax[k], other_max[k]);
   }
 }
-
-}  // namespace
+}
 
 bool SceneRenderer::Init(const TextureLibrary& textures) {
-  // World and sky shaders call finishPixel() from the shared post-processing
-  // chunk.
   world_program_.Build(shaders::kWorldGeometryVert, shaders::kWorldLightingFrag,
                        {{0, "aPos"}, {1, "aNormal"}, {2, "aUV"}},
                        shaders::kToneMapAndGrainFrag);
@@ -198,31 +183,25 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
   BuildFullscreenQuad();
   UploadTextures(textures);
 
-  // The mirror: its glass is six vertices rewritten each frame; what it shows
-  // is drawn into mirrorTarget_.
   mirror_vbo_.Upload(nullptr, 6 * sizeof(Vertex), kDynamicDraw);
   mirror_vao_.Create();
   mirror_vao_.Bind();
   SetVertexLayout(mirror_vbo_.Id());
   BindVertexArray(0);
+  // The mirror view starts at half size; DrawMirrorView resizes it.
   mirror_target_.Create(kInternalW / 2, kInternalH / 2);
 
-  // Overlay texture: re-uploaded every frame with nearest filtering.
   overlay_tex_.Create();
   overlay_tex_.SetParams(kNearest, kNearest, kClampToEdge);
 
-  // Shadow maps are made on first use (ensureShadowMaps).
-
-  // Internal scene target (its size is a graphics setting; see setRenderScale).
   target_.Create(kInternalW, kInternalH);
+  // Bloom works at a quarter of the render size.
   bloom_a_.Create(kInternalW / 4, kInternalH / 4);
   bloom_b_.Create(kInternalW / 4, kInternalH / 4);
   return world_program_.Valid() && quad_program_.Valid() &&
          composite_program_.Valid() && sky_program_.Valid() && text_ok;
 }
 
-// The world program's uniform locations (per-frame ones into world_u_) and its
-// fixed sampler units.
 void SceneRenderer::LookUpWorldUniforms() {
   u_model_ = world_program_.Uniform("uModel");
   u_emissive_ = world_program_.Uniform("uEmissive");
@@ -259,8 +238,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.grain = world_program_.Uniform("uGrain");
   u.materials = world_program_.Uniform("uMaterials");
   u.clip = world_program_.Uniform("uClip");
-  // The samplers never change: the texture on unit 0, the shadow cubes on units
-  // 1 to 5.
+
   world_program_.Use();
   world_program_.Set("uTex", 0);
   world_program_.Set("uShadow0", 1);
@@ -273,7 +251,7 @@ void SceneRenderer::LookUpWorldUniforms() {
 }
 
 void SceneRenderer::BuildFullscreenQuad() {
-  // Fullscreen quad: position (x, y) and uv per vertex, two triangles.
+  // Two triangles; per vertex x, y, u, v.
   const float quad[24] = {
       -1, -1, 0, 0, 1, -1, 1, 0, 1,  1, 1, 1,
       -1, -1, 0, 0, 1, 1,  1, 1, -1, 1, 0, 1,
@@ -290,10 +268,9 @@ void SceneRenderer::BuildFullscreenQuad() {
   BindVertexArray(0);
 }
 
-// Uploads a surface as a mipmapped, repeating texture (internalFormat: sRGB for
-// colour, linear for data maps).
-GlTexture SceneRenderer::MakeMipmappedTexture(int w, int h, const void* rgba,
-                                              gl::GLenum internal_format) {
+GlTexture SceneRenderer::MakeMipmappedTexture(
+    const int w, const int h, const void* const rgba,
+    const gl::GLenum internal_format) {
   GlTexture tex;
   tex.Create();
   tex.Allocate(w, h, rgba, internal_format);
@@ -303,14 +280,11 @@ GlTexture SceneRenderer::MakeMipmappedTexture(int w, int h, const void* rgba,
 }
 
 void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
-  // Every texture the mesh builder can reference. GL texture row 0 sits at v =
-  // 0 (the bottom of a wall), and Surface row 0 is the top of the image, so
-  // flip while converting.
   std::vector<uint8_t> rgba_bytes;
   for (const auto& name : textures.Names()) {
+    // Companion maps (`X_nrm`, `X_rough`, ...) are folded into `X`'s maps and
+    // not uploaded on their own, unless there is no base texture.
     if (IsPbrCompanion(name)) {
-      // A companion map is read with its texture below; one with no texture is
-      // drawn as itself.
       const std::string base = name.substr(0, name.rfind('_'));
       if (textures.Has(base)) continue;
     }
@@ -319,9 +293,6 @@ void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
     textures_.emplace_back(
         name, MakeMipmappedTexture(s.w, s.h, rgba_bytes.data(), kSrgb8Alpha8));
 
-    // Its normal map (alpha: gloss). Authored maps (<name>_nrm, <name>_rough)
-    // win; otherwise the normal is read from the texture's own brightness and
-    // there is no specular (gfx/pbr.h).
     const std::string nrm_name = name + kNormalSuffix,
                       rough_name = name + kRoughSuffix,
                       metal_name = name + kMetalSuffix,
@@ -335,8 +306,6 @@ void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
     normal_maps_.emplace_back(
         name, MakeMipmappedTexture(s.w, s.h, rgba_bytes.data()));
 
-    // Its material map (R metal, G occlusion), only when it has a companion for
-    // one of them.
     const Surface mat = MakeMaterialMap(
         s, textures.Has(metal_name) ? &textures.Get(metal_name) : nullptr,
         textures.Has(ao_name) ? &textures.Get(ao_name) : nullptr);
@@ -347,18 +316,20 @@ void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
     }
   }
   {
-    const uint8_t open[4] = {0, 255, 255, 255};  // metal 0, occlusion 1
+    // Default material: no metal (R 0), full occlusion value (G 255), i.e.
+    // neutral.
+    const uint8_t open[4] = {0, 255, 255, 255};
     default_material_.Create();
     default_material_.Allocate(1, 1, open);
     default_material_.SetParams(kNearest, kNearest, kRepeat);
   }
 }
 
-void SceneRenderer::SetRenderScale(int preset) {
+void SceneRenderer::SetRenderScale(const int preset) {
   render_scale_ = std::clamp(preset, 0, kRenderScaleCount - 1);
 }
 
-void SceneRenderer::ResizeTarget(int window_w, int window_h) {
+void SceneRenderer::ResizeTarget(const int window_w, const int window_h) {
   if (window_w <= 0 || window_h <= 0) return;
   const int h = kRenderScaleLines[render_scale_];
   const int w = std::max(1, static_cast<int>(std::lround(
@@ -399,9 +370,8 @@ void SceneRenderer::UploadBatches(BatchList& dst,
                                   const std::vector<Batch>& src) {
   for (const auto& b : src) {
     if (b.verts.empty()) continue;
-    // Bucket whole triangles by the chunk holding their first vertex; the
-    // ordered map then lays the chunks out one after another in a single
-    // buffer.
+
+    // Group whole triangles by the chunk of their first vertex.
     std::map<std::pair<int, int>, std::vector<Vertex>> chunks;
     for (size_t i = 0; i + 2 < b.verts.size(); i += 3) {
       const Vertex& v = b.verts[i];
@@ -469,8 +439,6 @@ void SceneRenderer::UploadDoorPanel(const std::vector<Batch>& batches) {
   UploadBatches(door_, batches);
 }
 
-// Binds a batch's textures, flags and VAO, skipping whatever drawState_ says is
-// already set.
 void SceneRenderer::BindBatchState(const GpuBatch& b) {
   if (b.texture != draw_state_.texture) {
     BindTexture(kTexture2D, b.texture);
@@ -498,15 +466,15 @@ void SceneRenderer::BindBatchState(const GpuBatch& b) {
   b.vao.Bind();
 }
 
-void SceneRenderer::DrawBatches(const BatchList& batches, const float* model,
-                                const Frustum* cull, float offset_z) {
+void SceneRenderer::DrawBatches(const BatchList& batches,
+                                const float* const model,
+                                const Frustum* const cull,
+                                const float offset_z) {
   UniformMatrix4fv(u_model_, 1, kFalse, model);
   for (const auto& b : batches) {
     if (cull && !BoxInFrustum(*cull, b.bmin, b.bmax, offset_z)) continue;
-    bool bound =
-        false;  // state is set up when the first chunk turns out to be visible
-    // Neighbouring visible chunks are one range of the buffer: they go out as a
-    // single draw.
+    bool bound = false;
+
     int run_first = 0, run_count = 0;
     const auto flush = [&] {
       if (run_count > 0) DrawArrays(kTriangles, run_first, run_count);
@@ -538,12 +506,10 @@ void SceneRenderer::DrawQuad() {
   DrawArrays(kTriangles, 0, 6);
 }
 
-// Sky first, outdoors: a fullscreen pass with depth off (so it stays behind
-// everything).
 void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
   Disable(kDepthTest);
   sky_program_.Use();
-  // The camera basis, so the shader can turn a pixel into a view ray.
+
   const float cos_pitch = std::cos(static_cast<float>(cam.pitch)),
               sin_pitch = std::sin(static_cast<float>(cam.pitch));
   const float cos_yaw = std::cos(static_cast<float>(cam.yaw)),
@@ -564,8 +530,6 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
   DrawQuad();
 }
 
-// This frame's lamps (lamps_, shadow casters first) as the world shader's
-// arrays.
 void SceneRenderer::SetLampUniforms() {
   const WorldUniforms& u = world_u_;
   const int n = static_cast<int>(lamps_.size());
@@ -573,14 +537,14 @@ void SceneRenderer::SetLampUniforms() {
       rad[CameraState::kMaxLights];
   for (int i = 0; i < n; ++i) {
     const PointLight& l = lamps_[static_cast<size_t>(i)];
-    pos[i * 3] = static_cast<float>(l.x);
-    pos[i * 3 + 1] = static_cast<float>(l.y);
-    pos[i * 3 + 2] = static_cast<float>(l.z);
-    col[i * 3] = static_cast<float>(l.r);
-    col[i * 3 + 1] = static_cast<float>(l.g);
-    col[i * 3 + 2] = static_cast<float>(l.b);
-    rad[i] = static_cast<float>(
-        std::max(0.001, l.radius));  // the shader divides by it
+    const size_t o = static_cast<size_t>(i) * 3;
+    pos[o] = static_cast<float>(l.x);
+    pos[o + 1] = static_cast<float>(l.y);
+    pos[o + 2] = static_cast<float>(l.z);
+    col[o] = static_cast<float>(l.r);
+    col[o + 1] = static_cast<float>(l.g);
+    col[o + 2] = static_cast<float>(l.b);
+    rad[i] = static_cast<float>(std::max(0.001, l.radius));
   }
   Uniform1i(u.light_count, n);
   if (n > 0) {
@@ -590,9 +554,6 @@ void SceneRenderer::SetLampUniforms() {
   }
 }
 
-// The lamps' shadow cubes on units 1..4 and the hand light's on unit 5. The
-// active unit is left on 5; drawWorld resets it to 0 after the remaining
-// uniforms.
 void SceneRenderer::BindShadowCubes() {
   for (int i = 0; i < CameraState::kMaxShadowLights; ++i) {
     ActiveTexture(kTexture0 + static_cast<GLenum>(kFirstShadowUnit + i));
@@ -664,10 +625,8 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   DrawScene(cam, f.planes, f.views);
 }
 
-// Everything that stands in the world this frame, culled against the planes:
-// what the main pass draws and what casts shadows.
 void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
-                              unsigned views) {
+                              const unsigned views) {
   float model[16];
   Mat4Identity(model);
   DrawBatches(cab_, model, &cull);
@@ -679,16 +638,13 @@ void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
   DrawInstances(cam, views);
 }
 
-// The swinging door panels inside the frustum. `model` is scratch space for
-// each panel's matrix.
 void SceneRenderer::DrawDoors(const CameraState& cam, const Frustum& cull,
-                              float* model) {
+                              float* const model) {
   for (const auto& door : cam.doors) {
-    // The panel swings within kDoorPanelWidth of its hinge.
-    const float hinge_x = static_cast<float>(door.hinge_x),
-                hinge_z = static_cast<float>(door.hinge_z);
+    const auto hinge_x = static_cast<float>(door.hinge_x),
+               hinge_z = static_cast<float>(door.hinge_z);
     const float reach = kDoorPanelWidth + kDoorCullMargin;
-    const float hinge_y = static_cast<float>(door.y);
+    const auto hinge_y = static_cast<float>(door.y);
     const float bmin[3] = {hinge_x - reach, hinge_y, hinge_z - reach};
     const float bmax[3] = {hinge_x + reach,
                            hinge_y + kDoorPanelHeight + kDoorCullMargin,
@@ -699,20 +655,17 @@ void SceneRenderer::DrawDoors(const CameraState& cam, const Frustum& cull,
   }
 }
 
-// The caller's moving models (the hand light, the player's body) that show in
-// these views.
-void SceneRenderer::DrawInstances(const CameraState& cam, unsigned views) {
+void SceneRenderer::DrawInstances(const CameraState& cam,
+                                  const unsigned views) {
   for (const ModelInstance& inst : cam.instances) {
     if ((inst.views & views) == 0 || inst.model < 0 ||
-        inst.model >= static_cast<int>(models_.size())) {
+        std::cmp_greater_equal(inst.model, models_.size())) {
       continue;
     }
     DrawBatches(models_[static_cast<size_t>(inst.model)], inst.matrix);
   }
 }
 
-// Whether the glass can be seen from here: the eye is on its front, and it is
-// inside the view.
 bool SceneRenderer::MirrorVisible(const CameraState& cam,
                                   const Frame& f) const {
   const MirrorState& m = cam.mirror;
@@ -721,8 +674,7 @@ bool SceneRenderer::MirrorVisible(const CameraState& cam,
   }
   const double front = (cam.x - m.x) * m.nx + (cam.z - m.z) * m.nz;
   if (front < kMirrorMinFront) return false;
-  const double radius = std::hypot(
-      m.half_w, m.half_h);  // a box around the glass, whatever its facing
+  const double radius = std::hypot(m.half_w, m.half_h);
   const float bmin[3] = {static_cast<float>(m.x - radius),
                          static_cast<float>(m.y - radius),
                          static_cast<float>(m.z - radius)};
@@ -732,9 +684,6 @@ bool SceneRenderer::MirrorVisible(const CameraState& cam,
   return BoxInFrustum(f.planes, bmin, bmax);
 }
 
-// The scene as the glass shows it: the view turned about the mirror's plane (so
-// the picture is the room reflected, drawn with the real lights), without what
-// lies behind the glass, into mirrorTarget_.
 void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
   const MirrorState& m = cam.mirror;
   const int h = std::max(kMirrorMinSide,
@@ -743,9 +692,9 @@ void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
                          target_.Width() * kMirrorScaleNum / kMirrorScaleDen);
   mirror_target_.Resize(w, h);
   const float n[3] = {static_cast<float>(m.nx), 0.0f, static_cast<float>(m.nz)};
-  const float d = n[0] * static_cast<float>(m.x) +
-                  n[2] * static_cast<float>(m.z);  // the plane: n.p = d
-  float reflect[16];                               // p' = p - 2 (n.p - d) n
+  const float d =
+      n[0] * static_cast<float>(m.x) + n[2] * static_cast<float>(m.z);
+  float reflect[16];
   Mat4Identity(reflect);
   reflect[0] = 1 - 2 * n[0] * n[0];
   reflect[2] = -2 * n[0] * n[2];
@@ -754,13 +703,14 @@ void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
   reflect[12] = 2 * d * n[0];
   reflect[14] = 2 * d * n[2];
   Frame fm = f;
+  // Reflect the world about the glass plane (a mirror about a vertical plane
+  // with normal n and offset d); lighting stays unreflected.
   Mat4Multiply(f.view, reflect, fm.view);
   float view_proj[16];
   Mat4Multiply(f.proj, fm.view, view_proj);
   FrustumPlanes(view_proj, fm.planes);
-  // Keep what is in front of the glass: the frame and the picture of the mirror
-  // prop itself (which lie on the plane) and the wall it hangs on go, or they
-  // would hide the whole reflection.
+
+  // Clip everything behind the glass plane.
   fm.clip[0] = n[0];
   fm.clip[1] = 0.0f;
   fm.clip[2] = n[2];
@@ -774,19 +724,16 @@ void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
   DrawWorld(cam, fm);
 }
 
-// The glass: a quad a finger in front of the mirror prop's own face, showing
-// what drawMirrorView made.
 void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
   const MirrorState& m = cam.mirror;
   const auto nx = static_cast<float>(m.nx), nz = static_cast<float>(m.nz);
-  const float along_x = nz, along_z = -nx;  // the glass's horizontal axis
+  const float along_x = nz, along_z = -nx;
   const float center_x = static_cast<float>(m.x) + nx * kMirrorGlassOffset;
   const float center_z = static_cast<float>(m.z) + nz * kMirrorGlassOffset;
   const auto half_w = static_cast<float>(m.half_w),
              half_h = static_cast<float>(m.half_h);
-  const float center_y = static_cast<float>(m.y);
-  const auto corner = [&](float sx,
-                          float sy) {  // sx, sy: -1 or 1, the corner's side
+  const auto center_y = static_cast<float>(m.y);
+  const auto corner = [&](const float sx, const float sy) {
     Vertex v{};
     v.px = center_x + along_x * half_w * sx;
     v.py = center_y + half_h * sy;
@@ -819,10 +766,6 @@ void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
   Disable(kBlend);
 }
 
-// Motion blur: the turn since the last frame, as a distance across the picture.
-// A turn of the view moves everything the same way, so a straight smear along
-// it suffices (the sign does not matter: the taps straddle each pixel). Long
-// smears are capped. Remembers this frame's view for the next call.
 void SceneRenderer::MotionBlurSmear(const CameraState& cam, const Frame& f,
                                     float& smear_x, float& smear_y) {
   smear_x = smear_y = 0.0f;
@@ -831,8 +774,7 @@ void SceneRenderer::MotionBlurSmear(const CameraState& cam, const Frame& f,
     dyaw = std::remainder(dyaw, kTwoPi);
     const double dpitch = cam.pitch - last_pitch_;
     const double fov_x = 2.0 * std::atan(std::tan(f.fov_y * 0.5) * f.aspect);
-    // The strength scales the smear; the cap grows with it so the strongest
-    // still reads.
+
     const double cap = kMotionBlurCap * std::max(1.0, cam.motion_blur);
     smear_x = static_cast<float>(
         std::clamp(dyaw / fov_x * cam.motion_blur, -cap, cap));
@@ -844,8 +786,6 @@ void SceneRenderer::MotionBlurSmear(const CameraState& cam, const Frame& f,
   have_last_view_ = true;
 }
 
-// Bloom: the bright parts of the (tone mapped) picture, blurred twice along
-// each axis at a quarter of its size, into bloom_b_.
 bool SceneRenderer::BuildBloom(const CameraState& cam) {
   if (cam.bloom <= 0.0 || !bloom_program_.Valid() || !bloom_a_.Width())
     return false;
@@ -856,13 +796,14 @@ bool SceneRenderer::BuildBloom(const CameraState& cam) {
   ActiveTexture(kTexture0);
   const float tx = 1.0f / static_cast<float>(bloom_a_.Width());
   const float ty = 1.0f / static_cast<float>(bloom_a_.Height());
-  // Pass 1: bright pass + horizontal blur, picture -> a. Then vertical, a -> b,
-  // and a second round for a wider, smoother glow.
+
   struct Pass {
     const RenderTarget* from;
     RenderTarget* to;
     float dx, dy, threshold;
   };
+  // Bright pass with a first horizontal blur, then vertical and a wider
+  // horizontal and vertical pair; only the first pass applies the threshold.
   const Pass passes[4] = {{&target_, &bloom_a_, tx * 1.5f, 0.0f, 0.40f},
                           {&bloom_a_, &bloom_b_, 0.0f, ty * 1.5f, 0.0f},
                           {&bloom_b_, &bloom_a_, tx * 2.5f, 0.0f, 0.0f},
@@ -878,10 +819,8 @@ bool SceneRenderer::BuildBloom(const CameraState& cam) {
   return true;
 }
 
-// Composite the scene to the window (linear upscale keeps it soft, PS2-like),
-// with the blur and lens.
 void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
-                              int window_w, int window_h) {
+                              const int window_w, const int window_h) {
   RenderTarget::BindWindow();
   Viewport(0, 0, window_w, window_h);
   ClearColor(0, 0, 0, 1);
@@ -912,7 +851,7 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
   composite_program_.Set(
       "uAspect",
       static_cast<float>(window_w) / static_cast<float>(std::max(1, window_h)));
-  // FXAA only on a still picture: a blurred one has no edges to smooth.
+
   composite_program_.Set(
       "uFxaa", cam.anti_alias == 1 && bx == 0.0f && by == 0.0f ? 1.0f : 0.0f);
   composite_program_.Set("uTexel", 1.0f / static_cast<float>(target_.Width()),
@@ -920,9 +859,6 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
   DrawQuad();
 }
 
-// Uploads the overlay as it is (0xAARRGGBB read as BGRA 8-8-8-8 reversed; the
-// shader flips it because row 0 is the top). A frame identical to the last one
-// is not uploaded again.
 void SceneRenderer::UploadOverlay(const Surface& overlay) {
   overlay_tex_.Bind();
   const bool same_size = overlay.w == overlay_w_ && overlay.h == overlay_h_;
@@ -939,8 +875,8 @@ void SceneRenderer::UploadOverlay(const Surface& overlay) {
   overlay_pixels_ = overlay.px;
 }
 
-// The 2D overlay with alpha blending, then its text at full window resolution.
-void SceneRenderer::DrawOverlay(const Surface& overlay, const TextLayer* text) {
+void SceneRenderer::DrawOverlay(const Surface& overlay,
+                                const TextLayer* const text) {
   UploadOverlay(overlay);
   quad_program_.Use();
   quad_program_.Set("uFlipY", 1.0f);
@@ -954,9 +890,6 @@ void SceneRenderer::DrawOverlay(const Surface& overlay, const TextLayer* text) {
   if (text && !text->runs.empty()) text_.Draw(*text, overlay.w, overlay.h);
 }
 
-// Everything the frame's passes share: the eye, the hand light's aim, fog, and
-// the view and projection matrices with the frustum they imply. Needs target_
-// at this frame's size.
 SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   Frame f;
   f.eye[0] = static_cast<float>(cam.x);
@@ -965,7 +898,7 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   f.dir[0] = static_cast<float>(std::cos(cam.yaw) * std::cos(cam.pitch));
   f.dir[1] = static_cast<float>(std::sin(cam.pitch));
   f.dir[2] = static_cast<float>(std::sin(cam.yaw) * std::cos(cam.pitch));
-  {  // the hand light's own aim: the view's, turned by the hand's lag
+  {
     const double flash_yaw = cam.yaw + cam.hand_yaw;
     const double flash_pitch =
         std::clamp(cam.pitch + cam.hand_pitch, -kMaxHandPitch, kMaxHandPitch);
@@ -976,8 +909,7 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
         static_cast<float>(std::sin(flash_yaw) * std::cos(flash_pitch));
   }
   std::ranges::copy(kMoonDir, f.moon);
-  // Fog: a cold blue night outdoors, a near-black warm murk indoors
-  // (linear-space colours).
+
   f.fog[0] = cam.outdoor ? 0.012f : 0.006f;
   f.fog[1] = cam.outdoor ? 0.018f : 0.005f;
   f.fog[2] = cam.outdoor ? 0.034f : 0.005f;
@@ -999,10 +931,8 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   return f;
 }
 
-// The player's view into the internal target: sky outdoors, then the world,
-// then the mirror glass.
 void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
-                                 bool mirrored) {
+                                 const bool mirrored) {
   target_.Bind();
   Viewport(0, 0, target_.Width(), target_.Height());
   ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1011,48 +941,43 @@ void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
   if (cam.outdoor) DrawSky(cam, f);
   DrawWorld(cam, f);
   if (mirrored) DrawMirrorGlass(cam, f);
-  target_.Resolve();  // a multisampled picture becomes the texture the
-                      // composite reads
+  target_.Resolve();
 }
 
-void SceneRenderer::Render(const CameraState& cam, int window_w, int window_h,
-                           const Surface* overlay, const TextLayer* text) {
+void SceneRenderer::Render(const CameraState& cam, const int window_w,
+                           const int window_h, const Surface* const overlay,
+                           const TextLayer* const text) {
   target_.SetSamples(
       kAntiAliasSamples[std::clamp(cam.anti_alias, 0, kAntiAliasCount - 1)]);
   ResizeTarget(window_w, window_h);
   const Frame f = MakeFrame(cam);
 
-  // 1) The lamps' shadow maps, 2) the world into the internal target.
   ChooseLamps(cam, f);
   DrawShadows(cam);
   const bool mirrored = MirrorVisible(cam, f);
   if (mirrored) {
-    DrawMirrorView(cam, f);  // before the main pass: it has its own target
+    DrawMirrorView(cam, f);
   }
   DrawMainView(cam, f, mirrored);
 
-  // 3) The scene to the window, 4) the 2D overlay on top.
   Composite(cam, f, window_w, window_h);
   if (overlay && !overlay->Empty()) DrawOverlay(*overlay, text);
 }
 
 DoorInstance MakeDoorInstance(const DoorState& d) {
-  const double eased =
-      d.open * d.open * (3.0 - 2.0 * d.open);  // smoothstep: ease the swing
+  const double eased = d.open * d.open * (3.0 - 2.0 * d.open);
   const double swing = kHalfPi * eased;
-  const double along =
-      kHingeBase + kHingeSwingShift * d.swing;  // the post face it swings past
+  const double along = kHingeBase + kHingeSwingShift * d.swing;
   struct DoorInstance di;
-  if (d.passage_along_x) {  // shut, the panel runs south from the north post
+  if (d.passage_along_x) {
     di.hinge_x = d.x + along;
     di.hinge_z = d.y + kHingeAcross;
     di.angle = kHalfPi - d.swing * swing;
-  } else {  // shut, the panel runs east from the west post
+  } else {
     di.hinge_x = d.x + kHingeAcross;
     di.hinge_z = d.y + along;
     di.angle = d.swing * swing;
   }
   return di;
 }
-
-}  // namespace mythos
+}

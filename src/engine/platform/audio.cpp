@@ -10,38 +10,34 @@
 
 namespace mythos {
 namespace {
-
-constexpr size_t kMaxVoices =
-    24;  // one-shots, the voice line and the ambience together
-constexpr float kMinPitch =
-    0.25f;  // slowest playback speed a one-shot may ask for
-constexpr float kVoiceFadeOutSeconds =
-    0.15f;  // a cut voice line fades rather than clicks
+// Further voices are dropped rather than allocating on the audio thread.
+constexpr size_t kMaxVoices = 24;
+constexpr float kMinPitch = 0.25f;
+constexpr float kVoiceFadeOutSeconds = 0.15f;
 constexpr float kAmbienceCrossfadeSeconds = 0.8f;
-constexpr float kDuckEaseSeconds =
-    0.3f;  // how long the ambience takes to duck or recover
-constexpr float kGainEaseSeconds =
-    0.06f;  // placement gains ease over this, so nothing clicks
-constexpr float kSpatialDuckPerGain =
-    2.0f;  // a placed line ducks fully once its louder side reaches 0.5
-constexpr float kCentrePanCompensation =
-    std::numbers::sqrt2_v<float>;  // sqrt(2): brings a centred one-shot back to
-                                   // unit gain
-constexpr int kMixChunkFrames =
-    512;                      // frames mixed per pass of the audio callback
-constexpr int kChannels = 2;  // the mixer's output is stereo
+constexpr float kDuckEaseSeconds = 0.3f;
+constexpr float kGainEaseSeconds = 0.06f;
+// A quiet spatial voice ducks the ambience less: full ducking at 0.5 gain.
+constexpr float kSpatialDuckPerGain = 2.0f;
+// Non-spatial voices pan at 1/sqrt(2) each side (equal power); this restores
+// unity gain.
+constexpr float kCentrePanCompensation = std::numbers::sqrt2_v<float>;
 
-// Gain change per sample that takes `seconds` at `rate`.
-float PerSample(float seconds, int rate) {
+// Frames mixed per pass of the audio callback.
+constexpr int kMixChunkFrames = 512;
+constexpr int kChannels = 2;
+
+// Per-sample increment that covers 0..1 in `seconds`.
+float PerSample(const float seconds, const int rate) {
   return 1.0f / (seconds * static_cast<float>(rate));
 }
 
-// Moves `current` towards `target` by at most `maxStep`.
-float EaseToward(float current, float target, float max_step) {
+// Moves `current` toward `target` by at most `max_step`.
+float EaseToward(const float current, const float target,
+                 const float max_step) {
   return current + std::max(-max_step, std::min(max_step, target - current));
 }
-
-}  // namespace
+}
 
 bool AudioEngine::Init() {
   if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) return false;
@@ -65,7 +61,7 @@ bool AudioEngine::Init() {
 
 void AudioEngine::Shutdown() {
   if (stream_) {
-    SDL_DestroyAudioStream(stream_);  // closes the device it opened
+    SDL_DestroyAudioStream(stream_);
     stream_ = nullptr;
   }
 }
@@ -74,7 +70,10 @@ int AudioEngine::LoadDir(const std::string& dir,
                          const std::vector<std::string>& names) {
   int loaded = 0;
   for (const auto& name : names) {
-    const std::string path = dir + "/" + name + ".wav";
+    std::string path = dir;
+    path += '/';
+    path += name;
+    path += ".wav";
     SDL_AudioSpec spec{};
     Uint8* data = nullptr;
     Uint32 len = 0;
@@ -82,8 +81,7 @@ int AudioEngine::LoadDir(const std::string& dir,
     if (!vfs::ReadFile(path, file)) continue;
     SDL_IOStream* io = SDL_IOFromConstMem(file.data(), file.size());
     if (!io || !SDL_LoadWAV_IO(io, true, &spec, &data, &len)) continue;
-    // The mixer wants mono float at the device rate (the stream converts to the
-    // device).
+
     SDL_AudioSpec target{};
     target.format = SDL_AUDIO_F32;
     target.channels = 1;
@@ -95,8 +93,9 @@ int AudioEngine::LoadDir(const std::string& dir,
     SDL_free(data);
     if (!ok) continue;
     Clip clip;
-    const float* converted = reinterpret_cast<const float*>(out);
-    clip.samples.assign(converted, converted + out_len / sizeof(float));
+    const auto* converted = reinterpret_cast<const float*>(out);
+    const size_t count = static_cast<size_t>(out_len) / sizeof(float);
+    clip.samples.assign(converted, converted + count);
     SDL_free(out);
     if (clip.samples.empty()) continue;
     SDL_LockAudioStream(stream_);
@@ -107,7 +106,8 @@ int AudioEngine::LoadDir(const std::string& dir,
   return loaded;
 }
 
-void AudioEngine::Play(const std::string& name, float gain, float pitch) {
+void AudioEngine::Play(const std::string& name, const float gain,
+                       const float pitch) {
   if (!stream_) return;
   const Clip* clip = FindClip(name);
   if (!clip) return;
@@ -118,8 +118,8 @@ void AudioEngine::Play(const std::string& name, float gain, float pitch) {
   StartVoice(v);
 }
 
-void AudioEngine::PlayVoice(const std::string& name, float gain, bool spatial,
-                            bool radio) {
+void AudioEngine::PlayVoice(const std::string& name, const float gain,
+                            const bool spatial, const bool radio) {
   if (!stream_) return;
   StopVoice();
   const Clip* clip = FindClip(name);
@@ -130,7 +130,6 @@ void AudioEngine::PlayVoice(const std::string& name, float gain, bool spatial,
   v.voice = true;
   v.spatial = spatial;
   if (radio) {
-    // A different crackle every time: seeded from how many lines have played.
     v.radio = std::make_shared<RadioFm>(rate_, 0x9e3779b9u * ++radio_lines_);
   }
   StartVoice(v);
@@ -157,15 +156,14 @@ void AudioEngine::StopVoice() {
   SDL_UnlockAudioStream(stream_);
 }
 
-void AudioEngine::SetVoicePlacement(float left, float right) {
+void AudioEngine::SetVoicePlacement(const float left, const float right) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);
   for (auto& v : voices_) {
     if (!v.voice || !v.spatial || v.fade_rate < 0.0f) continue;
     v.tgt_l = std::max(0.0f, left);
     v.tgt_r = std::max(0.0f, right);
-    if (!v.placed) {  // the first placement is where it starts: no ramp up from
-                      // silence
+    if (!v.placed) {
       v.placed = true;
       v.cur_l = v.tgt_l;
       v.cur_r = v.tgt_r;
@@ -174,14 +172,14 @@ void AudioEngine::SetVoicePlacement(float left, float right) {
   SDL_UnlockAudioStream(stream_);
 }
 
-void AudioEngine::SetPaused(bool paused) {
+void AudioEngine::SetPaused(const bool paused) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);
   paused_ = paused;
   SDL_UnlockAudioStream(stream_);
 }
 
-void AudioEngine::SetVoiceDuck(float duck) {
+void AudioEngine::SetVoiceDuck(const float duck) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);
   voice_duck_ = std::max(0.0f, std::min(1.0f, duck));
@@ -194,7 +192,8 @@ double AudioEngine::ClipSeconds(const std::string& name) const {
   return static_cast<double>(it->second.samples.size()) / rate_;
 }
 
-void AudioEngine::SetVolumes(float master, float ambience, float effects) {
+void AudioEngine::SetVolumes(const float master, const float ambience,
+                             const float effects) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);
   effect_scale_ = master * effects;
@@ -215,7 +214,7 @@ int AudioEngine::AddSource(const std::string& name) {
   return id;
 }
 
-void AudioEngine::SetSource(int id, float left, float right) {
+void AudioEngine::SetSource(const int id, const float left, const float right) {
   if (!stream_ || id < 0) return;
   SDL_LockAudioStream(stream_);
   if (static_cast<size_t>(id) < sources_.size()) {
@@ -232,13 +231,13 @@ void AudioEngine::ClearSources() {
   SDL_UnlockAudioStream(stream_);
 }
 
-void AudioEngine::PlayLoop(const std::string& name, float gain) {
+void AudioEngine::PlayLoop(const std::string& name, const float gain) {
   if (!stream_ || name == current_loop_) return;
   current_loop_ = name;
   const float fade_per_sample = PerSample(kAmbienceCrossfadeSeconds, rate_);
   SDL_LockAudioStream(stream_);
   for (auto& v : voices_) {
-    if (v.loop) v.fade_rate = -fade_per_sample;  // fade the old ambience out
+    if (v.loop) v.fade_rate = -fade_per_sample;
   }
   const Clip* clip = FindClip(name);
   if (clip && voices_.size() < kMaxVoices) {
@@ -253,11 +252,12 @@ void AudioEngine::PlayLoop(const std::string& name, float gain) {
   SDL_UnlockAudioStream(stream_);
 }
 
-void SDLCALL AudioEngine::Callback(void* userdata, SDL_AudioStream* stream,
-                                   int additional, int /*total*/) {
+void SDLCALL AudioEngine::Callback(void* const userdata,
+                                   SDL_AudioStream* const stream,
+                                   int additional, int) {
   auto* self = static_cast<AudioEngine*>(userdata);
-  float buf[kMixChunkFrames * kChannels];  // mixed in chunks; the stream is
-                                           // locked by SDL while this runs
+  float buf[kMixChunkFrames * kChannels];
+
   const int bytes_per_frame = static_cast<int>(kChannels * sizeof(float));
   while (additional > 0) {
     const int frames = std::min(
@@ -270,7 +270,7 @@ void SDLCALL AudioEngine::Callback(void* userdata, SDL_AudioStream* stream,
   }
 }
 
-void AudioEngine::Mix(float* out, int frames) {
+void AudioEngine::Mix(float* const out, const int frames) {
   const float duck_start = UpdateDuck(frames);
   MixVoices(out, frames, duck_start, duck_level_);
   MixSources(out, frames);
@@ -280,10 +280,7 @@ void AudioEngine::Mix(float* out, int frames) {
   }
 }
 
-float AudioEngine::UpdateDuck(int frames) {
-  // The ambience ducks (over ~0.3s) while a voice line is playing and comes
-  // back after. A line placed in the world ducks it only as much as it is
-  // audible; a paused line not at all.
+float AudioEngine::UpdateDuck(const int frames) {
   float speaking = 0.0f;
   for (const auto& v : voices_) {
     if (!v.voice || v.fade_rate < 0.0f || paused_) continue;
@@ -303,12 +300,12 @@ float AudioEngine::UpdateDuck(int frames) {
   return duck_start;
 }
 
-void AudioEngine::MixVoices(float* out, int frames, float duck_start,
-                            float duck_end) {
+void AudioEngine::MixVoices(float* const out, const int frames,
+                            const float duck_start, const float duck_end) {
   const float place_ease = PerSample(kGainEaseSeconds, rate_);
   for (auto& v : voices_) {
     if (paused_ && !v.loop) {
-      continue;  // frozen: it carries on from this sample when resumed
+      continue;
     }
     const auto& samples = v.clip->samples;
     for (int i = 0; i < frames; ++i) {
@@ -318,31 +315,29 @@ void AudioEngine::MixVoices(float* out, int frames, float duck_start,
       }
       v.fade = std::min(1.0f, std::max(0.0f, v.fade + v.fade_rate));
       float scale = 1.0f;
-      if (v.loop) {  // the ambience: live volume, and the duck ramped across
-                     // the chunk
+      if (v.loop) {
         const float t = static_cast<float>(i) / static_cast<float>(frames);
         scale = loop_scale_ * (duck_start + (duck_end - duck_start) * t);
       }
       float raw = samples[static_cast<size_t>(v.pos)];
       if (v.radio) raw = v.radio->Process(raw);
       const float sample = raw * v.gain * v.fade * scale;
+      const size_t idx = static_cast<size_t>(i) * kChannels;
       if (v.spatial) {
         v.cur_l = EaseToward(v.cur_l, v.tgt_l, place_ease);
         v.cur_r = EaseToward(v.cur_r, v.tgt_r, place_ease);
-        out[i * kChannels] += sample * v.cur_l;
-        out[i * kChannels + 1] += sample * v.cur_r;
+        out[idx] += sample * v.cur_l;
+        out[idx + 1] += sample * v.cur_r;
       } else {
-        out[i * kChannels] += sample * v.pan_l * kCentrePanCompensation;
-        out[i * kChannels + 1] += sample * v.pan_r * kCentrePanCompensation;
+        out[idx] += sample * v.pan_l * kCentrePanCompensation;
+        out[idx + 1] += sample * v.pan_r * kCentrePanCompensation;
       }
       v.pos += v.step;
     }
   }
 }
 
-void AudioEngine::MixSources(float* out, int frames) {
-  // Positional sources: looping, their gains eased (~60ms) towards what the
-  // frame set.
+void AudioEngine::MixSources(float* const out, const int frames) {
   if (paused_) return;
   const float ease = PerSample(kGainEaseSeconds, rate_);
   for (auto& src : sources_) {
@@ -354,8 +349,9 @@ void AudioEngine::MixSources(float* out, int frames) {
       src.left = EaseToward(src.left, src.target_l, ease);
       src.right = EaseToward(src.right, src.target_r, ease);
       const float sample = samples[static_cast<size_t>(src.pos)] * loop_scale_;
-      out[i * kChannels] += sample * src.left;
-      out[i * kChannels + 1] += sample * src.right;
+      const size_t idx = static_cast<size_t>(i) * kChannels;
+      out[idx] += sample * src.left;
+      out[idx + 1] += sample * src.right;
       src.pos += 1.0;
     }
   }
@@ -363,10 +359,9 @@ void AudioEngine::MixSources(float* out, int frames) {
 
 void AudioEngine::RemoveFinishedVoices() {
   std::erase_if(voices_, [](const Voice& v) {
-    if (v.fade_rate < 0.0f && v.fade <= 0.0f) return true;  // faded out
+    if (v.fade_rate < 0.0f && v.fade <= 0.0f) return true;
     if (v.loop) return false;
     return v.pos >= static_cast<double>(v.clip->samples.size());
   });
 }
-
-}  // namespace mythos
+}

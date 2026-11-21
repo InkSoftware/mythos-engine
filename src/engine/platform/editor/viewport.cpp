@@ -1,27 +1,33 @@
 #include "engine/platform/editor/viewport.h"
 
+// Viewport renderer and camera / picking math for the level editor.
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <numbers>
 
 #include "engine/platform/gl/gl_api.h"
 
 namespace mythos::editor {
-
 namespace {
-
-constexpr float kPi = 3.14159265358979f;
+constexpr float kPi = std::numbers::pi_v<float>;
+// Enums that gl_api does not declare (the engine's GL subset has no line or
+// polygon-mode entry points).
 constexpr gl::GLenum kLines = 0x0001;
 constexpr gl::GLenum kFrontAndBack = 0x0408;
 constexpr gl::GLenum kLineMode = 0x1B01;
 constexpr gl::GLenum kFillMode = 0x1B02;
 
-// Entry points the engine's loader leaves out.
+// Entry points the engine's loader does not provide, fetched in Init. Either
+// may stay null, which just disables the wireframe mode or the depth-write
+// toggle.
 void(MYTHOS_GL_CALL* g_depth_mask)(gl::GLboolean) = nullptr;
 void(MYTHOS_GL_CALL* g_polygon_mode)(gl::GLenum, gl::GLenum) = nullptr;
 
+// The world shader: fixed sun and fill lights plus a hemisphere term, so the
+// editor needs no lamp or shadow setup. u_clip_y implements the cutaway.
 const char* kWorldVs = R"(#version 410 core
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec3 a_normal;
@@ -43,9 +49,9 @@ in vec3 v_normal;
 in vec3 v_pos;
 in vec2 v_uv;
 uniform sampler2D u_tex;
-uniform vec4 u_tint;      // rgb brightness, a opacity
+uniform vec4 u_tint;
 uniform float u_clip_y;
-uniform int u_flat;       // 1: no texture, grey
+uniform int u_flat;
 uniform int u_emissive;
 uniform int u_alpha_test;
 out vec4 o_color;
@@ -62,6 +68,7 @@ void main() {
 }
 )";
 
+// The overlay shader: vertex colors, no lighting.
 const char* kColorVs = R"(#version 410 core
 layout(location = 0) in vec3 a_pos;
 layout(location = 1) in vec4 a_color;
@@ -78,11 +85,9 @@ in vec4 v_color;
 out vec4 o_color;
 void main() { o_color = v_color; }
 )";
+}
 
-}  // namespace
-
-// ---------------------------------------------------------------- maths
-
+// Column-major product, a * b.
 Mat4 Multiply(const Mat4& a, const Mat4& b) {
   Mat4 r;
   for (int c = 0; c < 4; ++c)
@@ -94,16 +99,18 @@ Mat4 Multiply(const Mat4& a, const Mat4& b) {
   return r;
 }
 
-float RayHitsHorizontalPlane(const Ray& r, float height) {
+float RayHitsHorizontalPlane(const Ray& r, const float height) {
   if (std::abs(r.d.y) < 1e-6f) return -1;
   const float t = (height - r.o.y) / r.d.y;
   return t >= 0 ? t : -1;
 }
 
-float RayHitsBox(const Ray& r, Vec3 centre, Vec3 half, float yaw) {
-  // Into the box's own frame (turn the ray by -yaw about y), then a slab test.
+// Slab test in the box's own frame: the ray is turned by -yaw about the box
+// center so the box becomes axis aligned.
+float RayHitsBox(const Ray& r, const Vec3 centre, const Vec3 half,
+                 const float yaw) {
   const float c = std::cos(-yaw), s = std::sin(-yaw);
-  auto turn = [&](Vec3 v) {
+  auto turn = [&](const Vec3 v) {
     return Vec3{v.x * c - v.z * s, v.y, v.x * s + v.z * c};
   };
   const Vec3 o = turn(r.o - centre), d = turn(r.d);
@@ -124,7 +131,8 @@ float RayHitsBox(const Ray& r, Vec3 centre, Vec3 half, float yaw) {
   return t0;
 }
 
-float RayHitsSphere(const Ray& r, Vec3 centre, float radius) {
+// Falls back to the far root (returning 0) when the origin is inside.
+float RayHitsSphere(const Ray& r, const Vec3 centre, const float radius) {
   const Vec3 oc = r.o - centre;
   const float b = Dot(oc, r.d), c = Dot(oc, oc) - radius * radius;
   const float disc = b * b - c;
@@ -133,23 +141,25 @@ float RayHitsSphere(const Ray& r, Vec3 centre, float radius) {
   return t >= 0 ? t : (-b + std::sqrt(disc) >= 0 ? 0.0f : -1.0f);
 }
 
-bool NearestOnLine(const Ray& r, Vec3 a, Vec3 da, float* t) {
-  // Closest points of two lines: a + t*da and r.o + s*r.d.
+// Closest approach of two lines, solved for the parameter on the first.
+bool NearestOnLine(const Ray& r, const Vec3 a, const Vec3 da, float* const t) {
   const Vec3 w = a - r.o;
   const float b = Dot(da, r.d), d = Dot(da, w), e = Dot(r.d, w);
-  const float den = Dot(da, da) - b * b;  // r.d is a unit vector
+  const float den = Dot(da, da) - b * b;
   if (std::abs(den) < 1e-6f) return false;
   *t = (b * e - d) / den;
   return true;
 }
 
-// ---------------------------------------------------------------- camera
-
+// Heading turns about y (0 looks along +x); positive pitch tilts downward.
 Vec3 OrbitCamera::Forward() const {
   const float cp = std::cos(pitch);
   return {cp * std::cos(heading), -std::sin(pitch), cp * std::sin(heading)};
 }
 
+// Right-handed look-at. For a vertical view the side vector would be
+// degenerate, so +z stands in for the up hint. PickRay and Project build the
+// same basis.
 Mat4 OrbitCamera::View() const {
   const Vec3 eye = Eye(), f = Forward();
   const Vec3 up0{0, 1, 0};
@@ -176,7 +186,8 @@ Mat4 OrbitCamera::View() const {
   return m;
 }
 
-Mat4 OrbitCamera::Projection(float aspect) const {
+// Standard OpenGL perspective; fov_deg is vertical.
+Mat4 OrbitCamera::Projection(const float aspect) const {
   const float n = 0.05f, f = 600.0f;
   const float t = 1.0f / std::tan(fov_deg * kPi / 360.0f);
   Mat4 m;
@@ -189,7 +200,8 @@ Mat4 OrbitCamera::Projection(float aspect) const {
   return m;
 }
 
-Ray OrbitCamera::PickRay(float nx, float ny, float aspect) const {
+Ray OrbitCamera::PickRay(const float nx, const float ny,
+                         const float aspect) const {
   const Vec3 f = Forward();
   const Vec3 s = Normalize(
       Cross(f, std::abs(f.y) > 0.9999f ? Vec3{0, 0, 1} : Vec3{0, 1, 0}));
@@ -199,12 +211,14 @@ Ray OrbitCamera::PickRay(float nx, float ny, float aspect) const {
   return {Eye(), d};
 }
 
-void OrbitCamera::Orbit(float dh, float dp) {
+// The pitch limits keep the camera off the poles (1.5533 rad is about 89
+// degrees, which is also what TopDown uses).
+void OrbitCamera::Orbit(const float dh, const float dp) {
   heading += dh;
   pitch = std::clamp(pitch + dp, -1.5f, 1.5533f);
 }
 
-void OrbitCamera::Pan(float dx, float dy, float height_px) {
+void OrbitCamera::Pan(const float dx, const float dy, const float height_px) {
   const float world_per_px = 2.0f * distance *
                              std::tan(fov_deg * kPi / 360.0f) /
                              std::max(1.0f, height_px);
@@ -215,29 +229,31 @@ void OrbitCamera::Pan(float dx, float dy, float height_px) {
   target = target - s * (dx * world_per_px) + u * (dy * world_per_px);
 }
 
-void OrbitCamera::Zoom(float wheel) {
+// Exponential, so each notch is the same relative step at any distance.
+void OrbitCamera::Zoom(const float wheel) {
   distance = std::clamp(distance * std::pow(0.88f, wheel), 0.5f, 300.0f);
 }
 
-void OrbitCamera::Fly(float forward, float right, float up) {
+void OrbitCamera::Fly(const float forward, const float right, const float up) {
   const Vec3 f = Forward();
   target = target + f * forward + Right() * right + Vec3{0, up, 0};
 }
 
-void OrbitCamera::Look(float dh, float dp) {
+// Re-aims about the eye: the target is moved so the eye stays put.
+void OrbitCamera::Look(const float dh, const float dp) {
   const Vec3 eye = Eye();
   heading += dh;
   pitch = std::clamp(pitch + dp, -1.5f, 1.5533f);
   target = eye + Forward() * distance;
 }
 
-void OrbitCamera::FocusOn(Vec3 point, float radius) {
+void OrbitCamera::FocusOn(const Vec3 point, const float radius) {
   target = point;
   distance = std::clamp(radius * 3.0f, 2.0f, 80.0f);
 }
 
-bool OrbitCamera::Project(Vec3 p, float w, float h, float* sx,
-                          float* sy) const {
+bool OrbitCamera::Project(const Vec3 p, const float w, const float h,
+                          float* const sx, float* const sy) const {
   const Vec3 rel = p - Eye();
   const Vec3 f = Forward();
   const float depth = Dot(rel, f);
@@ -254,9 +270,9 @@ bool OrbitCamera::Project(Vec3 p, float w, float h, float* sx,
   return true;
 }
 
-// ---------------------------------------------------------------- viewport
-
-bool Viewport::Init(const mythos::TextureLibrary* textures) {
+// Attribute locations match the vertex layout of mythos::Vertex (position,
+// normal, uv) and of ColorVertex (position, color).
+bool Viewport::Init(const mythos::TextureLibrary* const textures) {
   textures_ = textures;
   g_depth_mask = reinterpret_cast<decltype(g_depth_mask)>(
       SDL_GL_GetProcAddress("glDepthMask"));
@@ -277,6 +293,8 @@ unsigned Viewport::TextureId(const std::string& name) {
   return TextureFor(name);
 }
 
+// Uploads flipped rows (the surfaces are stored top-down; GL wants bottom-up)
+// with mipmaps, and keeps the texture for the life of the viewport.
 unsigned Viewport::TextureFor(const std::string& name) {
   auto it = gl_textures_.find(name);
   if (it != gl_textures_.end()) return it->second.Id();
@@ -293,7 +311,10 @@ unsigned Viewport::TextureFor(const std::string& name) {
   return id;
 }
 
-void Viewport::SetLayer(int slot, const std::vector<mythos::Batch>& batches) {
+// mythos::Vertex is laid out as position (3 floats), normal (3), uv (2),
+// which the attribute pointers below mirror.
+void Viewport::SetLayer(const int slot,
+                        const std::vector<mythos::Batch>& batches) {
   Layer& layer = layers_[slot];
   layer.batches.clear();
   for (const auto& b : batches) {
@@ -322,7 +343,7 @@ void Viewport::SetLayer(int slot, const std::vector<mythos::Batch>& batches) {
   gl::BindVertexArray(0);
 }
 
-void Viewport::SetStyle(int slot, const LayerStyle& style) {
+void Viewport::SetStyle(const int slot, const LayerStyle& style) {
   layers_[slot].style = style;
 }
 
@@ -332,13 +353,17 @@ void Viewport::ClearOverlay() {
   tris_.clear();
 }
 
-void Viewport::Line(Vec3 a, Vec3 b, Rgba c, bool on_top) {
+void Viewport::Line(const Vec3 a, const Vec3 b, const Rgba c,
+                    const bool on_top) {
   auto& v = on_top ? lines_top_ : lines_;
   v.push_back({a.x, a.y, a.z, c.r, c.g, c.b, c.a});
   v.push_back({b.x, b.y, b.z, c.r, c.g, c.b, c.a});
 }
 
-void Viewport::WireBox(Vec3 centre, Vec3 half, float yaw, Rgba c, bool on_top) {
+// Corner i takes its sign on x, y and z from bits 0, 1 and 2 of i; the 12
+// edges join corners that differ in one bit.
+void Viewport::WireBox(const Vec3 centre, const Vec3 half, const float yaw,
+                       const Rgba c, const bool on_top) {
   const float cs = std::cos(yaw), sn = std::sin(yaw);
   Vec3 p[8];
   for (int i = 0; i < 8; ++i) {
@@ -352,7 +377,8 @@ void Viewport::WireBox(Vec3 centre, Vec3 half, float yaw, Rgba c, bool on_top) {
   for (const auto& e : edges) Line(p[e[0]], p[e[1]], c, on_top);
 }
 
-void Viewport::Circle(Vec3 centre, float radius, Rgba c, bool on_top, int n) {
+void Viewport::Circle(const Vec3 centre, const float radius, const Rgba c,
+                      const bool on_top, const int n) {
   for (int i = 0; i < n; ++i) {
     const float a0 = 2 * kPi * i / n, a1 = 2 * kPi * (i + 1) / n;
     Line(centre + Vec3{std::cos(a0) * radius, 0, std::sin(a0) * radius},
@@ -361,7 +387,10 @@ void Viewport::Circle(Vec3 centre, float radius, Rgba c, bool on_top, int n) {
   }
 }
 
-void Viewport::Arrow(Vec3 from, Vec3 to, Rgba c, float head) {
+// The head is four lines fanned back from the tip; the side axis avoids a
+// vertical direction so the cross product stays well defined.
+void Viewport::Arrow(const Vec3 from, const Vec3 to, const Rgba c,
+                     const float head) {
   Line(from, to, c, true);
   const Vec3 d = Normalize(to - from);
   const Vec3 side =
@@ -373,12 +402,14 @@ void Viewport::Arrow(Vec3 from, Vec3 to, Rgba c, float head) {
     Line(to, base + o, c, true);
 }
 
-void Viewport::Quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Rgba col) {
+void Viewport::Quad(const Vec3 a, const Vec3 b, const Vec3 c, const Vec3 d,
+                    const Rgba col) {
   for (const Vec3& p : {a, b, c, a, c, d})
     tris_.push_back({p.x, p.y, p.z, col.r, col.g, col.b, col.a});
 }
 
-void Viewport::SolidBox(Vec3 centre, Vec3 half, float yaw, Rgba c) {
+void Viewport::SolidBox(const Vec3 centre, const Vec3 half, const float yaw,
+                        const Rgba c) {
   const float cs = std::cos(yaw), sn = std::sin(yaw);
   Vec3 p[8];
   for (int i = 0; i < 8; ++i) {
@@ -391,7 +422,10 @@ void Viewport::SolidBox(Vec3 centre, Vec3 half, float yaw, Rgba c) {
   for (const auto& f : faces) Quad(p[f[0]], p[f[1]], p[f[2]], p[f[3]], c);
 }
 
-void Viewport::DrawLayer(const Layer& layer, const Mat4& mvp, ShadeMode mode) {
+// Translucent layers (alpha < 1) are blended; Render draws them after the
+// opaque ones.
+void Viewport::DrawLayer(const Layer& layer, const Mat4& mvp,
+                         const ShadeMode mode) {
   if (!layer.style.visible || layer.batches.empty()) return;
   world_.Use();
   world_.SetMat4("u_mvp", mvp.m);
@@ -416,8 +450,8 @@ void Viewport::DrawLayer(const Layer& layer, const Mat4& mvp, ShadeMode mode) {
   if (ghost) gl::Disable(gl::kBlend);
 }
 
-void Viewport::DrawColor(const std::vector<ColorVertex>& v, unsigned mode,
-                         const Mat4& mvp, bool depth_test) {
+void Viewport::DrawColor(const std::vector<ColorVertex>& v, const unsigned mode,
+                         const Mat4& mvp, const bool depth_test) {
   if (v.empty()) return;
   color_.Use();
   color_.SetMat4("u_mvp", mvp.m);
@@ -436,8 +470,11 @@ void Viewport::DrawColor(const std::vector<ColorVertex>& v, unsigned mode,
   gl::DrawArrays(mode, 0, static_cast<int>(v.size()));
 }
 
-unsigned Viewport::Render(const OrbitCamera& cam, int w, int h, ShadeMode mode,
-                          Rgba background) {
+// Order: opaque layers, ghost layers, depth-tested lines, blended triangles
+// without depth writes, then the on-top lines. Wireframe mode applies to the
+// world layers only, never to the overlay.
+unsigned Viewport::Render(const OrbitCamera& cam, int w, int h,
+                          const ShadeMode mode, const Rgba background) {
   w = std::max(w, 16);
   h = std::max(h, 16);
   target_.Resize(w, h);
@@ -452,7 +489,7 @@ unsigned Viewport::Render(const OrbitCamera& cam, int w, int h, ShadeMode mode,
 
   if (mode == ShadeMode::kWireframe && g_polygon_mode)
     g_polygon_mode(kFrontAndBack, kLineMode);
-  for (int pass = 0; pass < 2; ++pass)  // solid layers, then the faint ones
+  for (int pass = 0; pass < 2; ++pass)
     for (int i = 0; i < kSlots; ++i) {
       const bool ghost = layers_[i].style.alpha < 0.999f;
       if (ghost == (pass == 1)) DrawLayer(layers_[i], mvp, mode);
@@ -475,5 +512,4 @@ unsigned Viewport::Render(const OrbitCamera& cam, int w, int h, ShadeMode mode,
   mythos::RenderTarget::BindWindow();
   return target_.Color().Id();
 }
-
-}  // namespace mythos::editor
+}

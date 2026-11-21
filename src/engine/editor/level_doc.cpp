@@ -5,9 +5,8 @@
 #include <sstream>
 
 namespace mythos::editor {
-
 namespace {
-
+// Strips spaces, tabs and carriage returns from both ends.
 std::string Trim(const std::string& s) {
   size_t a = 0, b = s.size();
   while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r')) ++a;
@@ -15,16 +14,15 @@ std::string Trim(const std::string& s) {
     --b;
   return s.substr(a, b - a);
 }
+}
 
-}  // namespace
-
-bool LevelDoc::Set(int x, int y, char glyph) {
+bool LevelDoc::Set(const int x, const int y, const char glyph) {
   if (!InBounds(x, y)) return false;
   rows[y][x] = glyph;
   return true;
 }
 
-void LevelDoc::Resize(int width, int height, char fill) {
+void LevelDoc::Resize(const int width, const int height, const char fill) {
   if (width < 1 || height < 1) return;
   const int old_w = Width();
   for (auto& r : rows) r.resize(static_cast<size_t>(width), fill);
@@ -36,7 +34,7 @@ void LevelDoc::Resize(int width, int height, char fill) {
   std::erase_if(decor, outside);
 }
 
-std::string FormatNumber(double v) {
+std::string FormatNumber(const double v) {
   char buf[64];
   std::snprintf(buf, sizeof buf, "%.4f", v);
   std::string s = buf;
@@ -48,7 +46,8 @@ std::string FormatNumber(double v) {
   return s;
 }
 
-bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error) {
+bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
+                   std::string* const error) {
   LevelDoc doc;
   std::istringstream in(text);
   std::string raw, section;
@@ -61,6 +60,7 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error) {
     const std::string line = Trim(raw);
     if (line.empty()) continue;
     if (line[0] == ';') {
+      // Only comments before `[map]` are kept as the header.
       if (!seen_map) doc.header.push_back(Trim(line.substr(1)));
       continue;
     }
@@ -70,10 +70,12 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error) {
       continue;
     }
     if (section == "[map]") {
+      // Rows are kept untrimmed (a glyph may be a space), but a file with
+      // trailing blanks on the lines is tolerated.
       if (!doc.rows.empty() && doc.rows[0].size() != raw.size() &&
           doc.rows[0].size() != Trim(raw).size())
         return fail("rows differ in length: " + line);
-      doc.rows.push_back(raw.substr(0, raw.find_last_not_of("\r") + 1));
+      doc.rows.push_back(raw.substr(0, raw.find_last_not_of('\r') + 1));
     } else if (section == "[furniture]" || section == "[decor]") {
       std::istringstream ls(line);
       Item it;
@@ -118,5 +120,4 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
          FormatNumber(i.off_z) + " " + FormatNumber(i.lift) + "\n";
   return s;
 }
-
-}  // namespace mythos::editor
+}

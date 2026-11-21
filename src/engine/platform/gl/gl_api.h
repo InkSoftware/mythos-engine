@@ -1,11 +1,11 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_GL_GL_API_H_
 #define MYTHOS_ENGINE_PLATFORM_GL_GL_API_H_
-// Minimal OpenGL 4.1 core-profile function loader. Entry points are fetched
-// with SDL_GL_GetProcAddress, so no GL headers or extra libraries are needed on
-// macOS, Linux or Windows. Only the calls the game uses are declared.
 
 #include <cstddef>
 
+// Runtime-loaded OpenGL 4.1 core entry points. No GL library is linked: SDL
+// resolves each function after the context exists. Only the types, constants
+// and functions the engine uses are declared.
 #ifdef _WIN32
 #define MYTHOS_GL_CALL __stdcall
 #else
@@ -13,7 +13,6 @@
 #endif
 
 namespace gl {
-
 using GLenum = unsigned int;
 using GLuint = unsigned int;
 using GLint = int;
@@ -74,10 +73,11 @@ constexpr GLenum kFramebufferComplete = 0x8CD5;
 constexpr GLenum kReadFramebuffer = 0x8CA8;
 constexpr GLenum kDrawFramebuffer = 0x8CA9;
 constexpr GLenum kMaxSamples = 0x8D57;
-constexpr GLenum kNearestFilter =
-    0x2600;  // the filter argument of BlitFramebuffer
+constexpr GLenum kNearestFilter = 0x2600;
 
-// X(return type, name, parameters...)
+// X-macro list of entry points: X(return type, Name, parameters...). Each Name
+// must be exactly the OpenGL name without the `gl` prefix, because the loader
+// builds the symbol from it. Calls are made as `gl::Name(...)`.
 #define MYTHOS_GL_FUNCTIONS(X)                                               \
   X(void, Viewport, GLint x, GLint y, GLsizei w, GLsizei h)                  \
   X(void, ClearColor, GLfloat r, GLfloat g, GLfloat b, GLfloat a)            \
@@ -168,15 +168,16 @@ constexpr GLenum kNearestFilter =
 MYTHOS_GL_FUNCTIONS(MYTHOS_GL_DECLARE)
 #undef MYTHOS_GL_DECLARE
 
-// Loads every function above. Must be called after the GL context is current.
+// Resolves every entry point through SDL; needs a current GL context. Logs each
+// missing one and returns false if any is absent.
 bool LoadFunctions();
-// Forgets every function (call when the context is destroyed). RAII wrappers
-// check for this, so they can safely outlive the context without calling into a
-// dead driver.
+
+// Nulls every entry point (called when the context is destroyed).
 void UnloadFunctions();
-// True while the functions are loaded, i.e. a context exists.
+
+// True while the entry points are loaded. GL object wrappers check this before
+// deleting, so they may safely outlive the context.
 bool Loaded();
+}
 
-}  // namespace gl
-
-#endif  // MYTHOS_ENGINE_PLATFORM_GL_GL_API_H_
+#endif

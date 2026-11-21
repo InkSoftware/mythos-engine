@@ -1,15 +1,5 @@
 #ifndef MYTHOS_ENGINE_EDITOR_ADAPTER_H_
 #define MYTHOS_ENGINE_EDITOR_ADAPTER_H_
-// What a game teaches the level editor. The editor itself knows the engine's
-// formats: the level files (assets/levels/*.txt, with their [furniture] and
-// [decor] lists) and the tile legend (assets/data/tiles.json). Everything a
-// game adds on top, such as props or lamps kept in its own JSON files, which
-// levels belong to which scenario, and how to run the game for a preview, comes
-// through an Adapter. A game derives from it and passes it to RunEditor(); with
-// no adapter the editor edits levels, furniture and decor only.
-//
-// An adapter is pure logic over JSON, so it is unit-tested without a window.
-// No SDL, GL or UI here.
 
 #include <map>
 #include <string>
@@ -20,190 +10,251 @@
 #include "engine/gfx/textures.h"
 
 namespace mythos::editor {
-
-// The game's JSON files, by name: "props" is assets/data/props.json. The
-// editor loads and saves them (two-space indent, a final newline), keeps them
-// in the undo history and tracks whether they changed; the adapter reads and
-// edits the values.
+// The editor's model of the engine's level files and the game's JSON data. A
+// `DataSet` maps a data file name (as listed by `Adapter::DataFiles`, without
+// directory or ".json") to its parsed contents.
+//
+// This header is the whole contract between the generic level editor and a
+// game: the game derives from `Adapter` and the editor never names a game.
 using DataSet = std::map<std::string, json::Value>;
 
-// A thing on a level. kind 0 and 1 are the level file's own lines; a game's
-// kinds start at kFirstGameKind.
-constexpr int kFurniture = 0;  // a [furniture] line (solid, fills one cell)
-constexpr int kDecor = 1;      // a [decor] line (loose, off the cell grid)
+// Entity kinds. The first two are built into the editor (the `[furniture]` and
+// `[decor]` sections of a level); a game's own kinds start at `kFirstGameKind`.
+constexpr int kFurniture = 0;
+constexpr int kDecor = 1;
 constexpr int kFirstGameKind = 16;
 
+// Identifies one editable thing. Built-in kinds use `index` (position in the
+// level's list); a game kind may use `index`, `id` or both. `index` is -1 when
+// the reference is empty or invalid.
 struct EntityRef {
   int kind = kFurniture;
-  int index = -1;  // position in its list
-  std::string id;  // a key, for things a game stores by name
+  int index = -1;
+  std::string id;
+
   bool operator==(const EntityRef&) const = default;
 };
 
-// Where an entity stands: world x / z on the map plane, y up (metres above the
-// floor), yaw in degrees (the level files' convention: 0 south, 90 east).
+// Position of an entity in world units (x = column, z = row, y up) and its yaw
+// in degrees (0 faces +z). `has_yaw` is false for things that cannot turn.
 struct Pose {
   double x = 0, y = 0, z = 0, yaw = 0;
   bool has_yaw = false;
 };
 
-// What the editor is showing: a level, and the game's context for it (a
-// scenario such as an era or a chapter that decides which lamps, rooms and
-// floors belong to the level; "" when a game has none).
+// Which level, and which game-defined context (a variant such as an era), is
+// being edited.
 struct Where {
   std::string level, context;
 };
 
-// Where a level sits in the game.
+// How a level is grouped and stacked in the editor's level list.
 struct LevelInfo {
-  std::string group;     // the Levels panel heading ("" = all in one list)
-  int group_order = 0;   // headings are listed by this, then by name
-  int floor = 0;         // its place in a stack of floors
-  bool stacked = false;  // floors are drawn one above the other (kFloorPitch)
-  bool outdoor = false;  // no ceiling, a sky
-  std::vector<std::string> contexts;  // the contexts that use this level
+  std::string group;
+  int group_order = 0;
+  int floor = 0;
+  // True when the level is one floor of a vertical stack of levels drawn
+  // together; `floor` is its position in that stack.
+  bool stacked = false;
+  bool outdoor = false;
+  std::vector<std::string> contexts;
 };
 
-// How the viewport draws a thing the game places.
+// How the viewport draws an entity that is not a plain model.
 enum class Shape {
-  kModel,   // a model standing at its pose
-  kLight,   // a cross with a stem to the floor; the radius shows when picked
-  kMarker,  // a small circle
-  kActor,   // a circle and an arrow along facing_deg (a spawn point)
-  kRegion,  // a box over map cells; moved in the Inspector or by its pose
+  kModel,
+  kLight,
+  kMarker,
+  kActor,
+  kRegion,
 };
+
+// What the viewport needs to draw and pick an entity. Which fields apply
+// depends on `shape`: `model` for kModel, `radius` and `color` for kLight,
+// `facing_deg` for kActor, and the x0..z1 rectangle (world units) for kRegion.
 struct Visual {
   Shape shape = Shape::kModel;
-  std::string model;  // kModel
+  std::string model;
   float color[3] = {1.0f, 0.85f, 0.4f};
-  float radius = 0;      // kLight
-  float facing_deg = 0;  // kActor: the arrow points along (cos, sin)
-  float x0 = 0, z0 = 0, x1 = 0, z1 = 0;  // kRegion, in world units
-  bool pickable = true;                  // false: only the Outliner selects it
-  bool wall_check = true;  // Problems: flag it standing inside a wall
-  // The Inspector's fields for the pose: the label of the height ("" = none)
-  // and whether x / z are edited there (a region is edited as data).
+  float radius = 0;
+  float facing_deg = 0;
+  float x0 = 0, z0 = 0, x1 = 0, z1 = 0;
+  // Whether the entity can be selected by clicking it in the viewport.
+  bool pickable = true;
+  // Whether `Project::Check` reports it when the entity stands inside a wall.
+  bool wall_check = true;
+
+  // Label of the height field in the Inspector, and whether x and z can be
+  // edited.
   std::string y_label = "Lift";
   bool edit_xz = true;
 };
 
-// A thing the Problems list flags.
+// One finding of the level check. When `has_ref` is set, `ref` is the offending
+// entity; (x, z) is where to show it.
 struct Problem {
   std::string text;
   EntityRef ref;
   bool has_ref = false;
-  double x = 0, z = 0;  // where to look
+  double x = 0, z = 0;
 };
 
-// An option of the game preview (a checkbox, or a number with a minimum).
+// A setting the game offers in the editor's preview dialog, stored in
+// `PreviewRequest::options` under `key`: a checkbox when `toggle` is true,
+// otherwise an integer no lower than `min`. `value` is the default.
 struct PreviewOption {
   std::string key, label;
   bool toggle = true;
   int value = 0, min = 0;
 };
+
+// What the editor asks of the game to render a preview image: the place and
+// heading to look from, the chosen options by key, and where to write the image
+// (a PPM file) and which assets to use.
 struct PreviewRequest {
   Where where;
-  float x = 0, z = 0, heading_deg = 0;  // the viewport camera's target
-  std::map<std::string, int> options;   // PreviewOption::key -> value
-  std::string out_ppm;                  // where the game must write the picture
-  std::string asset_dir;                // the assets to run on
+  float x = 0, z = 0, heading_deg = 0;
+  std::map<std::string, int> options;
+  std::string out_ppm;
+  std::string asset_dir;
 };
 
+// Everything the editor needs to know about a game. The defaults describe a
+// game with no data of its own, which is what the stock `MythosEditor` uses.
+// All methods are called on the UI thread. Methods taking a `DataSet` may be
+// given a copy to edit; `Project` marks the data dirty when a mutator returns
+// success.
 class Adapter {
  public:
   virtual ~Adapter() = default;
 
-  // The game's name, for the window title.
-  virtual std::string Name() const { return "Mythos"; }
-  // Preferences live in <org>/<app> (the editor's layout file).
-  virtual std::string PrefsOrg() const { return "mythos"; }
-  virtual std::string PrefsApp() const { return "MythosEditor"; }
+  // Application name shown in the editor window.
+  [[nodiscard]] virtual std::string Name() const { return "Mythos"; }
 
-  // The JSON files of assets/data the game's entities live in, by name without
-  // ".json". Each must exist.
-  virtual std::vector<std::string> DataFiles() const { return {}; }
+  // Organization and application names that select the folder of the editor's
+  // preferences file.
+  [[nodiscard]] virtual std::string PrefsOrg() const { return "mythos"; }
+  [[nodiscard]] virtual std::string PrefsApp() const { return "MythosEditor"; }
 
-  // Textures the viewport draws with: the game's procedural art, then files
-  // of stage_dir over it, then stage_dir/modeltex. The default registers the
-  // engine's common materials.
+  // The JSON files under `assets/data/` the editor loads, edits and saves, by
+  // name without extension.
+  [[nodiscard]] virtual std::vector<std::string> DataFiles() const {
+    return {};
+  }
+
+  // Registers the textures a level in this game can use (the common materials,
+  // the stage's overrides and its model textures). The default is right for
+  // most games.
   virtual void SetupTextures(TextureLibrary& lib,
                              const std::string& stage_dir) const;
 
-  // ---- levels
-  virtual std::string StartLevel(const DataSet&) const { return ""; }
-  virtual LevelInfo Info(const DataSet&, const std::string& /*level*/) const {
-    return {};
+  // Name of the level the game starts in, or empty when there is none.
+  [[nodiscard]] virtual std::string StartLevel(const DataSet&) const {
+    return "";
   }
-  // The name the context list is shown under ("Era").
-  virtual std::string ContextName() const { return "Context"; }
-  virtual std::vector<std::string> Contexts(const DataSet&) const { return {}; }
-  // The floors of a context as {floor, level name}, in order, for the ghosts
-  // above and below and for the stairwell check. Return empty for a level
-  // that is not stacked.
-  virtual std::vector<std::pair<int, std::string>> Stack(const DataSet&,
-                                                         const Where&) const {
+
+  // Grouping and stacking of a level.
+  [[nodiscard]] virtual LevelInfo Info(const DataSet&,
+                                       const std::string&) const {
     return {};
   }
 
-  // ---- things on a level (besides furniture and decor)
-  virtual std::vector<EntityRef> Entities(const DataSet&, const Where&) const {
+  // What the game calls its contexts (for the UI) and the list of them.
+  [[nodiscard]] virtual std::string ContextName() const { return "Context"; }
+
+  [[nodiscard]] virtual std::vector<std::string> Contexts(
+      const DataSet&) const {
     return {};
   }
-  // The heading of a kind in the Outliner.
-  virtual std::string KindName(int /*kind*/) const { return "Things"; }
+
+  // The levels drawn together with the one in `Where`, as (floor, level name)
+  // pairs. Entries with an empty or unknown name are ignored.
+  [[nodiscard]] virtual std::vector<std::pair<int, std::string>> Stack(
+      const DataSet&, const Where&) const {
+    return {};
+  }
+
+  // The game's own entities (kinds from `kFirstGameKind`) in a level and
+  // context.
+  [[nodiscard]] virtual std::vector<EntityRef> Entities(const DataSet&,
+                                                        const Where&) const {
+    return {};
+  }
+
+  // Plural display name of a game entity kind.
+  [[nodiscard]] virtual std::string KindName(int) const { return "Things"; }
+
+  // Fills in how to draw an entity. Returns false when the reference is
+  // invalid.
   virtual bool Describe(const DataSet&, const Where&, const EntityRef&,
                         Visual*) const {
     return false;
   }
+
+  // Reads the pose of an entity; false when it has none.
   virtual bool GetPose(const DataSet&, const Where&, const EntityRef&,
                        Pose*) const {
     return false;
   }
-  // Moves it; false when the thing is gone.
+
+  // Moves an entity by editing the data; false when the entity cannot move.
   virtual bool SetPose(DataSet&, const Where&, const EntityRef&,
                        const Pose&) const {
     return false;
   }
-  virtual std::string Label(const DataSet&, const Where&,
-                            const EntityRef&) const {
+
+  // Short human-readable name of an entity for lists and messages.
+  [[nodiscard]] virtual std::string Label(const DataSet&, const Where&,
+                                          const EntityRef&) const {
     return "?";
   }
-  // The JSON object the Inspector edits, or null.
+
+  // The entity's own JSON object for the Inspector to edit in place, or null.
+  // The pointer is valid until the data set is next restored.
   virtual json::Value* Data(DataSet&, const Where&, const EntityRef&) const {
     return nullptr;
   }
-  // A copy of it, index < 0 when it cannot be copied.
+
+  // Copies an entity and returns the copy; an empty reference (index -1, no id)
+  // means it could not be copied.
   virtual EntityRef Duplicate(DataSet&, const Where&,
                               const EntityRef& r) const {
     return {r.kind, -1, ""};
   }
-  // False when it cannot be deleted (a prop that carries story text).
+
+  // Deletes an entity; false when it cannot be removed.
   virtual bool Remove(DataSet&, const Where&, const EntityRef&) const {
     return false;
   }
-  // Problems of the game's own, added to the editor's.
-  virtual void Check(const DataSet&, const Where&,
-                     std::vector<Problem>* /*out*/) const {}
 
-  // ---- game preview
-  // Where the game's executable may be, relative to the editor's folder; none
-  // turns the preview off.
-  virtual std::vector<std::string> GameExecutables() const { return {}; }
-  virtual std::vector<PreviewOption> PreviewOptions() const { return {}; }
-  // The command line of the game's own screenshot mode, without the
-  // executable. data is a copy the adapter may edit (it is written to the
-  // temporary assets the game runs on): for instance, to make the open level
-  // the one the game loads.
-  virtual bool Preview(DataSet& /*data*/, const PreviewRequest&,
-                       std::vector<std::string>* /*args*/) const {
+  // Appends the game's own findings for a level to the check results.
+  virtual void Check(const DataSet&, const Where&,
+                     std::vector<Problem>*) const {}
+
+  // Names of the game binaries the preview may launch, tried in order, and the
+  // options the preview dialog offers.
+  [[nodiscard]] virtual std::vector<std::string> GameExecutables() const {
+    return {};
+  }
+
+  [[nodiscard]] virtual std::vector<PreviewOption> PreviewOptions() const {
+    return {};
+  }
+
+  // Builds the command line that renders `request` into its `out_ppm`, and
+  // stores it in the vector. The data set is a private copy the game may edit
+  // (for example to move the start position). Returns false when no preview is
+  // possible.
+  virtual bool Preview(DataSet&, const PreviewRequest&,
+                       std::vector<std::string>*) const {
     return false;
   }
 };
 
-// Registers every BMP of dir as a texture named after the file, and loads it:
-// the textures of a game's models. Returns how many were registered.
+// Registers a texture for every .bmp in `dir` that the library does not know
+// yet (gray placeholders, since the editor draws models flat), then applies the
+// image overrides found there. Returns how many were added.
 int RegisterModelTextures(TextureLibrary& lib, const std::string& dir);
+}
 
-}  // namespace mythos::editor
-
-#endif  // MYTHOS_ENGINE_EDITOR_ADAPTER_H_
+#endif

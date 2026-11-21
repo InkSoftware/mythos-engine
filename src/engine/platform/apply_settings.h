@@ -1,9 +1,6 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_APPLY_SETTINGS_H_
 #define MYTHOS_ENGINE_PLATFORM_APPLY_SETTINGS_H_
-// The platform side of GameSettings: reading and writing them in the user's
-// preferences, and making the window, renderer, mixer and camera follow them. A
-// game's main loop calls these instead of repeating them, so a new setting
-// needs no change in the game.
+
 #include <string>
 
 #include "engine/platform/app.h"
@@ -13,26 +10,26 @@
 #include "engine/ui/settings.h"
 
 namespace mythos {
-
-// The settings saved in `file` of the user's files (defaults for what is
-// missing).
+// Reads settings from the user's key-value file; missing keys keep defaults.
 GameSettings LoadSettings(const UserFiles& files,
                           const std::string& file = "settings.txt");
+
+// Writes all settings to the user's key-value file.
 void SaveSettings(const UserFiles& files, const GameSettings& s,
                   const std::string& file = "settings.txt");
 
-// Window mode and vsync, render scale and volumes. Cheap to call every frame:
-// each only acts on a change.
+// Pushes the settings into the window (mode, vsync), renderer (render scale)
+// and mixer (volumes).
 void ApplySettings(const GameSettings& s, Window& window, SceneRenderer& scene,
                    AudioEngine& audio);
-// The camera's graphics options: film grain, shadows, materials, anti-aliasing,
-// motion blur and lens.
+
+// Copies the per-frame visual settings (grain, shadows, materials, AA, motion
+// blur, lens, bloom, tape) into the camera state.
 void ApplySettings(const GameSettings& s, CameraState& cam);
 
-// The largest kResolutions index that fits the window's display (no limit when
-// its size is unknown).
+// Index into `kResolutions` of the largest entry that fits the usable display
+// area (the last index if the display size is unknown).
 int LargestFittingResolution(const Window& window);
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_PLATFORM_APPLY_SETTINGS_H_
+#endif

@@ -10,16 +10,15 @@
 
 namespace mythos {
 namespace {
-
-constexpr int kMinWindowWidth = 640;  // below this the menus no longer fit
+// Smallest window the overlay layout stays usable at.
+constexpr int kMinWindowWidth = 640;
 constexpr int kMinWindowHeight = 400;
 constexpr int kDepthBits = 24;
-constexpr int kGlMajor = 4,
-              kGlMinor = 1;  // the ceiling on macOS (see CLAUDE.md)
+constexpr int kGlMajor = 4, kGlMinor = 1;
+}
 
-}  // namespace
-
-bool Window::Open(const std::string& title, int width, int height, bool vsync) {
+bool Window::Open(const std::string& title, const int width, const int height,
+                  const bool vsync) {
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     SDL_Log("SDL_Init failed: %s", SDL_GetError());
     return false;
@@ -27,9 +26,9 @@ bool Window::Open(const std::string& title, int width, int height, bool vsync) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, kGlMajor);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, kGlMinor);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-  SDL_GL_SetAttribute(
-      SDL_GL_CONTEXT_FLAGS,
-      SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);  // required on macOS
+  // Forward-compatible is required for a core context on macOS.
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS,
+                      SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, kDepthBits);
 
@@ -59,7 +58,7 @@ bool Window::Open(const std::string& title, int width, int height, bool vsync) {
   return true;
 }
 
-void Window::SetVsync(bool on) {
+void Window::SetVsync(const bool on) {
   if (!context_ || vsync_ == (on ? 1 : 0)) return;
   SDL_GL_SetSwapInterval(on ? 1 : 0);
   vsync_ = on ? 1 : 0;
@@ -76,7 +75,7 @@ void Window::Close() {
   window_ = nullptr;
 }
 
-void Window::ApplyMode(bool fullscreen, int w, int h) {
+void Window::ApplyMode(const bool fullscreen, const int w, const int h) {
   if (!window_) return;
   if (mode_applied_ && fullscreen == fullscreen_ &&
       (fullscreen || (w == mode_w_ && h == mode_h_))) {
@@ -88,12 +87,11 @@ void Window::ApplyMode(bool fullscreen, int w, int h) {
   mode_w_ = w;
   mode_h_ = h;
   if (fullscreen) {
-    SDL_SetWindowFullscreen(window_,
-                            true);  // borderless, at the desktop resolution
+    SDL_SetWindowFullscreen(window_, true);
     return;
   }
   if (was_fullscreen) SDL_SetWindowFullscreen(window_, false);
-  SDL_SyncWindow(window_);  // let the leave-fullscreen finish before resizing
+  SDL_SyncWindow(window_);
   SDL_SetWindowSize(window_, w, h);
   SDL_SetWindowPosition(window_, SDL_WINDOWPOS_CENTERED,
                         SDL_WINDOWPOS_CENTERED);
@@ -125,19 +123,19 @@ void Window::Swap() {
   if (window_) SDL_GL_SwapWindow(window_);
 }
 
-bool WriteFramebufferPpm(const std::string& path, int w, int h) {
+bool WriteFramebufferPpm(const std::string& path, const int w, const int h) {
   constexpr size_t kRgbaBytes = 4, kRgbBytes = 3;
   std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * kRgbaBytes);
   gl::ReadPixels(0, 0, w, h, gl::kRgba, gl::kUnsignedByte, rgba.data());
   std::string ppm =
       "P6\n" + std::to_string(w) + " " + std::to_string(h) + "\n255\n";
   ppm.reserve(ppm.size() + static_cast<size_t>(w) * h * kRgbBytes);
-  for (int row = h - 1; row >= 0; --row) {  // GL rows start at the bottom
+  // GL reads bottom-up and PPM is top-down; also drops the alpha channel.
+  for (int row = h - 1; row >= 0; --row) {
     for (int col = 0; col < w; ++col) {
       const uint8_t* pixel =
           &rgba[(static_cast<size_t>(row) * w + col) * kRgbaBytes];
-      ppm.append(reinterpret_cast<const char*>(pixel),
-                 kRgbBytes);  // drop alpha
+      ppm.append(reinterpret_cast<const char*>(pixel), kRgbBytes);
     }
   }
   std::ofstream out(path, std::ios::binary);
@@ -178,9 +176,8 @@ bool WriteKeyValueFile(const std::string& path,
 
 std::string FindAssetDir(const std::string& probe) {
   namespace fs = std::filesystem;
-  if (const char* base = SDL_GetBasePath()) {  // directory of the executable,
-                                               // with a trailing separator
-    const std::string dir = base;              // owned by SDL, not freed
+  if (const char* base = SDL_GetBasePath()) {
+    const std::string dir = base;
     for (const char* rel : {"assets", "../Resources/assets"}) {
       const fs::path candidate = fs::path(dir) / rel;
       if (fs::exists(candidate / probe)) return candidate.string();
@@ -188,5 +185,4 @@ std::string FindAssetDir(const std::string& probe) {
   }
   return "assets";
 }
-
-}  // namespace mythos
+}

@@ -1,24 +1,27 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_EDITOR_RUN_H_
 #define MYTHOS_ENGINE_PLATFORM_EDITOR_RUN_H_
-// Runs the level editor: opens the window, runs the frame loop, returns the
-// process's exit code. A game's main() (the file that includes
-// <SDL3/SDL_main.h>) calls it with its Adapter.
 
 #include <string>
 
 #include "engine/editor/adapter.h"
 
 namespace mythos::editor {
-
+// What a game (or the generic editor) passes to RunEditor.
 struct EditorConfig {
-  const Adapter* adapter = nullptr;  // null: levels, furniture and decor only
-  std::string project_dir = ".";     // --project's default (holds assets/)
-  std::string stage_dir;  // --assets's default; "" = <project_dir>/assets
+  // The game's adapter; null selects the generic one. Not owned.
+  const Adapter* adapter = nullptr;
+  // Default project folder (one holding assets/levels); the command line,
+  // the remembered folder and a folder dialog can override it.
+  std::string project_dir = ".";
+  // Default folder of the textures and models, empty to derive it.
+  std::string stage_dir;
 };
 
-// Reads the command line (see run.cpp) and runs until the window closes.
+// Opens the editor window and runs it until it is closed. Command-line flags:
+// --project, --assets, --game, --level, --select, --tool, --top, --camera,
+// --preview, and for scripted screenshots --shot, --size and --frames.
+// Returns the process exit code (0 on a clean exit).
 int RunEditor(int argc, char** argv, const EditorConfig& config);
+}
 
-}  // namespace mythos::editor
-
-#endif  // MYTHOS_ENGINE_PLATFORM_EDITOR_RUN_H_
+#endif

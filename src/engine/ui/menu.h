@@ -1,36 +1,35 @@
 #ifndef MYTHOS_ENGINE_UI_MENU_H_
 #define MYTHOS_ENGINE_UI_MENU_H_
-// Menu input and list navigation, for any game's title menu, settings page and
-// pause menu.
+
 #include <functional>
 
 namespace mythos {
-
-// One frame of menu-ish intent. "Pressed" fields are true only on the frame of
-// the press.
+// One frame of menu input, already reduced from keyboard, pad and mouse. The
+// `*_pressed` flags are edge-triggered. `hover_item` is the hotspot under the
+// pointer and `click_item` the one clicked this frame (-1 for none);
+// `click_value` is the sub-item of that hotspot (such as a volume pip) and
+// `click_step` the direction a click moves a value (+1 or -1). `clicked` is set
+// when any click happened.
 struct UiInput {
   bool confirm_pressed = false;
   bool pause_pressed = false;
-  bool up_pressed = false, down_pressed = false;     // menu navigation
-  bool left_pressed = false, right_pressed = false;  // menu value change
-  // The free mouse on the menu pages, already hit-tested against the overlay's
-  // hotspots (an item is a menu or settings row index; -1 = none).
-  int hover_item = -1;   // the pointer moved onto this item: select it
-  int click_item = -1;   // a click landed on this item: select and use it
-  int click_value = -1;  // ...on this value of it (a volume pip: 0..10), or -1
-  int click_step =
-      1;  // +1 for the left button, -1 for the right (steps a setting back)
-  bool clicked =
-      false;  // a left click anywhere (continues from cards and documents)
+  bool up_pressed = false, down_pressed = false;
+  bool left_pressed = false, right_pressed = false;
+
+  int hover_item = -1;
+  int click_item = -1;
+  int click_value = -1;
+  int click_step = 1;
+  bool clicked = false;
 };
 
-// Moves the selection `index` through `count` items with up / down (wrapping,
-// skipping the items `usable` rejects) and the pointer. Returns the item chosen
-// this frame by `activate` (the game's confirm / interact key) or a click, or
-// -1.
+// Moves a menu selection. Up and down wrap around and skip items for which
+// `usable` is false (all are usable when it is empty); hovering or clicking a
+// usable item selects it. `index` is updated in place. Returns the chosen item
+// when `activate` is set or an item was clicked, otherwise -1. Do not call with
+// `count` of 0 or with no usable item.
 int MenuStep(int& index, int count, const UiInput& in, bool activate,
              const std::function<bool(int)>& usable = {});
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_UI_MENU_H_
+#endif

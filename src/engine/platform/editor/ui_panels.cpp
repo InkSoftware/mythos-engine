@@ -1,6 +1,4 @@
-// The editor's panels: dock space and menu, levels, outliner, inspector, tile
-// palette, asset browser, console, problems, the viewport window and the game
-// preview. Everything is a method of EditorApp.
+
 
 #include <algorithm>
 #include <cmath>
@@ -12,18 +10,19 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
+// The editor's ImGui panels and menus, and the style they use.
 namespace mythos::editor {
-
 using mythos::json::Value;
 
 namespace {
-
 const ImU32 kAccent = IM_COL32(58, 130, 220, 255);
 
-bool InputStr(const char* label, std::string* s,
-              ImGuiInputTextFlags flags = 0) {
+// InputText bound to a std::string (grows the string through a resize
+// callback). Returns true when edited.
+bool InputStr(const char* const label, std::string* const s,
+              const ImGuiInputTextFlags flags = 0) {
   struct Cb {
-    static int Resize(ImGuiInputTextCallbackData* d) {
+    static int Resize(ImGuiInputTextCallbackData* const d) {
       if (d->EventFlag == ImGuiInputTextFlags_CallbackResize) {
         auto* str = static_cast<std::string*>(d->UserData);
         str->resize(static_cast<size_t>(d->BufTextLen));
@@ -38,8 +37,9 @@ bool InputStr(const char* label, std::string* s,
                           Cb::Resize, s);
 }
 
-// A model name with a drop-down list that can be searched.
-bool ModelPicker(const char* label, std::string* model,
+// Combo box over model names with a search field. Returns true when the
+// choice changed.
+bool ModelPicker(const char* const label, std::string* const model,
                  const std::vector<std::string>& names) {
   bool changed = false;
   if (ImGui::BeginCombo(label, model->empty() ? "(none)" : model->c_str(),
@@ -63,7 +63,8 @@ bool ModelPicker(const char* label, std::string* model,
   return changed;
 }
 
-std::string TileDescription(const mythos::TileInfo& t, char g) {
+// One-line summary of a tile's properties for the palette.
+std::string TileDescription(const mythos::TileInfo& t, const char g) {
   std::string s = std::string("'") + g + "'";
   if (g == '.') return s + "  plain floor";
   if (t.empty) s += "  open air";
@@ -81,10 +82,10 @@ std::string TileDescription(const mythos::TileInfo& t, char g) {
   if (!t.sprite.empty()) s += "  sprite: " + t.sprite;
   return s;
 }
+}
 
-}  // namespace
-
-void ApplyEditorTheme(float scale) {
+// Dark theme built from four background shades and one accent color.
+void ApplyEditorTheme(const float scale) {
   ImGuiStyle& s = ImGui::GetStyle();
   ImGui::StyleColorsDark(&s);
   s.WindowRounding = 3;
@@ -142,9 +143,11 @@ void ApplyEditorTheme(float scale) {
   s.ScaleAllSizes(scale);
 }
 
-// ---------------------------------------------------------------- frame
-
-void EditorApp::Frame(float dt) {
+// The frame rate shown is smoothed. Global shortcuts (save, undo, redo,
+// duplicate, preview) are ignored while a text field is being edited. The
+// undo snapshot is committed once no widget is active and no mouse button is
+// down, so a whole drag or text edit becomes one undo step.
+void EditorApp::Frame(const float dt) {
   ImGuiIO& io = ImGui::GetIO();
   fps_ =
       fps_ <= 0 ? 60.0f : fps_ * 0.95f + (dt > 0 ? 1.0f / dt : 60.0f) * 0.05f;
@@ -183,13 +186,14 @@ void EditorApp::Frame(float dt) {
   if (show_demo_) ImGui::ShowDemoWindow(&show_demo_);
   DrawModals();
 
-  // One undo step per finished gesture, not one per frame of a drag.
   if (!ImGui::IsAnyItemActive() && !ImGui::IsMouseDown(0) &&
       !ImGui::IsMouseDown(1) && !ImGui::IsMouseDown(2)) {
     if (history_.Commit(project_)) RefreshProblems();
   }
 }
 
+// Full-window dock host; the default layout is built the first time (or on
+// ResetLayout) when ImGui has none saved.
 void EditorApp::DrawDockSpace() {
   const ImGuiViewport* vp = ImGui::GetMainViewport();
   ImGui::SetNextWindowPos(vp->WorkPos);
@@ -229,8 +233,7 @@ void EditorApp::DrawDockSpace() {
     ImGui::DockBuilderDockWindow("Assets", bottom);
     ImGui::DockBuilderDockWindow("Console", bottom);
     ImGui::DockBuilderDockWindow("Problems", bottom);
-    ImGui::DockBuilderDockWindow(
-        "Game Preview", center);  // the last one docked is the tab shown
+    ImGui::DockBuilderDockWindow("Game Preview", center);
     ImGui::DockBuilderDockWindow("Viewport", center);
     ImGui::DockBuilderFinish(id);
     layout_reset_ = false;
@@ -241,8 +244,7 @@ void EditorApp::DrawDockSpace() {
   ImGui::End();
 }
 
-// ---------------------------------------------------------------- menu
-
+// Main menu bar.
 void EditorApp::DrawMenuBar() {
   if (!ImGui::BeginMainMenuBar()) return;
   if (ImGui::BeginMenu("File")) {
@@ -303,9 +305,7 @@ void EditorApp::DrawMenuBar() {
   ImGui::EndMainMenuBar();
 }
 
-// ---------------------------------------------------------------- levels and
-// outliner
-
+// Levels grouped by the adapter's grouping, with the context picker.
 void EditorApp::DrawLevelsPanel() {
   if (!ImGui::Begin("Levels", &show_levels_)) {
     ImGui::End();
@@ -316,9 +316,12 @@ void EditorApp::DrawLevelsPanel() {
   if (!contexts.empty()) {
     ImGui::SetNextItemWidth(-1);
     if (ImGui::BeginCombo("##context", (cname + " " + context_).c_str())) {
-      for (const auto& e : contexts)
-        if (ImGui::Selectable((cname + " " + e).c_str(), e == context_))
-          SetContext(e);
+      for (const auto& e : contexts) {
+        std::string label = cname;
+        label += ' ';
+        label += e;
+        if (ImGui::Selectable(label.c_str(), e == context_)) SetContext(e);
+      }
       ImGui::EndCombo();
     }
     if (ImGui::IsItemHovered())
@@ -363,6 +366,7 @@ void EditorApp::DrawLevelsPanel() {
   ImGui::End();
 }
 
+// Entities of the level, grouped by kind and filtered by the search text.
 void EditorApp::DrawOutliner() {
   if (!ImGui::Begin("Outliner", &show_outliner_)) {
     ImGui::End();
@@ -375,11 +379,11 @@ void EditorApp::DrawOutliner() {
     std::string name;
     std::vector<EntityRef> items;
   };
-  std::vector<Group> groups;  // in the order the kinds first appear
+  std::vector<Group> groups;
   for (const auto& r : all) {
     const std::string name = project_.KindName(r.kind);
-    auto g = std::find_if(groups.begin(), groups.end(),
-                          [&](const Group& x) { return x.name == name; });
+    auto g = std::ranges::find_if(
+        groups, [&](const Group& x) { return x.name == name; });
     if (g == groups.end()) g = groups.insert(groups.end(), {name, {}});
     g->items.push_back(r);
   }
@@ -424,25 +428,26 @@ void EditorApp::DrawOutliner() {
   ImGui::End();
 }
 
-// ---------------------------------------------------------------- inspector
-
-bool EditorApp::EditJson(const char* label, Value& v, int depth) {
+// Recursive editor of a JSON value: objects and arrays become trees, short
+// numeric arrays a drag widget (a "color" triple a color picker), and
+// scalars the matching widget. Keys starting with an underscore are hidden
+// as comments. Returns true when anything changed.
+bool EditorApp::EditJson(const char* const label, Value& v, const int depth) {
   bool changed = false;
   ImGui::PushID(label);
   if (v.is_object()) {
     if (depth == 0 ||
         ImGui::TreeNodeEx(label, ImGuiTreeNodeFlags_DefaultOpen)) {
       for (auto it = v.begin(); it != v.end(); ++it) {
-        if (it.key().starts_with("_")) continue;  // comments
+        if (it.key().starts_with('_')) continue;
         changed |= EditJson(it.key().c_str(), it.value(), depth + 1);
       }
       if (depth > 0) ImGui::TreePop();
     }
   } else if (v.is_array()) {
-    const bool numeric = !v.empty() && v.size() <= 4 &&
-                         std::all_of(v.begin(), v.end(), [](const Value& e) {
-                           return e.is_number();
-                         });
+    const bool numeric =
+        !v.empty() && v.size() <= 4 &&
+        std::ranges::all_of(v, [](const Value& e) { return e.is_number(); });
     if (numeric && std::strcmp(label, "color") == 0 && v.size() == 3) {
       float c[3] = {v[0].get<float>(), v[1].get<float>(), v[2].get<float>()};
       if (ImGui::ColorEdit3(label, c, ImGuiColorEditFlags_Float)) {
@@ -507,11 +512,14 @@ bool EditorApp::EditJson(const char* label, Value& v, int depth) {
   return changed;
 }
 
-void EditorApp::DrawTileInfo(char glyph) {
+// Describes a tile glyph.
+void EditorApp::DrawTileInfo(const char glyph) {
   ImGui::TextWrapped("%s",
                      TileDescription(project_.Tiles()[glyph], glyph).c_str());
 }
 
+// Level summary and the properties of the selection: furniture and decor
+// are edited in place, anything else through its adapter data (EditJson).
 void EditorApp::DrawInspector() {
   if (!ImGui::Begin("Inspector", &show_inspector_)) {
     ImGui::End();
@@ -534,7 +542,7 @@ void EditorApp::DrawInspector() {
   if (has_sel_ && SelectedPose(&pose)) {
     ImGui::SeparatorText(project_.Label(Here(), sel_).c_str());
     bool level_changed = false, data_changed = false;
-    if (sel_.kind == kFurniture || sel_.kind == kDecor) {
+    if (doc && (sel_.kind == kFurniture || sel_.kind == kDecor)) {
       auto& list = sel_.kind == kFurniture ? doc->furniture : doc->decor;
       Item& it = list[static_cast<size_t>(sel_.index)];
       level_changed |= ModelPicker("Model", &it.model, model_names_);
@@ -544,7 +552,7 @@ void EditorApp::DrawInspector() {
         it.y = std::clamp(cell[1], 0, doc->Height() - 1);
         level_changed = true;
       }
-      float yaw = static_cast<float>(it.yaw);
+      auto yaw = static_cast<float>(it.yaw);
       if (ImGui::SliderFloat("Yaw", &yaw, 0, 359.9f, "%.0f deg")) {
         it.yaw = snap_rot_ ? std::round(yaw / 15.0f) * 15.0f : yaw;
         level_changed = true;
@@ -557,7 +565,7 @@ void EditorApp::DrawInspector() {
           it.off_z = off[1];
           level_changed = true;
         }
-        float lift = static_cast<float>(it.lift);
+        auto lift = static_cast<float>(it.lift);
         if (ImGui::DragFloat("Lift", &lift, 0.005f, 0.0f, 3.0f, "%.3f m")) {
           it.lift = lift;
           level_changed = true;
@@ -579,7 +587,7 @@ void EditorApp::DrawInspector() {
             ImGui::DragFloat(vis.y_label.c_str(), &p[1], 0.01f, 0, 4, "%.3f"))
           moved = true;
         if (pose.has_yaw) {
-          float yaw = static_cast<float>(pose.yaw);
+          auto yaw = static_cast<float>(pose.yaw);
           if (ImGui::SliderFloat("Yaw", &yaw, -180, 360, "%.0f deg")) {
             pose.yaw = snap_rot_ ? std::round(yaw / 15.0f) * 15.0f : yaw;
             moved = true;
@@ -614,9 +622,7 @@ void EditorApp::DrawInspector() {
   ImGui::End();
 }
 
-// ---------------------------------------------------------------- palette and
-// assets
-
+// Tile palette: brush size and one button per tile of the legend.
 void EditorApp::DrawPalette() {
   if (!ImGui::Begin("Tiles", &show_palette_)) {
     ImGui::End();
@@ -673,6 +679,7 @@ void EditorApp::DrawPalette() {
   ImGui::End();
 }
 
+// Model and texture browsers.
 void EditorApp::DrawAssets() {
   if (!ImGui::Begin("Assets", &show_assets_)) {
     ImGui::End();
@@ -736,9 +743,7 @@ void EditorApp::DrawAssets() {
   ImGui::End();
 }
 
-// ---------------------------------------------------------------- console and
-// problems
-
+// Log output; follows the end unless scrolled up.
 void EditorApp::DrawConsole() {
   if (!ImGui::Begin("Console", &show_console_)) {
     ImGui::End();
@@ -753,6 +758,7 @@ void EditorApp::DrawConsole() {
   ImGui::End();
 }
 
+// Results of the project's consistency checks; clicking one jumps to it.
 void EditorApp::DrawProblems() {
   const std::string title =
       "Problems" +
@@ -780,9 +786,9 @@ void EditorApp::DrawProblems() {
   ImGui::End();
 }
 
-// ---------------------------------------------------------------- viewport
-
-void EditorApp::ToolButton(const char* label, Tool t, const char* tip) {
+// Toolbar button that stays highlighted while its tool is active.
+void EditorApp::ToolButton(const char* const label, const Tool t,
+                           const char* const tip) {
   const bool on = tool_ == t;
   if (on)
     ImGui::PushStyleColor(ImGuiCol_Button,
@@ -792,10 +798,13 @@ void EditorApp::ToolButton(const char* label, Tool t, const char* tip) {
   if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
 }
 
-void EditorApp::DrawViewportWindow(float dt) {
+// Hosts the 3D view: input, scene rebuild, render into an offscreen texture
+// shown as an image (flipped, as GL images are bottom-up), the overlays, and
+// the floating toolbar (drawn in a second channel so its backdrop sits
+// behind it).
+void EditorApp::DrawViewportWindow(const float dt) {
   (void)dt;
-  if (focus_viewport_ >
-      0) {  // a few frames: the first ones are still docking the window
+  if (focus_viewport_ > 0) {
     ImGui::SetNextWindowFocus();
     --focus_viewport_;
   }
@@ -839,7 +848,6 @@ void EditorApp::DrawViewportWindow(float dt) {
                {origin.x + size.x, origin.y + size.y}, {0, 1}, {1, 0});
   DrawScreenOverlay(origin, size);
 
-  // Toolbar over the picture.
   dl->ChannelsSplit(2);
   dl->ChannelsSetCurrent(1);
   ImGui::SetCursorScreenPos({origin.x + 10, origin.y + 10});
@@ -915,6 +923,7 @@ void EditorApp::DrawViewportWindow(float dt) {
   ImGui::End();
 }
 
+// Shows the picture the game rendered, with the adapter's preview options.
 void EditorApp::DrawPreviewWindow() {
   if (focus_preview_ > 0) {
     ImGui::SetNextWindowFocus();
@@ -954,13 +963,13 @@ void EditorApp::DrawPreviewWindow() {
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float s = std::min(avail.x / preview_w_, avail.y / preview_h_);
     ImGui::Image(static_cast<ImTextureID>(preview_tex_),
-                 {preview_w_ * s, preview_h_ * s});  // row 0 is the top
+                 {preview_w_ * s, preview_h_ * s});
   }
   ImGui::End();
 }
 
-// ---------------------------------------------------------------- modals
-
+// Modal dialogs: new level, resize, unsaved changes and the controls help.
+// Other code only sets a flag; the popup is opened here, once per frame.
 void EditorApp::DrawModals() {
   if (open_new_level_) {
     ImGui::OpenPopup("New level");
@@ -1085,5 +1094,4 @@ void EditorApp::DrawModals() {
     ImGui::EndPopup();
   }
 }
-
-}  // namespace mythos::editor
+}

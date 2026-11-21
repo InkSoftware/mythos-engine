@@ -6,7 +6,6 @@
 #include "engine/gfx/materials.h"
 
 namespace mythos::editor {
-
 void Adapter::SetupTextures(TextureLibrary& lib,
                             const std::string& stage_dir) const {
   AddCommonMaterials(lib);
@@ -21,12 +20,11 @@ int RegisterModelTextures(TextureLibrary& lib, const std::string& dir) {
     if (entry.extension() != ".bmp") continue;
     const std::string name = entry.stem().string();
     if (lib.Has(name)) continue;
-    // A stand-in until the file loads.
+
     lib.Add(name, Surface(1, 1, Rgba(128, 128, 128)), true);
     ++registered;
   }
   lib.LoadOverrides(dir);
   return registered;
 }
-
-}  // namespace mythos::editor
+}

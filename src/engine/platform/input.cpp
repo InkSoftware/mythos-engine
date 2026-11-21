@@ -3,11 +3,9 @@
 #include <SDL3/SDL.h>
 
 namespace mythos {
-
 namespace {
-
-// A key press (not an auto-repeat) turns on the matching one-frame flags.
-void HandleKeyDown(SDL_Keycode key, UiInput& ui, ActionInput& act,
+// Key bindings for single presses. Movement keys also drive menu navigation.
+void HandleKeyDown(const SDL_Keycode key, UiInput& ui, ActionInput& act,
                    InputPoll& out) {
   switch (key) {
     case SDLK_RETURN:
@@ -26,7 +24,7 @@ void HandleKeyDown(SDL_Keycode key, UiInput& ui, ActionInput& act,
       break;
     case SDLK_ESCAPE:
       ui.pause_pressed = true;
-      break;  // menus handle it; the Exit item quits
+      break;
     case SDLK_W:
     case SDLK_UP:
       ui.up_pressed = true;
@@ -51,8 +49,7 @@ void HandleKeyDown(SDL_Keycode key, UiInput& ui, ActionInput& act,
   }
 }
 
-// A click in menu mode: left steps forward (and counts as a click), right steps
-// back.
+// Left click activates (step +1), right click steps a value down (-1).
 void HandleMouseDown(const SDL_MouseButtonEvent& button, UiInput& ui,
                      const PointAt& point_at) {
   if (button.button != SDL_BUTTON_LEFT && button.button != SDL_BUTTON_RIGHT) {
@@ -67,7 +64,8 @@ void HandleMouseDown(const SDL_MouseButtonEvent& button, UiInput& ui,
   ui.clicked = ui.clicked || left;
 }
 
-// Held keys: the continuous movement state, re-read every frame.
+// Held-state controls are polled by scancode, so they follow the physical key
+// position on any layout.
 void ReadHeldKeys(MoveInput& move, ActionInput& act) {
   const bool* keys = SDL_GetKeyboardState(nullptr);
   move.forward = keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP];
@@ -79,11 +77,10 @@ void ReadHeldKeys(MoveInput& move, ActionInput& act) {
   move.run = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
   act.interact_held = keys[SDL_SCANCODE_E] || keys[SDL_SCANCODE_SPACE];
 }
-
-}  // namespace
+}
 
 InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
-                    bool relative_mouse, const PointAt& point_at) {
+                    const bool relative_mouse, const PointAt& point_at) {
   InputPoll out;
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
@@ -92,12 +89,12 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         out.quit = true;
         break;
       case SDL_EVENT_MOUSE_MOTION:
-        if (relative_mouse) {  // looking around
+        if (relative_mouse) {
           move.mouse_dx +=
               static_cast<decltype(move.mouse_dx)>(event.motion.xrel);
           move.mouse_dy +=
               static_cast<decltype(move.mouse_dy)>(event.motion.yrel);
-        } else if (point_at) {  // hovering a menu
+        } else if (point_at) {
           ui.hover_item = point_at(static_cast<int>(event.motion.x),
                                    static_cast<int>(event.motion.y), nullptr);
         }
@@ -115,5 +112,4 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
   ReadHeldKeys(move, act);
   return out;
 }
-
-}  // namespace mythos
+}

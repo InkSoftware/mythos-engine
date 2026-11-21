@@ -12,3 +12,4 @@ IncludeCategories:
     Priority: 3
   - Regex: '^".*"$'         # this project
     Priority: 4
+FixNamespaceComments: false

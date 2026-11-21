@@ -7,11 +7,8 @@
 #include "engine/platform/gl/scene_renderer.h"
 #include "engine/ui/settings.h"
 
-// The shadow half of the scene renderer: which lamps cast shadows, their cube
-// maps, and drawing them.
 namespace mythos {
 namespace {
-
 using gl::ActiveTexture;
 using gl::Clear;
 using gl::ClearColor;
@@ -26,63 +23,62 @@ using gl::kDepthTest;
 using gl::kLequal;
 using gl::kTexture0;
 
-// What a shadow level costs: how many lamps cast shadows (the hand light always
-// does) and the texels per side of each cube face. Ultra max is 4 lamps and the
-// hand light at 1536^2 x 6 faces of 32-bit floats: about 280 MB of video
-// memory.
+// Lamps with shadows and the cube face size, per shadow level (settings.h).
 struct ShadowSpec {
   int lamps, size;
 };
+
 constexpr ShadowSpec kShadowSpecs[kShadowLevelCount] = {
     {.lamps = 0, .size = 0},    {.lamps = 1, .size = 256},
     {.lamps = 2, .size = 256},  {.lamps = 2, .size = 512},
     {.lamps = 3, .size = 1024}, {.lamps = 4, .size = 1536}};
 
-constexpr unsigned kAllFaces = 0x3F;  // bit i = cube face i
-constexpr double kLampOutSum =
-    0.01;  // r+g+b below this: the lamp is out and casts nothing
-constexpr double kNotACaster =
-    1e30;  // sort key of a lamp that is out (sorts last)
-constexpr double kCasterLimit = 1e29;  // keys below this are real distances
+// Bit mask with all six cube faces.
+constexpr unsigned kAllFaces = 0x3F;
+// Lamps whose color components sum below this are off and never cast.
+constexpr double kLampOutSum = 0.01;
+// Sort key for lamps that cannot cast; anything above the limit is skipped.
+constexpr double kNotACaster = 1e30;
+constexpr double kCasterLimit = 1e29;
 
-// The hand light's place relative to the eye (metres): low and to the right.
+// Hand light origin relative to the eye: right, forward and down, in world
+// units.
 constexpr float kHandSideRest = 0.14f, kHandForward = 0.05f, kHandBelow = 0.20f;
-// Reach of the hand light's shadow: as far as its light is worth anything.
+
+// Reach of the hand light, and the cosines of its cone half angle. These must
+// stay in step with the world shader's hand light cone.
 constexpr float kLighterReach = 7.0f, kTorchReach = 14.0f;
-// Cosine at which each hand light's beam fades to nothing (the shader's
-// smoothstep start).
+
 constexpr float kLighterConeCos = 0.30f, kTorchConeCos = 0.91f;
 constexpr float kDegToRad = std::numbers::pi_v<float> / 180.0f;
-constexpr float kFaceHalfAngleDeg =
-    54.74f;  // a cube face's square view fits in this cone about its axis
-constexpr float kFaceMarginDeg =
-    8.0f;  // covers the soft edge and the filter taps
-constexpr float kMinShadowReach =
-    0.5f;  // metres; a cube's far plane never closer than this
-constexpr float kCubeFaceFov =
-    1.5707963f;  // 90 degrees: six faces tile the sphere
+// Half the angle of a cube face's corner as seen from the center (atan of sqrt
+// 2), plus a margin, used to decide which faces the cone can reach.
+constexpr float kFaceHalfAngleDeg = 54.74f;
+constexpr float kFaceMarginDeg = 8.0f;
+// Smallest cube far plane, so a tiny radius cannot give a degenerate
+// projection.
+constexpr float kMinShadowReach = 0.5f;
+constexpr float kCubeFaceFov = 1.5707963f;
 constexpr float kShadowNear = 0.05f;
-constexpr float kShadowFar =
-    1e4f;  // distance written where a face sees nothing
+// Value the distance maps are cleared to: "very far", so a texel without a
+// caster is never in shadow.
+constexpr float kShadowFar = 1e4f;
 
+// FNV-1a, to build cache keys.
 constexpr uint64_t kFnvOffset = 1469598103934665603ull,
                    kFnvPrime = 1099511628211ull;
 
-// FNV-1a over the bytes of a value.
-void Mix(uint64_t& h, const void* data, size_t n) {
+void Mix(uint64_t& h, const void* const data, const size_t n) {
   const auto* p = static_cast<const unsigned char*>(data);
   for (size_t i = 0; i < n; ++i) h = (h ^ p[i]) * kFnvPrime;
 }
+
 template <class T>
 void Mix(uint64_t& h, const T& v) {
   Mix(h, &v, sizeof(T));
 }
+}
 
-}  // namespace
-
-// This frame's lamps, at most kMaxLights. The kMaxShadowLights nearest lit ones
-// come first and cast shadows (when the setting is on and their cube maps
-// exist); the shader relies on that order.
 void SceneRenderer::ChooseLamps(const CameraState& cam, const Frame& f) {
   lamps_.clear();
   lamps_.insert(
@@ -91,14 +87,14 @@ void SceneRenderer::ChooseLamps(const CameraState& cam, const Frame& f) {
                                cam.lights.size(), CameraState::kMaxLights)));
   shadow_count_ = 0;
   EnsureShadowMaps(shadow_program_.Valid() ? cam.shadow_level : 0);
-  // The hand light is held low and to the right (inside the player's radius, so
-  // never in a wall), so what it lights throws a shadow you can see rather than
-  // one hidden behind it.
+
   hand_shadow_on_ = cam.flash_on && hand_shadow_.Valid();
   hand_faces_ = kAllFaces;
   if (hand_shadow_on_) PlaceHandShadow(cam, f);
+  // Order lit lamps by squared distance to the eye so the nearest get the
+  // shadow cubes (stable, so the choice does not flicker among equals).
   if (shadow_limit_ == 0 || !shadow_[0].Valid()) return;
-  // Squared distance from the eye; a lamp that is out sorts last.
+
   auto distance_key = [&](const PointLight& l) {
     if (l.r + l.g + l.b < kLampOutSum) return kNotACaster;
     const double dx = l.x - f.eye[0], dy = l.y - f.eye[1], dz = l.z - f.eye[2];
@@ -115,8 +111,6 @@ void SceneRenderer::ChooseLamps(const CameraState& cam, const Frame& f) {
   }
 }
 
-// Where the hand light is held, how far its shadow reaches, and which cube
-// faces its beam can reach.
 void SceneRenderer::PlaceHandShadow(const CameraState& cam, const Frame& f) {
   const float right_x = -std::sin(static_cast<float>(cam.yaw)),
               right_z = std::cos(static_cast<float>(cam.yaw));
@@ -125,9 +119,10 @@ void SceneRenderer::PlaceHandShadow(const CameraState& cam, const Frame& f) {
   hand_pos_[1] = f.eye[1] - kHandBelow - static_cast<float>(cam.hand_down);
   hand_pos_[2] = f.eye[2] + right_z * side + f.dir[2] * kHandForward;
   hand_reach_ = cam.lighter ? kLighterReach : kTorchReach;
-  // The beam lights nothing outside its cone (the shader's smoothstep starts at
-  // this cosine), so only the cube faces the cone can reach are drawn.
+
   const float cone_cos = cam.lighter ? kLighterConeCos : kTorchConeCos;
+  // A face is drawn if its axis is within the cone plus the face's own angular
+  // size; with a wide cone all faces are.
   const float reach_angle =
       std::acos(cone_cos) + (kFaceHalfAngleDeg + kFaceMarginDeg) * kDegToRad;
   if (reach_angle < std::numbers::pi_v<float>) {
@@ -163,8 +158,7 @@ void SceneRenderer::EnsureShadowMaps(int level) {
   for (int i = 0; i < shadow_limit_; ++i) {
     shadow_[i].Create(spec.size, shadow_depth_);
   }
-  // A map that could not be made (out of memory, say) leaves the lamps
-  // unshadowed.
+
   for (int i = 0; i < shadow_limit_; ++i) {
     if (!shadow_[i].Valid()) shadow_limit_ = 0;
   }
@@ -182,19 +176,19 @@ uint64_t SceneRenderer::SceneKey(const CameraState& cam) const {
   return h;
 }
 
-// Six passes per shadow lamp: the distance from the lamp to what it sees along
-// each cube face. A cube whose lamp and scene are as they were when it was
-// drawn is left alone.
 void SceneRenderer::DrawShadows(const CameraState& cam) {
   if (shadow_count_ == 0 && !hand_shadow_on_) return;
   const uint64_t scene = SceneKey(cam);
-  const auto key_for = [&](const float* pos, float reach) {
+  // A cache key combines the scene state with a lamp's position and reach; the
+  // low bit keeps it non-zero so a fresh key never matches an empty slot.
+  const auto key_for = [&](const float* const pos, const float reach) {
     uint64_t h = scene;
     Mix(h, pos, 3 * sizeof(float));
     Mix(h, reach);
-    return h | 1;  // never 0, which means "not drawn"
+    return h | 1;
   };
-  // The batches' uniforms are the shadow program's for the duration.
+
+  // Borrow the batch drawing machinery for the shadow program; restored below.
   const GLint saved_model = u_model_, saved_emissive = u_emissive_,
               saved_alpha = u_alpha_test_;
   u_model_ = shadow_program_.Uniform("uModel");
@@ -226,9 +220,10 @@ void SceneRenderer::DrawShadows(const CameraState& cam) {
 }
 
 void SceneRenderer::DrawShadowCube(const CameraState& cam, ShadowCube& cube,
-                                   const float* eye, float reach_in,
-                                   unsigned face_mask, uint64_t* keys,
-                                   uint64_t base_key) {
+                                   const float* const eye, const float reach_in,
+                                   const unsigned face_mask,
+                                   uint64_t* const keys,
+                                   const uint64_t base_key) {
   const float reach = std::max(kMinShadowReach, reach_in);
   bool set_up = false;
   float proj[16];
@@ -254,5 +249,4 @@ void SceneRenderer::DrawShadowCube(const CameraState& cam, ShadowCube& cube,
     DrawScene(cam, frustum, 0);
   }
 }
-
-}  // namespace mythos
+}

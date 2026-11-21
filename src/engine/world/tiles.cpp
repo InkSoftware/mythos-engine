@@ -3,21 +3,21 @@
 #include "engine/core/json.h"
 
 namespace mythos {
-
 const TileSetPtr& DefaultTileSet() {
   static const TileSetPtr kTiles = std::make_shared<const TileSet>();
   return kTiles;
 }
 
-bool ParseTileSet(const json::Value& root, TileSet& out, std::string* error) {
+bool ParseTileSet(const json::Value& root, TileSet& out,
+                  std::string* const error) {
   const auto fail = [&](const std::string& what) {
     if (error) *error = what;
     return false;
   };
   if (!root.is_object()) return fail("the tile legend must be an object");
+  // Start from a blank set so the legend alone decides what is solid.
   out = TileSet{};
-  out['#'].solid =
-      false;  // a loaded legend states every glyph itself, '#' included
+  out['#'].solid = false;
   for (const auto& [key, value] : root.items()) {
     if (!key.empty() && key[0] == '_') continue;
     if (key == "defaultWall" || key == "defaultFloor") {
@@ -37,7 +37,10 @@ bool ParseTileSet(const json::Value& root, TileSet& out, std::string* error) {
     if (!def.is_object()) return fail("tile '" + glyph + "' must be an object");
     TileInfo& tile = out[glyph[0]];
     for (const auto& [field, value] : def.items()) {
-      const std::string where = "tile '" + glyph + "': " + field;
+      std::string where = "tile '";
+      where += glyph;
+      where += "': ";
+      where += field;
       if (!field.empty() && field[0] == '_') continue;
       if (field == "solid" || field == "wallIsObject" || field == "empty" ||
           field == "thin" || field == "window" || field == "openCeiling" ||
@@ -62,19 +65,24 @@ bool ParseTileSet(const json::Value& root, TileSet& out, std::string* error) {
       } else if (field == "door") {
         if (!value.is_string() || (value.get<std::string>() != "closed" &&
                                    value.get<std::string>() != "open")) {
-          return fail(where + " must be \"closed\" or \"open\"");
+          return fail(where + R"( must be "closed" or "open")");
         }
         tile.door = value.get<std::string>() == "closed" ? DoorKind::kClosed
                                                          : DoorKind::kOpen;
       } else {
-        return fail("tile '" + glyph + "': unknown field \"" + field + "\"");
+        std::string msg = "tile '";
+        msg += glyph;
+        msg += "': unknown field \"";
+        msg += field;
+        msg += '"';
+        return fail(msg);
       }
     }
   }
+  // A window is always a thin wall.
   for (auto& tile : out.tiles()) {
-    if (tile.window) tile.thin = true;  // a window is always a thin wall
+    if (tile.window) tile.thin = true;
   }
   return true;
 }
-
-}  // namespace mythos
+}

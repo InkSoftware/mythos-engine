@@ -1,9 +1,6 @@
 #ifndef MYTHOS_ENGINE_WORLD_INTERACT_H_
 #define MYTHOS_ENGINE_WORLD_INTERACT_H_
-// Using things in a first-person world: what a prop is, what the player can do
-// to it (read, inspect, listen, take), and what using it leaves behind
-// (notebook lines, clues, flags). Nothing here knows a story: a game decides
-// what each outcome means and sounds like.
+
 #include <map>
 #include <optional>
 #include <string>
@@ -12,120 +9,150 @@
 #include "engine/core/math.h"
 #include "engine/world/level.h"
 
+// Using things in a first-person world: what a prop is, what the player can do
+// to it, and what using it leaves behind. Nothing here knows a story; a game
+// decides what each outcome means.
 namespace mythos {
-
-// What a prop does when the player uses it.
-//   Read: opens a document. Inspect: a line. Listen: hold E, then a line.
-//   Take: into the hand; E on its empty place puts it back.
+// What a prop does when used. Read opens a document; inspect shows a line;
+// listen needs the key held for a while, then shows a line; take moves it into
+// the hand (using its empty place puts it back).
 enum class Verb { kRead, kInspect, kListen, kTake };
-// "read" / "inspect" / "listen" / "take" -> Verb; false for any other word.
+
+// Parses "read", "inspect", "listen" or "take"; false for any other word.
 bool ParseVerb(const std::string& word, Verb& out);
 
-// An object the player can use. Its texts are translation keys.
+// An object the player can use. Its texts are translation keys, resolved by the
+// game through Tr().
 struct Prop {
   std::string id;
-  std::string model;  // "" draws nothing (an empty place you can still look at)
-  Vec2 at;            // world x, z
-  int floor = 0;      // which storey of the building it is on (0 the ground
-                      // floor, 1 above, -1 the cellar)
-  double lift = 0, yaw_deg = 0;
-  double aim_height = 0,
-         aim_radius = 0;  // the sphere the player's view must hit
-  Verb verb = Verb::kInspect;
-  double seconds = 0;  // how long its line stays up (not for Read)
-  std::string
-      loop_clip;  // a looping sound it makes, placed in the world ("" silent)
-  double hush_radius = 0;  // the loop falls silent this close (0 = never)
-  std::string name, text, notebook;  // translation keys
+  // Model name; empty draws nothing (an empty place you can still look at).
+  std::string model;
+  // World x, z.
+  Vec2 at;
+  // Story of the building: 0 ground, 1 above, -1 cellar.
+  int floor = 0;
 
-  const std::string& NameKey() const { return name; }
-  const std::string& TextKey() const { return text; }
-  const std::string& NotebookKey() const { return notebook; }
+  // Height of the base above the floor, and yaw in degrees (0 faces +z).
+  double lift = 0, yaw_deg = 0;
+  // Sphere the view ray must hit to aim at the prop.
+  double aim_height = 0, aim_radius = 0;
+  Verb verb = Verb::kInspect;
+  // How long its line stays up (not used by kRead).
+  double seconds = 0;
+  // A looping sound it makes, placed in the world; empty for silence.
+  std::string loop_clip;
+  // The loop falls silent this close; 0 means never.
+  double hush_radius = 0;
+  // Translation keys for the title, the body text and the notebook entry.
+  std::string name, text, notebook;
+
+  [[nodiscard]] const std::string& NameKey() const { return name; }
+  [[nodiscard]] const std::string& TextKey() const { return text; }
+  [[nodiscard]] const std::string& NotebookKey() const { return notebook; }
 };
 
-// A change to a prop: only the fields given are set.
+// Optional replacements for fields of a Prop, so a game can vary a base prop
+// per scenario; unset fields keep the base value.
 struct PropOverride {
   std::optional<std::string> model, name, text, notebook, loop;
   std::optional<Vec2> at;
   std::optional<int> floor;
   std::optional<double> lift, yaw_deg, aim_height, aim_radius, seconds;
   std::optional<Verb> verb;
+
+  // Writes each set field into p.
   void ApplyTo(Prop& p) const;
-  // The text keys it names (text, name, notebook).
-  std::vector<std::string> TextKeys() const;
+
+  // The translation keys this override sets (text, name, notebook), for
+  // validation.
+  [[nodiscard]] std::vector<std::string> TextKeys() const;
 };
 
-// The non-solid level placement that draws a prop.
+// The non-solid level Placement that draws a prop; the offset is measured from
+// the center of the cell holding the prop.
 Placement PlacementOf(const Prop& p);
 
-// What the player has done and gathered: it survives from one scene to the next
-// and is what a game saves. A game's own state extends it with whatever else it
-// tracks.
+// What the player has found. A game derives its own state from this.
 struct Progress {
-  std::vector<std::string> clues;  // clues found
-  std::vector<std::string>
-      notebook;      // notebook entries (text keys), oldest first
-  std::string held;  // the prop in hand, or ""
-  std::map<std::string, int> flags;  // story flags
+  // Clue keys, each at most once.
+  std::vector<std::string> clues;
+  // Notebook entry keys, each at most once.
+  std::vector<std::string> notebook;
+  // Id of the prop in the hand, empty if none.
+  std::string held;
+  // Named story flags; zero or absent counts as unset.
+  std::map<std::string, int> flags;
 
-  // Adds key to list unless it is already there; true if it was added.
+  // Appends key if absent. Returns whether it was added.
   static bool AddUnique(std::vector<std::string>& list, const std::string& key);
+
+  // Whether list holds key.
   static bool Contains(const std::vector<std::string>& list,
                        const std::string& key);
+
   bool AddNote(const std::string& key) { return AddUnique(notebook, key); }
-  bool Flag(const std::string& name) const {
+
+  [[nodiscard]] bool Flag(const std::string& name) const {
     const auto it = flags.find(name);
     return it != flags.end() && it->second != 0;
   }
 };
 
-// What dealing with something leaves behind.
+// What using something leaves behind: a sound to play (for the game to play), a
+// notebook entry, a clue and flags to set.
 struct Effects {
-  std::string sound;  // a sound event to emit ("" none); the game maps the name
-  std::string notebook;              // a notebook entry ("" none)
-  std::string clue;                  // a clue gained ("" none)
-  std::map<std::string, int> flags;  // flags set
+  std::string sound;
+  std::string notebook;
+  std::string clue;
+  std::map<std::string, int> flags;
 };
 
-// Writes the notebook line, the clue and the flags into progress. Returns true
-// if the clue is new.
+// Applies the notebook entry, clue and flags to progress. Returns true if the
+// clue is new.
 bool ApplyEffects(Progress& progress, const Effects& e);
 
-// The outcome of one frame of using what the view rests on.
+// Outcome of one Interactor::Use call.
 enum class Use {
-  kNone,       // nothing happened
-  kListening,  // E is held on something to listen to; not long enough yet
-  kRead,       // open the prop's document
-  kInspect,    // show the prop's line
-  kHeard,      // listened long enough: show the prop's line
-  kTake,  // the prop goes into the hand (the game removes it from the level and
-          // sets held)
-  kHandsFull,  // tried to take something with a full hand
-  kPutBack,    // the held prop goes back to its place
+  kNone,
+  // Listening is in progress (the key is held, not yet long enough).
+  kListening,
+  kRead,
+  kInspect,
+  kHeard,
+  kTake,
+
+  // A take was refused because the hand already holds something.
+  kHandsFull,
+  kPutBack,
 };
 
-// The verb mechanics, with the listening timer. The game feeds it what the view
-// rests on each frame and carries out the result.
+// Per-frame state of the interaction with the aimed prop: tracks how long a
+// listen has been held.
 class Interactor {
  public:
-  // Call every frame with whether E is held: releasing E lets a heard prop be
-  // listened to again.
-  void Release(bool interact_held) {
+  // Call each frame with the key state; letting go re-arms listening.
+  void Release(const bool interact_held) {
     if (!interact_held) listen_done_ = false;
   }
-  // Nothing in reach this frame.
+
+  // Call when nothing is aimed at: resets the listen timer.
   void Idle() { listen_ = 0; }
-  // `p` is what the view rests on; `home` means it is the held prop's empty
-  // place; `held` is the id in hand ("" none).
+
+  // Resolves one frame of using prop. home is true when prop is the empty place
+  // of the object in hand. dt is the frame time in seconds; pressed is the
+  // press edge and holding the held state of the key; listen_seconds is how
+  // long a kListen prop must be held. A listen completes once per press
+  // (kHeard), then stays quiet until Release sees the key let go.
   mythos::Use Use(const Prop& p, bool home, const std::string& held, double dt,
                   bool pressed, bool holding, double listen_seconds);
-  double ListenTime() const { return listen_; }
+
+  // Seconds of the current listen so far.
+  [[nodiscard]] double ListenTime() const { return listen_; }
 
  private:
   double listen_ = 0;
   bool listen_done_ = false;
 };
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_WORLD_INTERACT_H_
+#endif

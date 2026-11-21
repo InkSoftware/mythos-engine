@@ -6,12 +6,10 @@
 
 namespace mythos {
 namespace {
-
-// The eye must see a point this far in front of the glass (metres), or a wall
-// hides the mirror.
+// Distance in front of the glass the sight line aims at, so the mirror's own
+// wall does not occlude it.
 constexpr double kClearanceInFront = 0.3;
-
-}  // namespace
+}
 
 bool LoadMirrorParams(json::Reader& r, const std::string& path,
                       MirrorParams& out) {
@@ -29,12 +27,13 @@ bool LoadMirrorParams(json::Reader& r, const std::string& path,
 }
 
 MirrorPlacement PlaceMirror(const MirrorParams& params, const Prop& prop,
-                            double eye_x, double eye_z, const Level& level) {
+                            const double eye_x, const double eye_z,
+                            const Level& level) {
   MirrorPlacement out;
   if (prop.model.empty()) return out;
   const double yaw = prop.yaw_deg * kPi / 180.0;
-  const double nx = std::sin(yaw),
-               nz = std::cos(yaw);  // the way the model's front faces
+  // The prop faces yaw degrees from +z, so its normal is (sin, cos) in x, z.
+  const double nx = std::sin(yaw), nz = std::cos(yaw);
   const double gx = prop.at.x + nx * params.glass_depth,
                gz = prop.at.y + nz * params.glass_depth;
   if (std::hypot(eye_x - gx, eye_z - gz) > params.range) return out;
@@ -52,5 +51,4 @@ MirrorPlacement PlaceMirror(const MirrorParams& params, const Prop& prop,
   out.half_h = params.glass_half_height;
   return out;
 }
-
-}  // namespace mythos
+}

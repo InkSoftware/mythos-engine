@@ -2,13 +2,37 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
+  # Formatting and static analysis; any difference or warning fails the job.
+  lint:
+    name: clang-format and clang-tidy
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install LLVM
+        run: brew install llvm@23
+
+      - name: Configure (compile database)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMYTHOS_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: clang-format
+        run: |
+          export PATH="$(brew --prefix llvm@23)/bin:$PATH"
+          git ls-files '*.cpp' '*.h' ':!:third_party/**' | xargs clang-format --style=file --dry-run --Werror
+
+      - name: clang-tidy
+        run: |
+          export PATH="$(brew --prefix llvm@23)/bin:$PATH"
+          git ls-files 'src/*.cpp' 'tools/*.cpp' 'tests/*.cpp' ':!:third_party/**' \
+            | xargs clang-tidy -p build --warnings-as-errors='*'
+
   build-test:
     name: ${{ matrix.os }} (portable ${{ matrix.portable }})
     runs-on: ${{ matrix.os }}
@@ -66,7 +90,7 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ] && [ "${{ matrix.portable }}" = "ON" ]; then ARCHS="arm64;x86_64"; fi
           LAUNCHER=""
           if [ "$RUNNER_OS" = "Linux" ]; then LAUNCHER="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"; fi
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMYTHOS_BUILD_TESTS=ON $LAUNCHER \
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMYTHOS_BUILD_TESTS=ON -DMYTHOS_WARNINGS_AS_ERRORS=ON $LAUNCHER \
             -DMYTHOS_PORTABLE=${{ matrix.portable }} ${ARCHS:+-DCMAKE_OSX_ARCHITECTURES="$ARCHS"}
         shell: bash
 

@@ -1,6 +1,8 @@
-// The single translation unit that compiles stb_image (public domain,
-// third_party/stb).
+
+
+// The one translation unit that compiles stb_image. Images are decoded from
+// memory (read through the vfs), so the stdio loaders are left out.
 #define STB_IMAGE_IMPLEMENTATION
-#define STBI_NO_STDIO  // everything is read through mythos::vfs and decoded
-                       // from memory
+#define STBI_NO_STDIO
+
 #include "stb_image.h"

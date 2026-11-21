@@ -7,14 +7,15 @@
 
 namespace mythos {
 namespace {
-
+// Plain 3D point used by the geometry helpers.
 struct P3 {
   float x, y, z;
 };
 
-// The batch in `out` with this texture and flags, created on first use.
+// The batch in `out` with this texture and flags, created on first use. The
+// reference is invalidated by the next push to `out`.
 Batch& BatchFor(std::vector<Batch>& out, const std::string& texture,
-                bool emissive, bool alpha_test) {
+                const bool emissive, const bool alpha_test) {
   for (auto& existing : out) {
     if (existing.texture == texture && existing.emissive == emissive &&
         existing.alpha_test == alpha_test) {
@@ -29,8 +30,8 @@ Batch& BatchFor(std::vector<Batch>& out, const std::string& texture,
   return b;
 }
 
-void PushVertex(Batch& b, const P3& p, float nx, float ny, float nz, float u,
-                float v) {
+void PushVertex(Batch& b, const P3& p, const float nx, const float ny,
+                const float nz, const float u, const float v) {
   b.verts.push_back({.px = p.x,
                      .py = p.y,
                      .pz = p.z,
@@ -41,10 +42,12 @@ void PushVertex(Batch& b, const P3& p, float nx, float ny, float nz, float u,
                      .v = v});
 }
 
-// Two triangles for the quad p0..p3 (uv spans 0..uMax by 0..vMax). Culling is
-// off, so winding does not matter.
-void AddQuad(Batch& b, P3 p0, P3 p1, P3 p2, P3 p3, float nx, float ny, float nz,
-             float u_max, float v_max) {
+// Two triangles for the quad p0..p3 with the given normal; texture coordinates
+// run 0..u_max by 0..v_max (p0 at the origin, p1 along u, p3 along v). Culling
+// is off, so winding does not matter.
+void AddQuad(Batch& b, const P3 p0, const P3 p1, const P3 p2, const P3 p3,
+             const float nx, const float ny, const float nz, const float u_max,
+             const float v_max) {
   PushVertex(b, p0, nx, ny, nz, 0, 0);
   PushVertex(b, p1, nx, ny, nz, u_max, 0);
   PushVertex(b, p2, nx, ny, nz, u_max, v_max);
@@ -53,8 +56,7 @@ void AddQuad(Batch& b, P3 p0, P3 p1, P3 p2, P3 p3, float nx, float ny, float nz,
   PushVertex(b, p3, nx, ny, nz, 0, v_max);
 }
 
-// An axis-aligned box, all six faces, uv tiled by face size.
-// Faces of AddBox, to leave out where a box is joined to another one.
+// Faces of AddBox, for leaving out those where a box joins another.
 enum BoxFace : unsigned {
   kFacePosX = 1,
   kFaceNegX = 2,
@@ -64,8 +66,11 @@ enum BoxFace : unsigned {
   kFaceNegZ = 32,
 };
 
-void AddBox(Batch& b, float x0, float y0, float z0, float x1, float y1,
-            float z1, unsigned skip = 0) {
+// An axis-aligned box, minus the faces in `skip`, with uv tiled by face size
+// (one repeat per meter).
+void AddBox(Batch& b, const float x0, const float y0, const float z0,
+            const float x1, const float y1, const float z1,
+            const unsigned skip = 0) {
   if (!(skip & kFacePosX))
     AddQuad(b, {.x = x1, .y = y0, .z = z0}, {.x = x1, .y = y0, .z = z1},
             {.x = x1, .y = y1, .z = z1}, {.x = x1, .y = y1, .z = z0}, 1, 0, 0,
@@ -92,24 +97,24 @@ void AddBox(Batch& b, float x0, float y0, float z0, float x1, float y1,
             x1 - x0, y1 - y0);
 }
 
-constexpr float kDoorOpeningHeight = 2.02f;  // the door-shaped hole
+// Height of the door-shaped hole, the top of the lintel, the thickness of a
+// post, and how far the posts stand above the opening.
+constexpr float kDoorOpeningHeight = 2.02f;
 constexpr float kLintelTop = 2.14f;
 constexpr float kPostThickness = 0.10f;
-constexpr float kPostAboveOpening =
-    0.06f;  // posts stand a little proud of the opening
+constexpr float kPostAboveOpening = 0.06f;
 
-// Wooden posts and a header around an opening. The passage runs through the
-// cell along `alongX` (true: you walk through in the x direction). `inset` is
-// how far the posts sit from the sides of the cell; `topY` is where the header
-// ends (the lintel line for door cells, the ceiling for the open doorways
-// between the hallway and the rooms).
-void AddDoorFrame(std::vector<Batch>& out, float fx, float fz, bool along_x,
-                  float inset, float top_y) {
+// Wooden posts and a header around an opening in the cell at (fx, fz). The
+// passage runs along x when `along_x` (you walk through in the x direction).
+// `inset` is how far the posts sit from the sides of the cell; `top_y` is where
+// the header ends: the lintel line for door cells, the ceiling for the open
+// doorways between a hallway and its rooms.
+void AddDoorFrame(std::vector<Batch>& out, const float fx, const float fz,
+                  const bool along_x, const float inset, const float top_y) {
   Batch& wood = BatchFor(out, "door", false, false);
   const float post_near = inset, post_far = inset + kPostThickness;
   const float post_top = kDoorOpeningHeight + kPostAboveOpening;
-  if (along_x) {  // walls to the north and south; posts at the z sides of the
-                  // opening
+  if (along_x) {
     AddBox(wood, fx + 0.30f, 0, fz + post_near, fx + 0.70f, post_top,
            fz + post_far);
     AddBox(wood, fx + 0.30f, 0, fz + 1 - post_far, fx + 0.70f, post_top,
@@ -126,20 +131,21 @@ void AddDoorFrame(std::vector<Batch>& out, float fx, float fz, bool along_x,
   }
 }
 
-// True if the passage through the door cell at (x, y) runs along the x axis
-// (solid wall to the north and south).
-bool DoorPassageAlongX(const Level& level, int x, int y) {
+// True if the passage through the door cell at (x, y) runs along the x axis,
+// which is when it has solid walls to the north and south.
+bool DoorPassageAlongX(const Level& level, const int x, const int y) {
   const TileSet& t = level.Tiles();
   return t.Solid(level.At(x, y - 1)) && t.Solid(level.At(x, y + 1));
 }
 
-// An open passage cell between two walls: a doorway without a door (room
-// entrances).
-bool IsDoorwayCell(const Level& level, int x, int y) {
+// True for an open passage cell between two thick walls (not a door cell): a
+// room entrance. Thin walls do not count, since they have no depth to form a
+// passage.
+bool IsDoorwayCell(const Level& level, const int x, const int y) {
   const TileSet& t = level.Tiles();
   const char c = level.At(x, y);
   if (t.Solid(c) || t.IsDoor(c)) return false;
-  const auto thick = [&](int cx, int cy) {  // thin walls have no passage depth
+  const auto thick = [&](const int cx, const int cy) {
     return t.Solid(level.At(cx, cy)) && !t.Thin(level.At(cx, cy));
   };
   const bool walls_x = thick(x - 1, y) && thick(x + 1, y);
@@ -147,8 +153,10 @@ bool IsDoorwayCell(const Level& level, int x, int y) {
   return walls_x != walls_z;
 }
 
-// Two crossed vertical quads, so an item reads from every angle.
-void AddCross(Batch& b, float cx, float cz, float w, float h, float y0) {
+// Two crossed vertical quads of width `w` and height `h` centerd at (cx, cz),
+// lifted by `y0`, so a sprite reads from every angle.
+void AddCross(Batch& b, const float cx, const float cz, const float w,
+              const float h, const float y0) {
   const float hw = w * 0.5f;
   AddQuad(b, {.x = cx - hw, .y = y0, .z = cz}, {.x = cx + hw, .y = y0, .z = cz},
           {.x = cx + hw, .y = y0 + h, .z = cz},
@@ -158,18 +166,18 @@ void AddCross(Batch& b, float cx, float cz, float w, float h, float y0) {
           {.x = cx, .y = y0 + h, .z = cz - hw}, 1, 0, 0, 1, 1);
 }
 
-// Bakes a model into the world: rotate by yaw about the vertical axis, then
-// move to (cx, lift, cz). Local +z is the model's front; yaw 0 faces +z, 90
-// faces +x, 180 faces -z, 270 faces -x.
-void AppendModel(std::vector<Batch>& world, const Model& model, double centre_x,
-                 double centre_z, double yaw_deg, double lift) {
+// Bakes a model into the world: rotates it by `yaw_deg` about the vertical
+// axis, then moves it to (center_x, lift, center_z). The model's local +z is
+// its front: yaw 0 faces +z, 90 faces +x, 180 faces -z, 270 faces -x.
+void AppendModel(std::vector<Batch>& world, const Model& model,
+                 const double centre_x, const double centre_z,
+                 const double yaw_deg, const double lift) {
   const double yaw_rad = yaw_deg * std::numbers::pi / 180.0;
-  const float cos_yaw = static_cast<float>(std::cos(yaw_rad));
-  const float sin_yaw = static_cast<float>(std::sin(yaw_rad));
-  // Local axes in the world: right = (cos, 0, -sin), up = (0, 1, 0), forward =
-  // (sin, 0, cos).
-  const float origin_x = static_cast<float>(centre_x),
-              origin_z = static_cast<float>(centre_z);
+  const auto cos_yaw = static_cast<float>(std::cos(yaw_rad));
+  const auto sin_yaw = static_cast<float>(std::sin(yaw_rad));
+
+  const auto origin_x = static_cast<float>(centre_x),
+             origin_z = static_cast<float>(centre_z);
   for (const auto& model_batch : model.batches) {
     Batch& dst = BatchFor(world, model_batch.texture, model_batch.emissive,
                           model_batch.alpha_test);
@@ -192,12 +200,12 @@ void AppendModel(std::vector<Batch>& world, const Model& model, double centre_x,
   }
 }
 
-// Turns the cells of one level into batches. One method per kind of cell.
+// Turns the cells of one level into batches, one method per kind of cell.
 class SceneBuilder {
  public:
-  SceneBuilder(const Level& level, bool outdoor)
+  // `level` must outlive the builder.
+  SceneBuilder(const Level& level, const bool outdoor)
       : level_(level), tiles_(level.Tiles()), outdoor_(outdoor) {
-    // batchFor hands out references, so avoid reallocating mid-build.
     geometry_.world.reserve(32);
     geometry_.props.reserve(8);
   }
@@ -211,28 +219,31 @@ class SceneBuilder {
   }
 
  private:
-  static constexpr float kH = kWallHeight;  // short for the wall quads below
-  static constexpr float kDoorJamb =
-      0.15f;  // wall left either side of a door's hole
-  static constexpr float kDoorJambFar =
-      0.85f;  // where the far jamb starts (1 - kDoorJamb)
-  static constexpr float kRoomFrameInset =
-      0.02f;  // posts of a room entrance hug the cell sides
+  // Short for the wall quads below. The jamb constants are the wall left either
+  // side of a door's hole, where the far jamb starts (1 - kDoorJamb), and how
+  // far the posts of a room entrance sit from the cell sides.
+  static constexpr float kH = kWallHeight;
+  static constexpr float kDoorJamb = 0.15f;
+  static constexpr float kDoorJambFar = 0.85f;
+  static constexpr float kRoomFrameInset = 0.02f;
 
-  void AddCell(int x, int y) {
+  // Dispatches on the kind of cell. An empty (open air) tile draws nothing but
+  // any furniture placed there.
+  void AddCell(const int x, const int y) {
     const char glyph = level_.At(x, y);
     if (tiles_[glyph].empty) {
-      return;  // open air: only the furniture placed there is drawn
+      return;
     }
     if (tiles_.IsDoor(glyph)) return AddDoorCell(x, y);
     if (tiles_.Solid(glyph)) return AddWallCell(x, y, glyph);
     AddFloorCell(x, y, glyph);
   }
 
-  // Floor and (indoors) ceiling of one cell. The sky is drawn instead of a
-  // ceiling outdoors.
-  void AddFloorAndCeiling(float fx, float fz, const std::string& floor_texture,
-                          bool floor = true, bool ceiling = true) {
+  // Floor and, indoors, ceiling of the cell at (fx, fz); the sky is drawn
+  // instead of a ceiling outdoors. Either can be left out for a stairwell.
+  void AddFloorAndCeiling(const float fx, const float fz,
+                          const std::string& floor_texture,
+                          const bool floor = true, const bool ceiling = true) {
     if (floor)
       AddQuad(BatchFor(geometry_.world, floor_texture, false, false),
               {.x = fx, .y = 0, .z = fz}, {.x = fx + 1, .y = 0, .z = fz},
@@ -246,18 +257,19 @@ class SceneBuilder {
     }
   }
 
-  // A doorway assembly: wall body around a door-shaped hole, wooden posts and a
-  // lintel. The swinging panel itself is drawn per frame by the renderer.
-  void AddDoorCell(int x, int y) {
+  // A doorway assembly: a wall body around a door-shaped hole, wooden posts and
+  // a lintel. The body takes the texture of the wall the door sits in, and the
+  // thickness of that wall (a thin wall's door is as thin as the wall). The
+  // swinging panel itself is drawn per frame by the renderer.
+  void AddDoorCell(const int x, const int y) {
     const auto fx = static_cast<float>(x), fz = static_cast<float>(y);
     std::vector<Batch>& world = geometry_.world;
     const bool along_x = DoorPassageAlongX(level_, x, y);
     AddFloorAndCeiling(fx, fz, "wood");
-    // The wall body takes the texture of the wall the door sits in.
+
     const char side = along_x ? level_.At(x, y - 1) : level_.At(x - 1, y);
     Batch& wall = BatchFor(world, tiles_.WallTexture(side), false, false);
-    // A door in a thin wall is as thin as the wall; in a thick one it is a
-    // full cell deep.
+
     const bool thin = tiles_.Thin(side);
     const float t0 = thin ? 0.5f - kThinWallThickness / 2 : 0.0f;
     const float t1 = thin ? 0.5f + kThinWallThickness / 2 : 1.0f;
@@ -276,11 +288,10 @@ class SceneBuilder {
     AddDarkCaps(x, y, along_x);
   }
 
-  // A passage end that runs into solid wall is capped with a black face:
-  // through an open door you must see darkness, not whatever the background
-  // pass paints there (outdoors that would be the night sky showing through the
-  // house).
-  void AddDarkCaps(int x, int y, bool along_x) {
+  // Caps a passage end that runs into solid wall with a black face. Through an
+  // open door you must see darkness, not whatever the background pass paints
+  // there (outdoors the night sky would show through the house).
+  void AddDarkCaps(const int x, const int y, const bool along_x) {
     const auto fx = static_cast<float>(x), fz = static_cast<float>(y);
     Batch& dark = BatchFor(geometry_.world, "void", false, false);
     if (along_x) {
@@ -309,28 +320,31 @@ class SceneBuilder {
     }
   }
 
-  // Is the face of the wall at (wallX, wallY) towards the neighbour (nx, ny)
-  // visible? Drawn wherever the neighbour is not a wall (open floor or
-  // furniture). A face into a door cell whose passage runs towards this wall is
-  // skipped: that is the darkness you see through an open door.
-  bool WallFaceOpen(int wall_x, int wall_y, int nx, int ny) const {
+  // Whether the face of the wall at (wall_x, wall_y) toward the neighbor (nx,
+  // ny) is visible: it is wherever the neighbor is not a wall. A face into an
+  // open door cell whose passage runs toward this wall is skipped; that is the
+  // darkness seen through an open door.
+  [[nodiscard]] bool WallFaceOpen(const int wall_x, const int wall_y,
+                                  const int nx, const int ny) const {
     const char neighbour = level_.At(nx, ny);
     if (tiles_.Solid(neighbour)) return false;
     if (tiles_.IsOpenDoor(neighbour)) {
       const bool passage_along_x = DoorPassageAlongX(level_, nx, ny);
       if (passage_along_x && ny == wall_y) {
-        return false;  // this wall sits at the end of the passage
+        return false;
       }
       if (!passage_along_x && nx == wall_x) return false;
     }
     return true;
   }
 
-  // A thin wall: a post at the middle of the cell and an arm towards every
-  // solid or door neighbour (so walls join up), with the floor and ceiling left
-  // showing either side of it, in the floor of the room on that side. A window
-  // is the same wall with a hole in it, a sill, a frame and glass.
-  void AddThinWallCell(int x, int y, char glyph) {
+  // A thin wall: a post at the middle of the cell and an arm toward every
+  // solid or door neighbor, so walls join up, with the floor and ceiling left
+  // showing either side of it in the floor of the room on that side. A window
+  // is the same wall with a hole in it, a sill, a frame and glass. The arms
+  // bits of Level::ThinArms are 1 north (-z), 2 south (+z), 4 west (-x) and 8
+  // east (+x).
+  void AddThinWallCell(const int x, const int y, const char glyph) {
     const auto fx = static_cast<float>(x), fz = static_cast<float>(y);
     const float a = 0.5f - kThinWallThickness / 2;
     const float b = 0.5f + kThinWallThickness / 2;
@@ -338,15 +352,18 @@ class SceneBuilder {
     Batch& wall =
         BatchFor(geometry_.world, tiles_.WallTexture(glyph), false, false);
     const bool window = tiles_[glyph].window;
-    const bool along_x = (arms & 12u) != 0;  // arms to the west or east
+    // Arms to the west or east.
+    const bool along_x = (arms & 12u) != 0;
+
     // The post and the arms are one wall, so the faces where they meet, and
-    // where an arm reaches the next wall cell, stay out of the mesh: they would
-    // show as hollow boxes wherever the wall is cut open.
+    // where an arm reaches the next wall cell, are skipped: they would show as
+    // hollow boxes wherever the wall is cut open. Boxes are in cell-local x and
+    // z.
     struct Box {
       float x0, z0, x1, z1;
       unsigned skip;
     };
-    const auto cap = [&](unsigned face, int nx, int ny) {
+    const auto cap = [&](const unsigned face, const int nx, const int ny) {
       return tiles_.Solid(level_.At(nx, ny)) ? face : 0u;
     };
     std::vector<Box> boxes = {
@@ -365,13 +382,14 @@ class SceneBuilder {
     if (arms & 8u) {
       boxes.push_back({b, a, 1, b, kFaceNegX | cap(kFacePosX, x + 1, y)});
     }
+    // A plain wall is whole; a window is whole below the sill and above the
+    // head, and between them only the ends of the cell stand (the jambs) and
+    // the opening is glazed.
     if (!window) {
       for (const Box& bx : boxes)
         AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1,
                bx.skip);
     } else {
-      // Below the sill and above the head the wall is whole; between them only
-      // the ends of the cell stand (the jambs), and the opening is glazed.
       constexpr float kSill = 0.90f, kHead = 2.05f, kJamb = 0.10f;
       for (const Box& bx : boxes) {
         AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kSill, fz + bx.z1,
@@ -382,7 +400,10 @@ class SceneBuilder {
       Batch& wood = BatchFor(geometry_.world, "door", false, false);
       Batch& glass = BatchFor(geometry_.world, "glass", false, false);
       const float lo = kJamb, hi = 1.0f - kJamb;
-      if (along_x) {  // the wall runs along x: the opening spans x, faces z
+      // The wall runs along x: the opening spans x and its faces look along z.
+      // The sill is the wooden board proud of the wall; the mullion and the
+      // transom cross the glass.
+      if (along_x) {
         AddBox(wall, fx, kSill, fz + a, fx + lo, kHead, fz + b);
         AddBox(wall, fx + hi, kSill, fz + a, fx + 1, kHead, fz + b);
         AddQuad(glass, {.x = fx + lo, .y = kSill, .z = fz + 0.5f},
@@ -390,9 +411,9 @@ class SceneBuilder {
                 {.x = fx + hi, .y = kHead, .z = fz + 0.5f},
                 {.x = fx + lo, .y = kHead, .z = fz + 0.5f}, 0, 0, 1, 1, 1);
         AddBox(wood, fx + lo, kSill, fz + a - 0.03f, fx + hi, kSill + 0.04f,
-               fz + b + 0.03f);  // the sill, proud of the wall
+               fz + b + 0.03f);
         AddBox(wood, fx + 0.5f - 0.02f, kSill, fz + 0.5f - 0.03f,
-               fx + 0.5f + 0.02f, kHead, fz + 0.5f + 0.03f);  // the mullion
+               fx + 0.5f + 0.02f, kHead, fz + 0.5f + 0.03f);
         AddBox(wood, fx + lo, 0.5f * (kSill + kHead) - 0.02f, fz + 0.5f - 0.03f,
                fx + hi, 0.5f * (kSill + kHead) + 0.02f, fz + 0.5f + 0.03f);
       } else {
@@ -410,12 +431,15 @@ class SceneBuilder {
                fx + 0.5f + 0.03f, 0.5f * (kSill + kHead) + 0.02f, fz + hi);
       }
     }
-    // Floor and ceiling in the four quarters of the cell that look out onto a
-    // room.
+
+    // Floor and ceiling in the four quarters of the cell. Each takes the room
+    // beside it, or in the pocket of a corner where both edge neighbors are
+    // wall, the room diagonally across. A quarter's neighbors: two on its
+    // edges (n1, n2) and the diagonal one (dx, dy).
     struct Quarter {
       float qx, qz;
-      int n1x, n1y, n2x, n2y;  // the two neighbours that border it
-      int dx, dy;              // and the one diagonally beyond it
+      int n1x, n1y, n2x, n2y;
+      int dx, dy;
     };
     const Quarter quarters[4] = {
         {0, 0, x, y - 1, x - 1, y, x - 1, y - 1},
@@ -425,11 +449,10 @@ class SceneBuilder {
     for (const Quarter& q : quarters) {
       const char n1 = level_.At(q.n1x, q.n1y), n2 = level_.At(q.n2x, q.n2y);
       const char nd = level_.At(q.dx, q.dy);
-      const auto open = [&](char c) {
+      const auto open = [&](const char c) {
         return !tiles_.Solid(c) && !tiles_[c].empty;
       };
-      // The room beside the quarter, or (in the pocket of a corner where both
-      // neighbours are wall) the room diagonally across it.
+
       const char open_glyph =
           open(n1) ? n1 : (open(n2) ? n2 : (open(nd) ? nd : '\0'));
       if (open_glyph == '\0') continue;
@@ -449,11 +472,13 @@ class SceneBuilder {
     }
   }
 
-  void AddWallCell(int x, int y, char glyph) {
+  // A solid cell: a quad on each side that faces open space.
+  void AddWallCell(const int x, const int y, const char glyph) {
     if (tiles_.Thin(glyph)) return AddThinWallCell(x, y, glyph);
     const auto fx = static_cast<float>(x), fz = static_cast<float>(y);
-    // Pictures are one object, not a repeating material: stretch them once over
-    // the wall instead of tiling them kWallHeight times.
+
+    // A picture is one object, not a repeating material: stretch it once over
+    // the wall instead of tiling it kWallHeight times.
     const float v_max = tiles_[glyph].wall_is_object ? 1.0f : kH;
     Batch& b =
         BatchFor(geometry_.world, tiles_.WallTexture(glyph), false, false);
@@ -480,7 +505,9 @@ class SceneBuilder {
     }
   }
 
-  void AddFloorCell(int x, int y, char glyph) {
+  // An open cell: floor, ceiling, the entrance frame of a room doorway, and the
+  // tile's sprite if it has one.
+  void AddFloorCell(const int x, const int y, const char glyph) {
     const auto fx = static_cast<float>(x), fz = static_cast<float>(y);
     AddFloorAndCeiling(fx, fz, tiles_.FloorTexture(glyph),
                        !tiles_[glyph].open_floor, !tiles_[glyph].open_ceiling);
@@ -492,14 +519,15 @@ class SceneBuilder {
              fz + 0.5f, tile.sprite_size, tile.sprite_size, tile.sprite_lift);
   }
 
-  // Room entrances get a wooden door frame (on the room side of a two-cell
-  // opening).
-  void AddRoomEntranceFrame(int x, int y) {
+  // Gives a room entrance a wooden door frame, on the room side of a two-cell
+  // opening. A passage that leads up to a real door already has that door's
+  // frame, and so does the second cell of a deep opening.
+  void AddRoomEntranceFrame(const int x, const int y) {
     const bool along_z =
         tiles_.Solid(level_.At(x - 1, y)) && tiles_.Solid(level_.At(x + 1, y));
     const bool prev_is_doorway = along_z ? IsDoorwayCell(level_, x, y - 1)
                                          : IsDoorwayCell(level_, x - 1, y);
-    // A passage that leads up to a real door already has that door's frame.
+
     const bool next_to_door = along_z ? (tiles_.IsDoor(level_.At(x, y - 1)) ||
                                          tiles_.IsDoor(level_.At(x, y + 1)))
                                       : (tiles_.IsDoor(level_.At(x - 1, y)) ||
@@ -510,15 +538,16 @@ class SceneBuilder {
     }
   }
 
-  // Furniture and props: models from assets/models, placed on their cells
-  // (props may sit off centre and above the floor).
+  // Furniture models from the level, placed on their cells. Props may sit off
+  // center and above the floor. Unknown model names are skipped rather than
+  // failing.
   void AddFurniture(const ModelLibrary& models) {
     for (const auto& placement : level_.Furniture()) {
       const Model* model = models.Find(placement.model);
       if (!model) {
-        continue;  // unknown model names are skipped rather than crashing the
+        continue;
       }
-      // game
+
       AppendModel(geometry_.world, *model, placement.x + 0.5 + placement.off_x,
                   placement.y + 0.5 + placement.off_z, placement.yaw_deg,
                   placement.lift);
@@ -530,16 +559,15 @@ class SceneBuilder {
   bool outdoor_;
   SceneGeometry geometry_;
 };
-
-}  // namespace
+}
 
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
-                                 bool outdoor) {
+                                 const bool outdoor) {
   return SceneBuilder(level, outdoor).Build(models);
 }
 
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
-                                 bool outdoor, float y) {
+                                 const bool outdoor, const float y) {
   SceneGeometry g = BuildSceneGeometry(level, models, outdoor);
   if (y == 0.0f) return g;
   for (auto* part : {&g.world, &g.props})
@@ -557,13 +585,16 @@ std::vector<Batch> BuildDoorPanel() {
   std::vector<Batch> out;
   Batch& b = BatchFor(out, "door", false, false);
   const float w = kDoorPanelWidth, h = kDoorPanelHeight;
-  const float t = 0.025f;  // half the panel's thickness
-  // The two large faces carry the whole door image (planks and the brass knob).
+  // Half the panel thickness. The two large faces carry the whole door image
+  // (planks and the brass knob); the thin edges are the hinge side, the knob
+  // side and the top.
+  const float t = 0.025f;
+
   AddQuad(b, {.x = 0, .y = 0, .z = t}, {.x = w, .y = 0, .z = t},
           {.x = w, .y = h, .z = t}, {.x = 0, .y = h, .z = t}, 0, 0, 1, 1, 1);
   AddQuad(b, {.x = 0, .y = 0, .z = -t}, {.x = w, .y = 0, .z = -t},
           {.x = w, .y = h, .z = -t}, {.x = 0, .y = h, .z = -t}, 0, 0, -1, 1, 1);
-  // Thin edges: hinge side, knob side, top.
+
   AddQuad(b, {.x = 0, .y = 0, .z = -t}, {.x = 0, .y = 0, .z = t},
           {.x = 0, .y = h, .z = t}, {.x = 0, .y = h, .z = -t}, -1, 0, 0, 0.05f,
           h);
@@ -575,5 +606,4 @@ std::vector<Batch> BuildDoorPanel() {
           0.05f);
   return out;
 }
-
-}  // namespace mythos
+}

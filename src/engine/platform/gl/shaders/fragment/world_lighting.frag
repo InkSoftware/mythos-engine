@@ -216,10 +216,10 @@ void main() {
         if (uZoneCount >= 0) {  // only a room with a window sees it
             float inside = 0.0;
             for (int i = 0; i < uZoneCount; ++i)
-                if (vWorld.x >= uZoneXZ[i].x - 0.02 && vWorld.x <= uZoneXZ[i].z + 0.02 &&
-                    vWorld.z >= uZoneXZ[i].y - 0.02 && vWorld.z <= uZoneXZ[i].w + 0.02 &&
-                    vWorld.y >= uZoneY[i].x - 0.02 && vWorld.y <= uZoneY[i].y + 0.02)
-                    inside = 1.0;
+            if (vWorld.x >= uZoneXZ[i].x - 0.02 && vWorld.x <= uZoneXZ[i].z + 0.02 &&
+                vWorld.z >= uZoneXZ[i].y - 0.02 && vWorld.z <= uZoneXZ[i].w + 0.02 &&
+                vWorld.y >= uZoneY[i].x - 0.02 && vWorld.y <= uZoneY[i].y + 0.02)
+            inside = 1.0;
             flash *= inside;
         }
         ambient += flash * vec3(0.50, 0.57, 0.80);

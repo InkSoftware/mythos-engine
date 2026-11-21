@@ -5,10 +5,8 @@
 #include <sstream>
 
 namespace mythos {
-
 namespace {
-
-bool IsSpace(char c) {
+bool IsSpace(const char c) {
   return c == ' ' || c == '\n' || c == '\t' || c == '\r' || c == '\f';
 }
 
@@ -19,20 +17,19 @@ std::string Trim(const std::string& s) {
   return s.substr(a, b - a);
 }
 
-// The length of the UTF-8 sequence starting with lead byte c (1 for a stray
-// byte).
-size_t SequenceLength(unsigned char c) {
+// Length in bytes of the UTF-8 sequence that starts with lead byte `c`.
+size_t SequenceLength(const unsigned char c) {
   if (c >= 0xF0) return 4;
   if (c >= 0xE0) return 3;
   if (c >= 0xC0) return 2;
   return 1;
 }
 
-bool StartsAt(const std::string& s, size_t i, const char* token) {
+bool StartsAt(const std::string& s, const size_t i, const char* const token) {
   return s.compare(i, std::char_traits<char>::length(token), token) == 0;
 }
 
-// The text up to each forced page break.
+// Splits at explicit page breaks, keeping empty segments between them.
 std::vector<std::string> SplitAtBreaks(const std::string& text) {
   std::vector<std::string> out;
   std::string cur;
@@ -54,12 +51,11 @@ std::vector<std::string> SplitAtBreaks(const std::string& text) {
   return out;
 }
 
-// Whether a sentence ends after s[i] (a full stop, !, ? or an ellipsis
-// followed by a space or the end).
-bool SentenceEnd(const std::string& s, size_t i) {
+// True when byte `i` ends a sentence: ".", "!", "?" or the UTF-8 ellipsis (E2
+// 80 A6) followed by whitespace or the end.
+bool SentenceEnd(const std::string& s, const size_t i) {
   const char c = s[i];
   if (c != '.' && c != '!' && c != '?') {
-    // U+2026 (...) is E2 80 A6; its last byte ends one.
     if (!(i >= 2 && static_cast<unsigned char>(s[i]) == 0xA6 &&
           static_cast<unsigned char>(s[i - 1]) == 0x80 &&
           static_cast<unsigned char>(s[i - 2]) == 0xE2))
@@ -68,9 +64,10 @@ bool SentenceEnd(const std::string& s, size_t i) {
   return i + 1 >= s.size() || IsSpace(s[i + 1]);
 }
 
-// Levels, coarse to fine: lines, sentences, words, codepoints. Each piece keeps
-// its trailing separator, so joining the pieces gives the text back.
-std::vector<std::string> Pieces(const std::string& s, int level) {
+// Cuts `s` into the units the packer places, from coarse to fine: 0 lines, 1
+// sentences, 2 words, 3 single characters. A piece keeps its trailing
+// whitespace so that joining the pieces gives the text back.
+std::vector<std::string> Pieces(const std::string& s, const int level) {
   std::vector<std::string> out;
   std::string cur;
   for (size_t i = 0; i < s.size();) {
@@ -89,7 +86,6 @@ std::vector<std::string> Pieces(const std::string& s, int level) {
     if (level == 2) cut = IsSpace(s[i]);
     ++i;
     if (cut) {
-      // Keep a run of spaces with the piece before it.
       while (level != 0 && i < s.size() && IsSpace(s[i]) && s[i] != '\n')
         cur += s[i++];
       out.push_back(cur);
@@ -100,6 +96,8 @@ std::vector<std::string> Pieces(const std::string& s, int level) {
   return out;
 }
 
+// Fills pages greedily. A piece that does not fit an empty page is split again
+// at the next finer level.
 struct Packer {
   const std::function<bool(const std::string&)>& fits;
   std::vector<std::string> pages;
@@ -110,9 +108,10 @@ struct Packer {
     if (!t.empty()) pages.push_back(t);
     cur.clear();
   }
-  bool Fits(const std::string& s) const { return fits(Trim(s)); }
 
-  void Add(const std::string& s, int level) {
+  [[nodiscard]] bool Fits(const std::string& s) const { return fits(Trim(s)); }
+
+  void Add(const std::string& s, const int level) {
     for (const std::string& p : Pieces(s, level)) {
       if (Fits(cur + p)) {
         cur += p;
@@ -126,7 +125,7 @@ struct Packer {
         }
       }
       cur.clear();
-      if (level >= 3) {  // one character that does not fit: take it anyway
+      if (level >= 3) {
         cur = p;
       } else {
         Add(p, level + 1);
@@ -134,8 +133,7 @@ struct Packer {
     }
   }
 };
-
-}  // namespace
+}
 
 std::vector<std::string> PaginateText(
     const std::string& text,
@@ -152,7 +150,7 @@ std::vector<std::string> PaginateText(
 }
 
 std::vector<std::string> PaginateText(const std::string& text,
-                                      size_t max_chars) {
+                                      const size_t max_chars) {
   return PaginateText(text, [max_chars](const std::string& s) {
     size_t n = 0;
     for (const char c : s)
@@ -161,8 +159,9 @@ std::vector<std::string> PaginateText(const std::string& text,
   });
 }
 
-std::vector<std::string> WrapLines(const mythos::SdfFont& font, float size,
-                                   float width, const std::string& text) {
+std::vector<std::string> WrapLines(const mythos::SdfFont& font,
+                                   const float size, const float width,
+                                   const std::string& text) {
   std::vector<std::string> out;
   size_t start = 0;
   while (start <= text.size()) {
@@ -179,7 +178,7 @@ std::vector<std::string> WrapLines(const mythos::SdfFont& font, float size,
 }
 
 std::vector<int> PaginateEntries(const std::vector<float>& heights,
-                                 float max_height, float gap) {
+                                 const float max_height, const float gap) {
   std::vector<int> starts{0};
   float used = 0;
   for (size_t i = 0; i < heights.size(); ++i) {
@@ -193,11 +192,12 @@ std::vector<int> PaginateEntries(const std::vector<float>& heights,
   return starts;
 }
 
-int ClampPage(int page, int count) {
+int ClampPage(const int page, const int count) {
   return std::max(0, std::min(page, count - 1));
 }
 
-std::vector<std::string> WrapWords(const std::string& text, size_t max_chars) {
+std::vector<std::string> WrapWords(const std::string& text,
+                                   const size_t max_chars) {
   const auto length = [](const std::string& str) {
     size_t n = 0;
     for (const unsigned char ch : str) n += (ch & 0xC0) != 0x80;
@@ -216,5 +216,4 @@ std::vector<std::string> WrapWords(const std::string& text, size_t max_chars) {
   if (!line.empty() || lines.empty()) lines.push_back(line);
   return lines;
 }
-
-}  // namespace mythos
+}

@@ -3,9 +3,8 @@
 #include <algorithm>
 
 namespace mythos {
-
 BodyModels UploadBodyModels(SceneRenderer& scene, const ModelLibrary& models) {
-  const auto upload = [&](const char* name) {
+  const auto upload = [&](const char* const name) {
     const Model* m = models.Find(name);
     return m ? scene.UploadModel(m->batches) : -1;
   };
@@ -22,8 +21,10 @@ BodyModels UploadBodyModels(SceneRenderer& scene, const ModelLibrary& models) {
 }
 
 void AddBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose,
-                      const BodyModels& ids, bool light_held, bool lighter) {
-  const auto add = [&](int model, const PartMatrix& m, unsigned views) {
+                      const BodyModels& ids, const bool light_held,
+                      const bool lighter) {
+  const auto add = [&](const int model, const PartMatrix& m,
+                       const unsigned views) {
     if (model < 0) return;
     ModelInstance inst;
     inst.model = model;
@@ -46,5 +47,4 @@ void AddBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose,
     if (lighter) add(ids.flame, pose.flame, kBoth);
   }
 }
-
-}  // namespace mythos
+}

@@ -1,38 +1,40 @@
+// Matrix helpers on plain float arrays. Matrices are 16 floats in column-major
+// order (OpenGL layout), right-handed, with clip depth -1..1.
 #ifndef MYTHOS_ENGINE_CORE_MAT4_H_
 #define MYTHOS_ENGINE_CORE_MAT4_H_
-// Column-major 4x4 matrices as float[16], and the view frustum, for the
-// renderer: no GL here, so the maths is tested headless. A view looks down -z
-// with y up (right-handed, like OpenGL).
-namespace mythos {
 
+namespace mythos {
+// Writes the identity matrix to `m`.
 void Mat4Identity(float* m);
-// A perspective projection (vertical field of view in radians, depth range
-// zn..zf).
+
+// Perspective projection; `fovy` is the vertical field of view in radians and
+// `zn`, `zf` the near and far planes.
 void Mat4Perspective(float fovy, float aspect, float zn, float zf, float* m);
-// A view matrix for an eye looking at `center`, with `up` roughly up.
+
+// View matrix looking from `eye` toward `center`; each vector is 3 floats.
 void Mat4LookAt(const float* eye, const float* center, const float* up,
                 float* m);
-// out = a * b.
+
+// out = a * b. `out` may alias an input.
 void Mat4Multiply(const float* a, const float* b, float* out);
 
-// The view of one face of a cube map around `eye`: faces 0..5 are +X -X +Y -Y
-// +Z -Z, with the ups OpenGL's cube sampling expects, so a direction looked up
-// in the cube finds the pixel drawn along it.
+// View matrix for cube-map `face` (0..5 in the order +x, -x, +y, -y, +z, -z)
+// from `eye`, using the standard cube-map up vectors.
 void CubeFaceView(int face, const float* eye, float* view);
 
-// The six planes of a view frustum, normals pointing inwards: a point is inside
-// when a*x + b*y + c*z + d >= 0 for all of them (plane[i] = {a, b, c, d}).
+// View frustum as six planes (left, right, bottom, top, near, far), each (a, b,
+// c, d) with the inside where a*x + b*y + c*z + d >= 0. Not normalized.
 struct Frustum {
   float plane[6][4];
 };
 
-// The frustum of a view-projection matrix (Gribb / Hartmann).
+// Extracts the planes from a combined view-projection matrix.
 void FrustumPlanes(const float* view_proj, Frustum& out);
 
-// False when the box (shifted by dz along z) lies wholly outside one plane.
+// Conservative test of an axis-aligned box against the frustum: false only when
+// it lies fully outside one plane. `dz` shifts the box along z before testing.
 bool BoxInFrustum(const Frustum& frustum, const float* box_min,
                   const float* box_max, float dz = 0.0f);
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_CORE_MAT4_H_
+#endif

@@ -1,8 +1,5 @@
 #ifndef MYTHOS_ENGINE_WORLD_LEVEL_H_
 #define MYTHOS_ENGINE_WORLD_LEVEL_H_
-// Grid level model: a map of glyphs plus furniture, parsed from text level
-// files. What each glyph means (solid, door, textures) comes from the level's
-// TileSet.
 
 #include <cstdint>
 #include <string>
@@ -11,106 +8,130 @@
 
 #include "engine/world/tiles.h"
 
+// The grid world: glyph map, furniture placements and the collision tests built
+// on them. One cell is one world unit; world x is the column, z is the row.
 namespace mythos {
-
-// A model placed in the level. Furniture fills one solid cell and stands on its
-// centre. A prop (solid = false) is a small object that blocks nothing: it may
-// sit off the cell centre (offX, offZ) and above the floor (lift), on a table
-// or on a wall.
+// A model placed in a cell: either solid furniture or non-solid decor.
 struct Placement {
+  // Cell column and row (the row is world z).
   int x = 0;
   int y = 0;
   std::string model;
+  // Rotation in degrees; 0 faces +z, 90 faces +x.
   double yaw_deg = 0;
-  double off_x = 0, off_z = 0;  // from the cell centre, in world units
-  double lift = 0;              // height of the model's base above the floor
+  // Offset from the cell center in meters, and height above the floor.
+  double off_x = 0, off_z = 0;
+  double lift = 0;
+  // Solid placements make their cell impassable.
   bool solid = true;
-  std::string id;  // names a prop, so it can be removed again
+  // Optional unique id; RemovePlacement needs one.
+  std::string id;
 };
 
+// A rectangular map of glyphs plus placements. Revision() changes whenever the
+// map or placements change, so caches can detect edits. Not thread-safe.
 class Level {
  public:
-  // Builds the grid from rows. All rows must have the same length. Clears
-  // furniture.
+  // Loads a map from equal-length rows, clearing any furniture. Returns false
+  // and sets *error for an empty map or ragged rows.
   bool Parse(const std::vector<std::string>& rows,
              std::string* error = nullptr);
-  // Parses a zone file: a [map] section of rows, a [furniture] section of "x y
-  // model yaw" lines (solid, one cell each) and an optional [decor] section of
-  // "x y model yaw [offX offZ lift]" lines (non-solid: a vase on a table, a
-  // picture on a wall). Lines starting with ';' are comments.
+
+  // Parses level text: a "[map]" section of rows, "[furniture]" lines ("x y
+  // model yaw") and "[decor]" lines ("x y model yaw [offX offZ lift]"). Blank
+  // lines and lines starting with ';' are ignored. Nothing is kept on failure
+  // of the placement checks, but the map itself is already replaced.
   bool ParseText(const std::string& text, std::string* error = nullptr);
 
-  // Parses the level file at path (see parseText).
+  // Reads path through the virtual file system and parses it with ParseText.
   bool LoadFile(const std::string& path, std::string* error = nullptr);
 
-  // The glyph legend. Kept across parse() and copies; defaults to
-  // defaultTileSet().
+  // Sets the tile set; null selects the default one.
   void SetTiles(const TileSetPtr& tiles) {
-    tiles_ = tiles ? std::move(tiles) : DefaultTileSet();
+    tiles_ = tiles ? tiles : DefaultTileSet();
   }
-  const TileSet& Tiles() const { return *tiles_; }
-  const TileSetPtr& TilesPtr() const { return tiles_; }
 
-  int Width() const { return w_; }
-  int Height() const { return h_; }
-  bool InBounds(int x, int y) const {
+  [[nodiscard]] const TileSet& Tiles() const { return *tiles_; }
+  [[nodiscard]] const TileSetPtr& TilesPtr() const { return tiles_; }
+
+  [[nodiscard]] int Width() const { return w_; }
+  [[nodiscard]] int Height() const { return h_; }
+
+  [[nodiscard]] bool InBounds(const int x, const int y) const {
     return x >= 0 && y >= 0 && x < w_ && y < h_;
   }
-  // Out-of-bounds reads return a wall.
-  char At(int x, int y) const;
-  void Set(int x, int y, char glyph);
-  // Passable for movement: not a solid glyph, and not covered by furniture.
-  bool Passable(int x, int y) const;
 
-  // Thin walls (TileInfo::thin): a solid thin cell fills only a post of
-  // kThinWallThickness at its centre plus an arm to each side that has a solid
-  // or door neighbour. These are the rectangles (min x, min z, max x, max z, in
-  // world units) a thin solid cell fills; none for any other cell.
+  // The glyph at a cell; out of bounds reads as '#'.
+  [[nodiscard]] char At(int x, int y) const;
+
+  // Replaces a glyph and bumps the revision. Out of bounds is ignored.
+  void Set(int x, int y, char glyph);
+
+  // Whole-cell test: in bounds, not a solid glyph and without solid furniture.
+  // Thin walls count as impassable here; use BoxBlocked for the precise test.
+  [[nodiscard]] bool Passable(int x, int y) const;
+
+  // An axis-aligned rectangle in world units (x and z).
   struct Rect {
     double x0, z0, x1, z1;
   };
-  std::vector<Rect> ThinRects(int x, int y) const;
-  // Which sides of a thin cell continue as wall: bit 0 north (-z), 1 south, 2
-  // west, 3 east.
-  unsigned ThinArms(int x, int y) const;
-  // Whether a body covering this box (world units) touches anything solid:
-  // walls (a thin wall only where its slab is) and furniture.
-  bool BoxBlocked(double min_x, double min_z, double max_x, double max_z) const;
-  // The same for one point.
-  bool PointBlocked(double x, double z) const;
 
-  // First cell (row-major) holding glyph c.
+  // The rectangles of a thin wall cell: the central post plus an arm toward
+  // each solid or door neighbor. Empty for any other cell. The mesher and
+  // collision both use this, so what is drawn is what blocks.
+  [[nodiscard]] std::vector<Rect> ThinRects(int x, int y) const;
+
+  // Bit mask of the neighbors a thin wall joins: 1 north (z-1), 2 south (z+1),
+  // 4 west (x-1), 8 east (x+1).
+  [[nodiscard]] unsigned ThinArms(int x, int y) const;
+
+  // Precise collision test for the box [min_x, max_x] x [min_z, max_z] in world
+  // units, honoring thin wall geometry. Outside the map is blocked.
+  [[nodiscard]] bool BoxBlocked(double min_x, double min_z, double max_x,
+                                double max_z) const;
+
+  // BoxBlocked for a single point.
+  [[nodiscard]] bool PointBlocked(double x, double z) const;
+
+  // Finds the first cell (row-major) holding glyph; returns false if none.
   bool Find(char glyph, int& x, int& y) const;
-  std::vector<std::pair<int, int>> FindAll(char c) const;
 
-  const std::vector<Placement>& Furniture() const { return furniture_; }
-  // Solid furniture covering (x, y), or nullptr. Props are never returned.
-  const Placement* FurnitureAt(int x, int y) const;
-  // Drops a placement into the level at run time (e.g. scripted changes). Solid
-  // furniture makes its cell solid and is refused when the cell is out of
-  // bounds or already solid; a prop only needs the cell to be in bounds.
+  // All cells holding the glyph as (column, row), in row-major order.
+  [[nodiscard]] std::vector<std::pair<int, int>> FindAll(char c) const;
+
+  [[nodiscard]] const std::vector<Placement>& Furniture() const {
+    return furniture_;
+  }
+
+  // The solid placement in a cell, or null.
+  [[nodiscard]] const Placement* FurnitureAt(int x, int y) const;
+
+  // Adds a placement. Fails if out of bounds or a solid one targets an
+  // impassable cell.
   bool AddFurniture(const Placement& p);
-  // Removes the placement with this id (a prop picked up). False if there is
-  // none.
+
+  // Removes the placement with the given id (empty ids never match); returns
+  // whether one was found.
   bool RemovePlacement(const std::string& id);
 
-  // Increases on every change, so renderers know when to rebuild geometry.
-  // Unique across all levels.
-  uint64_t Revision() const { return revision_; }
+  // Process-unique stamp, renewed on every change to the map or placements.
+  [[nodiscard]] uint64_t Revision() const { return revision_; }
 
-  // Samples the segment for blocking glyphs and furniture.
-  bool LineOfSight(double x0, double y0, double x1, double y1) const;
+  // True if no point sampled along the segment (x0, y0)-(x1, y1) in the floor
+  // plane is blocked. The end points themselves are not tested.
+  [[nodiscard]] bool LineOfSight(double x0, double y0, double x1,
+                                 double y1) const;
 
  private:
   int w_ = 0;
   int h_ = 0;
   uint64_t revision_ = 0;
   std::vector<char> cells_;
-  std::vector<char> solid_;  // 1 where furniture stands
+  // Per-cell flag: 1 if solid furniture stands there.
+  std::vector<char> solid_;
   std::vector<Placement> furniture_;
   TileSetPtr tiles_ = DefaultTileSet();
 };
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_WORLD_LEVEL_H_
+#endif

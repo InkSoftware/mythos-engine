@@ -1,8 +1,8 @@
+// Headless sound arithmetic: stereo panning and attenuation of a positional
+// source, cue definitions and the random pick of a clip and pitch.
 #ifndef MYTHOS_ENGINE_AUDIO_AUDIO_MATH_H_
 #define MYTHOS_ENGINE_AUDIO_AUDIO_MATH_H_
-// The arithmetic of sound in a world, with no audio device: where a source sits
-// relative to the listener, how cues pick their clips, and a small random
-// generator for variation.
+
 #include <cmath>
 #include <cstdint>
 #include <string>
@@ -11,55 +11,56 @@
 #include "engine/core/math.h"
 
 namespace mythos {
-
+// Per-channel linear gain, 0 (silent) and up.
 struct StereoGain {
   float left = 0, right = 0;
 };
 
-// The stereo gains of a positional source heard by a listener at `listener`
-// facing `facing` (radians; 0 is +x). Loudness is volume / (1 + falloff *
-// distance^2): `falloff` 0.5 is a source you have to be near to hear (a ticking
-// clock); a smaller one carries (a voice from a radio, heard across the house,
-// much softer). The pan is soft (never hard to one side), a source with
-// hushRadius > 0 falls silent closer than that, and `muted` silences it
-// outright.
-inline StereoGain PositionalGain(const Vec2& listener, double facing,
-                                 const Vec2& source, double hush_radius,
-                                 bool muted = false, double volume = 0.75,
-                                 double falloff = 0.5) {
-  constexpr double kPanWidth = 0.75;  // 1 would pan hard to one side at 90
-                                      // degrees; less keeps both ears in play
+// Gain of a point source heard by a listener on the XZ plane.
+// Positions are in world units (Vec2::y is the world z) and `facing` is the
+// listener's heading in radians, measured like atan2(dz, dx). Gain falls off as
+// volume / (1 + falloff * d^2); it is zero inside `hush_radius` (when positive)
+// or when `muted`. Panning is equal-power, narrowed to kPanWidth so a source
+// directly to one side is not fully one-eared.
+inline StereoGain PositionalGain(const Vec2& listener, const double facing,
+                                 const Vec2& source, const double hush_radius,
+                                 const bool muted = false,
+                                 const double volume = 0.75,
+                                 const double falloff = 0.5) {
+  // Fraction of the full stereo field used; 1 would pan hard left and right.
+  constexpr double kPanWidth = 0.75;
+
   const double dx = source.x - listener.x, dz = source.y - listener.y;
   const double distance = std::hypot(dx, dz);
   double gain = volume / (1.0 + falloff * distance * distance);
   if (hush_radius > 0 && distance < hush_radius) gain = 0.0;
   if (muted) gain = 0.0;
   const double bearing = std::atan2(dz, dx) - facing;
-  const double right =
-      0.5 *
-      (1.0 +
-       kPanWidth *
-           std::sin(
-               bearing));  // 0 all left .. 1 all right; equal-power pan below
+  const double right = 0.5 * (1.0 + kPanWidth * std::sin(bearing));
   return {.left = static_cast<float>(gain * std::sqrt(1.0 - right)),
           .right = static_cast<float>(gain * std::sqrt(right))};
 }
 
-// A sound event: one of several clips, how loud, and how it varies.
+// A named sound: the clips to choose from and how to play them.
 struct SoundCue {
+  // Clip names; one is picked at random per play.
   std::vector<std::string> clips;
+  // Linear volume multiplier.
   float gain = 1.0f;
+  // Playback rate multiplier.
   float pitch = 1.0f;
-  bool jitter = false;  // vary the pitch a little each time (footsteps)
+  // Randomize the pitch slightly on every play.
+  bool jitter = false;
 };
 
-// A cheap deterministic [0, 1) generator, for step variation and the like.
+// Small deterministic linear congruential generator for audio variation. Not
+// suitable for anything that needs quality or security.
 class Rng {
  public:
-  explicit Rng(uint32_t seed = 0x9E3779B9u) : state_(seed) {}
+  explicit Rng(const uint32_t seed = 0x9E3779B9u) : state_(seed) {}
+
+  // Returns a value in [0, 1).
   float Next() {
-    // Numerical Recipes linear congruential generator; the top 24 bits fill a
-    // float's mantissa exactly.
     state_ = state_ * 1664525u + 1013904223u;
     return static_cast<float>(state_ >> 8) / 16777216.0f;
   }
@@ -68,16 +69,16 @@ class Rng {
   uint32_t state_;
 };
 
-// The clip a cue plays this time (the first when it has one) and its pitch,
-// drawing from rng the way the footsteps always have: a pitch draw first, then
-// a clip draw only when there is a choice.
+// The outcome of PickCue: the index into SoundCue::clips and the pitch.
 struct CuePick {
   size_t clip = 0;
   float pitch = 1.0f;
 };
+
+// Chooses a clip uniformly and a pitch for one play of `cue`. With jitter the
+// pitch is scaled by a random factor in [0.92, 1.08).
 inline CuePick PickCue(const SoundCue& cue, Rng& rng) {
-  constexpr float kJitterMin =
-      0.92f;  // pitch varies within +-8% of the cue's pitch
+  constexpr float kJitterMin = 0.92f;
   constexpr float kJitterRange = 0.16f;
   const float jitter = kJitterMin + kJitterRange * rng.Next();
   CuePick out;
@@ -89,7 +90,6 @@ inline CuePick PickCue(const SoundCue& cue, Rng& rng) {
   out.pitch = cue.pitch * (cue.jitter ? jitter : 1.0f);
   return out;
 }
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_AUDIO_AUDIO_MATH_H_
+#endif

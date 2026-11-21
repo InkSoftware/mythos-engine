@@ -1,10 +1,9 @@
 #include "engine/ui/menu.h"
 
 namespace mythos {
-
-int MenuStep(int& index, int count, const UiInput& in, bool activate,
-             const std::function<bool(int)>& usable) {
-  const auto ok = [&](int i) { return !usable || usable(i); };
+int MenuStep(int& index, const int count, const UiInput& in,
+             const bool activate, const std::function<bool(int)>& usable) {
+  const auto ok = [&](const int i) { return !usable || usable(i); };
   if (in.down_pressed) {
     do {
       index = (index + 1) % count;
@@ -23,5 +22,4 @@ int MenuStep(int& index, int count, const UiInput& in, bool activate,
   if (clicked_item) index = in.click_item;
   return (activate || clicked_item) ? index : -1;
 }
-
-}  // namespace mythos
+}

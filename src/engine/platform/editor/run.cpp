@@ -1,23 +1,13 @@
-// The editor's window, Dear ImGui backends and frame loop. A game's main()
-// calls RunEditor() with its Adapter; the editor itself is editor_app.cpp.
-//
-//   <editor> [--project DIR] [--assets DIR] [--game EXE] [--level NAME]
-//       --project DIR   the game's repository (holds assets/)
-//       --assets DIR    the merged assets (textures, models; the build's asset
-//                       stage); default: the project's assets
-//       --game EXE      the game, for the preview (default: next to the editor)
-//       --level NAME    open this level first
-//   Screenshots (render a few frames, save the window as a PPM, exit):
-//       --shot FILE [--size W H] [--frames N] [--camera HEADING_DEG PITCH_DEG
-//       DISTANCE] [--top] [--select furniture:N|decor:N|NAME] [--tool
-//       select|move|rotate|paint|place] [--preview]
+
 
 #include "engine/platform/editor/run.h"
 
 #include <SDL3/SDL.h>
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <numbers>
 #include <string>
 
 #include "backends/imgui_impl_opengl3.h"
@@ -28,14 +18,29 @@
 #include "engine/platform/window.h"
 #include "imgui.h"
 
+// The editor's window, ImGui setup and frame loop.
 namespace {
+// Whole-string number parse; `fallback` when the text is not a number.
+int ParseInt(const std::string& text, const int fallback = 0) {
+  char* end = nullptr;
+  const int64_t v = std::strtoll(text.c_str(), &end, 10);
+  return end != text.c_str() && *end == '\0' ? static_cast<int>(v) : fallback;
+}
 
+float ParseFloat(const std::string& text, const float fallback = 0.0f) {
+  char* end = nullptr;
+  const float v = std::strtof(text.c_str(), &end);
+  return end != text.c_str() && *end == '\0' ? v : fallback;
+}
+
+// First installed system UI font from a short per-OS list, or null (ImGui's
+// built-in font is then used). No font is bundled.
 const char* FindUiFont() {
   static const char* kFonts[] = {
       "/System/Library/Fonts/SFNS.ttf",
       "/System/Library/Fonts/Supplemental/Arial.ttf",
       "/Library/Fonts/Arial.ttf",
-      "C:\\Windows\\Fonts\\segoeui.ttf",
+      R"(C:\Windows\Fonts\segoeui.ttf)",
       "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
       "/usr/share/fonts/TTF/DejaVuSans.ttf",
       "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -45,6 +50,7 @@ const char* FindUiFont() {
   return nullptr;
 }
 
+// A project folder is one that holds assets/levels.
 bool HasProject(const std::string& dir) {
   std::error_code ec;
   return !dir.empty() &&
@@ -52,8 +58,9 @@ bool HasProject(const std::string& dir) {
              std::filesystem::path(dir) / "assets" / "levels", ec);
 }
 
-// The engine's assets that ship beside the editor (a release archive), where
-// the models and textures can be read from when a project has none of its own.
+// The assets/ folder shipped beside the editor (inside an app bundle, next to
+// the executable, or in a build tree), recognized by its models/ folder;
+// empty if none.
 std::string BundledAssets() {
   namespace fs = std::filesystem;
   if (const char* base = SDL_GetBasePath()) {
@@ -66,19 +73,25 @@ std::string BundledAssets() {
   return "";
 }
 
+// State shared with the asynchronous folder dialog callback.
 struct PickState {
   bool done = false;
   std::string path;
 };
-void SDLCALL OnPicked(void* userdata, const char* const* list, int) {
+
+// Folder dialog callback; may run on another thread. An empty path means the
+// dialog was canceled.
+void SDLCALL OnPicked(void* const userdata, const char* const* const list,
+                      int) {
   auto* st = static_cast<PickState*>(userdata);
   if (list && list[0]) st->path = list[0];
-  st->done = true;  // an empty list: cancelled
+  st->done = true;
 }
 
-// Asks for the project's folder (the one holding assets/) until it is one, or
-// the person cancels (an empty string).
-std::string PickProject(SDL_Window* window) {
+// Asks for a project folder until one is valid. Returns empty if canceled.
+// The dialog is asynchronous, so events are pumped while waiting to keep the
+// window responsive.
+std::string PickProject(SDL_Window* const window) {
   for (;;) {
     PickState st;
     SDL_ShowOpenFolderDialog(OnPicked, &st, window, nullptr, false);
@@ -96,12 +109,14 @@ std::string PickProject(SDL_Window* window) {
         window);
   }
 }
-
-}  // namespace
+}
 
 namespace mythos::editor {
-
-int RunEditor(int argc, char** argv, const EditorConfig& config) {
+// Project resolution order: --project, then the folder remembered in
+// project.txt, then a folder dialog. Screenshot mode (--shot) skips the
+// dialog, the remembered folder and the layout file, renders --frames frames
+// and writes a PPM of the window.
+int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
   EditorArgs args;
   args.project_dir = config.project_dir;
   args.stage_dir = config.stage_dir;
@@ -109,7 +124,7 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
   int width = 1680, height = 1000, frames = 45;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
-    auto more = [&](int n) { return i + n < argc; };
+    auto more = [&](const int n) { return i + n < argc; };
     if (a == "--project" && more(1))
       args.project_dir = argv[++i];
     else if (a == "--assets" && more(1))
@@ -121,10 +136,10 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
     else if (a == "--shot" && more(1))
       shot = argv[++i];
     else if (a == "--size" && more(2)) {
-      width = std::atoi(argv[++i]);
-      height = std::atoi(argv[++i]);
+      width = ParseInt(argv[++i], width);
+      height = ParseInt(argv[++i], height);
     } else if (a == "--frames" && more(1))
-      frames = std::atoi(argv[++i]);
+      frames = ParseInt(argv[++i], frames);
     else if (a == "--select" && more(1))
       args.select = argv[++i];
     else if (a == "--tool" && more(1))
@@ -135,11 +150,9 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
       args.preview = true;
     else if (a == "--camera" && more(3)) {
       args.has_camera = true;
-      args.heading =
-          static_cast<float>(std::atof(argv[++i])) * 3.14159265f / 180.0f;
-      args.pitch =
-          static_cast<float>(std::atof(argv[++i])) * 3.14159265f / 180.0f;
-      args.distance = static_cast<float>(std::atof(argv[++i]));
+      args.heading = ParseFloat(argv[++i]) * std::numbers::pi_v<float> / 180.0f;
+      args.pitch = ParseFloat(argv[++i]) * std::numbers::pi_v<float> / 180.0f;
+      args.distance = ParseFloat(argv[++i]);
     }
   }
 
@@ -151,8 +164,6 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
                    shot.empty()))
     return 1;
 
-  // Started from a file manager there are no arguments and the working folder
-  // is not a project: use the last project, else ask for one.
   const std::string last_file = mythos::PrefFilePath(
       adapter->PrefsOrg(), adapter->PrefsApp(), "project.txt");
   if (!HasProject(args.project_dir) && shot.empty()) {
@@ -192,6 +203,8 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
   else
     io.Fonts->AddFontDefault();
   ImGui_ImplSDL3_InitForOpenGL(window.Sdl(), SDL_GL_GetCurrentContext());
+  // GLSL 150 is the oldest version the ImGui backend needs and works on a
+  // 4.1 core context.
   ImGui_ImplOpenGL3_Init("#version 150");
 
   int exit_code = 0;
@@ -234,8 +247,7 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
         gl::ClearColor(0.07f, 0.075f, 0.085f, 1);
         gl::Clear(gl::kColorBufferBit | gl::kDepthBufferBit);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        if (args.preview && app.HasPreview())
-          ++settle;  // let the Game Preview tab come up
+        if (args.preview && app.HasPreview()) ++settle;
         if (!shot.empty() && frame + 1 >= frames && !app.Busy() &&
             (!args.preview || settle > 8 || frame > 20000)) {
           if (!mythos::WriteFramebufferPpm(shot, w, h)) exit_code = 1;
@@ -251,5 +263,4 @@ int RunEditor(int argc, char** argv, const EditorConfig& config) {
   ImGui::DestroyContext();
   return exit_code;
 }
-
-}  // namespace mythos::editor
+}

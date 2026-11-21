@@ -7,9 +7,8 @@
 
 namespace mythos {
 namespace {
-
-// The magenta and black checkerboard that stands in for any texture name that
-// is not registered.
+// The magenta and black chequerboard shown for any texture that is not
+// registered.
 Surface MakeMissing() {
   constexpr int kSize = 16, kSquare = 4;
   Surface missing(kSize, kSize);
@@ -21,13 +20,12 @@ Surface MakeMissing() {
   }
   return missing;
 }
-
-}  // namespace
+}
 
 TextureLibrary::TextureLibrary() { textures_["missing"] = MakeMissing(); }
 
 void TextureLibrary::Add(const std::string& name, Surface surface,
-                         bool placeholder) {
+                         const bool placeholder) {
   if (!textures_.contains(name)) names_.push_back(name);
   textures_[name] = std::move(surface);
   if (placeholder) {
@@ -37,22 +35,27 @@ void TextureLibrary::Add(const std::string& name, Surface surface,
   }
 }
 
+// A name's first file that exists and decodes wins, in the order PNG, BMP, TGA,
+// JPG.
 int TextureLibrary::LoadOverrides(const std::string& dir) {
   int replaced = 0;
   for (const auto& name : names_) {
     Surface loaded;
     bool found = false;
-    for (const char* ext :
-         {".png", ".bmp", ".tga", ".jpg"}) {  // first format that exists wins
-      const std::string path = dir + "/" + name + ext;
+    for (const char* ext : {".png", ".bmp", ".tga", ".jpg"}) {
+      std::string path = dir;
+      path += '/';
+      path += name;
+      path += ext;
       if (vfs::Exists(path) && LoadImage(path, loaded)) {
         found = true;
         break;
       }
     }
     if (!found) continue;
-    // Overrides keep their own resolution (capped so a stray huge file cannot
-    // eat memory).
+
+    // Oversized images are squashed to this size to bound the memory and upload
+    // cost of a texture.
     constexpr int kMaxSide = 1024;
     if (loaded.w > kMaxSide || loaded.h > kMaxSide) {
       loaded = Resample(loaded, kMaxSide, kMaxSide);
@@ -73,6 +76,8 @@ bool LoadImage(const std::string& path, Surface& out) {
   std::string bytes;
   if (!vfs::ReadFile(path, bytes) || bytes.empty()) return false;
   int width = 0, height = 0, channels = 0;
+  // Always asks for four channels, so gray and RGB images arrive with opaque
+  // alpha.
   unsigned char* data = stbi_load_from_memory(
       reinterpret_cast<const unsigned char*>(bytes.data()),
       static_cast<int>(bytes.size()), &width, &height, &channels, 4);
@@ -86,7 +91,7 @@ bool LoadImage(const std::string& path, Surface& out) {
   return true;
 }
 
-Surface Resample(const Surface& src, int width, int height) {
+Surface Resample(const Surface& src, const int width, const int height) {
   Surface out(width, height);
   if (src.Empty()) return out;
   for (int y = 0; y < height; ++y) {
@@ -96,5 +101,4 @@ Surface Resample(const Surface& src, int width, int height) {
   }
   return out;
 }
-
-}  // namespace mythos
+}

@@ -9,16 +9,14 @@
 
 namespace mythos {
 namespace {
-
-// Every change anywhere gets a new number, so a fresh copy of a level never
-// looks like an old one.
+// Revisions come from one counter so two levels never share a stamp.
 uint64_t NextRevision() {
   static uint64_t counter = 0;
   return ++counter;
 }
 
-// Line-of-sight samples the segment every this many cells (metres): fine enough
-// not to skip over a one-cell wall.
+// Sampling interval of LineOfSight, in world units; below the thin wall
+// thickness so slabs are not stepped over.
 constexpr double kSightStep = 0.15;
 
 std::string Trimmed(const std::string& text) {
@@ -31,10 +29,10 @@ std::string Trimmed(const std::string& text) {
 bool ReadFile(const std::string& path, std::string& out) {
   return vfs::ReadFile(path, out);
 }
+}
 
-}  // namespace
-
-bool Level::Parse(const std::vector<std::string>& rows, std::string* error) {
+bool Level::Parse(const std::vector<std::string>& rows,
+                  std::string* const error) {
   if (rows.empty()) {
     if (error) *error = "map is empty";
     return false;
@@ -61,7 +59,7 @@ bool Level::Parse(const std::vector<std::string>& rows, std::string* error) {
   return true;
 }
 
-bool Level::ParseText(const std::string& text, std::string* error) {
+bool Level::ParseText(const std::string& text, std::string* const error) {
   std::vector<std::string> rows;
   std::vector<Placement> furniture, decor;
   std::string section;
@@ -86,8 +84,6 @@ bool Level::ParseText(const std::string& text, std::string* error) {
       }
       furniture.push_back(placement);
     } else if (section == "[decor]") {
-      // A small object that blocks nothing: x y model yaw [offX offZ lift]
-      // (metres from the cell centre; lift above the floor).
       std::istringstream fields(line);
       Placement placement;
       placement.solid = false;
@@ -96,8 +92,7 @@ bool Level::ParseText(const std::string& text, std::string* error) {
         if (error) *error = "bad decor line: " + line;
         return false;
       }
-      fields >> placement.off_x >> placement.off_z >>
-          placement.lift;  // optional
+      fields >> placement.off_x >> placement.off_z >> placement.lift;
       decor.push_back(placement);
     }
   }
@@ -107,6 +102,8 @@ bool Level::ParseText(const std::string& text, std::string* error) {
       if (error) *error = "furniture outside the map: " + placement.model;
       return false;
     }
+    // Furniture is validated after the map is known, so a bad level is rejected
+    // whole.
     solid_[static_cast<size_t>(placement.y) * w_ + placement.x] = 1;
   }
   for (const auto& placement : decor) {
@@ -115,16 +112,16 @@ bool Level::ParseText(const std::string& text, std::string* error) {
       return false;
     }
   }
-  furniture_ = furniture;
+  furniture_ = std::move(furniture);
   furniture_.insert(furniture_.end(), decor.begin(), decor.end());
   return true;
 }
 
-char Level::At(int x, int y) const {
+char Level::At(const int x, const int y) const {
   return InBounds(x, y) ? cells_[static_cast<size_t>(y) * w_ + x] : '#';
 }
 
-void Level::Set(int x, int y, char glyph) {
+void Level::Set(const int x, const int y, const char glyph) {
   if (!InBounds(x, y)) return;
   char& cell = cells_[static_cast<size_t>(y) * w_ + x];
   if (cell == glyph) return;
@@ -132,16 +129,15 @@ void Level::Set(int x, int y, char glyph) {
   revision_ = NextRevision();
 }
 
-bool Level::Passable(int x, int y) const {
+bool Level::Passable(const int x, const int y) const {
   if (!InBounds(x, y)) return false;
+  // Both the glyph and any furniture decide passability.
   return !tiles_->Solid(At(x, y)) &&
          solid_[static_cast<size_t>(y) * w_ + x] == 0;
 }
 
-unsigned Level::ThinArms(int x, int y) const {
-  // A wall ends flat at the edge of the map: outside it there is nothing to
-  // join, and an arm into it would stick out as a spike.
-  const auto joins = [&](int nx, int ny) {
+unsigned Level::ThinArms(const int x, const int y) const {
+  const auto joins = [&](const int nx, const int ny) {
     if (!InBounds(nx, ny)) return false;
     const char c = At(nx, ny);
     return tiles_->Solid(c) || tiles_->IsDoor(c);
@@ -150,7 +146,7 @@ unsigned Level::ThinArms(int x, int y) const {
          (joins(x - 1, y) ? 4u : 0u) | (joins(x + 1, y) ? 8u : 0u);
 }
 
-std::vector<Level::Rect> Level::ThinRects(int x, int y) const {
+std::vector<Level::Rect> Level::ThinRects(const int x, const int y) const {
   std::vector<Rect> out;
   if (!InBounds(x, y)) return out;
   const char c = At(x, y);
@@ -167,8 +163,8 @@ std::vector<Level::Rect> Level::ThinRects(int x, int y) const {
   return out;
 }
 
-bool Level::BoxBlocked(double min_x, double min_z, double max_x,
-                       double max_z) const {
+bool Level::BoxBlocked(const double min_x, const double min_z,
+                       const double max_x, const double max_z) const {
   const int x0 = static_cast<int>(std::floor(min_x));
   const int x1 = static_cast<int>(std::floor(max_x));
   const int z0 = static_cast<int>(std::floor(min_z));
@@ -176,6 +172,8 @@ bool Level::BoxBlocked(double min_x, double min_z, double max_x,
   for (int cy = z0; cy <= z1; ++cy) {
     for (int cx = x0; cx <= x1; ++cx) {
       if (Passable(cx, cy)) continue;
+      // Thin walls are the only blocked cells with sub-cell shape; anything
+      // else blocks the whole cell.
       if (!InBounds(cx, cy) || solid_[static_cast<size_t>(cy) * w_ + cx] != 0 ||
           !tiles_->Thin(At(cx, cy))) {
         return true;
@@ -190,7 +188,7 @@ bool Level::BoxBlocked(double min_x, double min_z, double max_x,
   return false;
 }
 
-bool Level::PointBlocked(double x, double z) const {
+bool Level::PointBlocked(const double x, const double z) const {
   return BoxBlocked(x, z, x, z);
 }
 
@@ -215,13 +213,13 @@ bool Level::RemovePlacement(const std::string& id) {
   if (it == furniture_.end()) return false;
   const int x = it->x, y = it->y;
   furniture_.erase(it);
-  // The cell stays solid while any other furniture stands on it.
+  // Another solid piece may still share the cell.
   solid_[static_cast<size_t>(y) * w_ + x] = FurnitureAt(x, y) ? 1 : 0;
   revision_ = NextRevision();
   return true;
 }
 
-const Placement* Level::FurnitureAt(int x, int y) const {
+const Placement* Level::FurnitureAt(const int x, const int y) const {
   for (const auto& placement : furniture_) {
     if (placement.solid && placement.x == x && placement.y == y) {
       return &placement;
@@ -230,7 +228,7 @@ const Placement* Level::FurnitureAt(int x, int y) const {
   return nullptr;
 }
 
-bool Level::Find(char glyph, int& x, int& y) const {
+bool Level::Find(const char glyph, int& x, int& y) const {
   for (int row = 0; row < h_; ++row) {
     for (int col = 0; col < w_; ++col) {
       if (At(col, row) == glyph) {
@@ -243,7 +241,7 @@ bool Level::Find(char glyph, int& x, int& y) const {
   return false;
 }
 
-std::vector<std::pair<int, int>> Level::FindAll(char glyph) const {
+std::vector<std::pair<int, int>> Level::FindAll(const char glyph) const {
   std::vector<std::pair<int, int>> out;
   for (int row = 0; row < h_; ++row) {
     for (int col = 0; col < w_; ++col) {
@@ -253,7 +251,8 @@ std::vector<std::pair<int, int>> Level::FindAll(char glyph) const {
   return out;
 }
 
-bool Level::LineOfSight(double x0, double y0, double x1, double y1) const {
+bool Level::LineOfSight(const double x0, const double y0, const double x1,
+                        const double y1) const {
   const double dx = x1 - x0;
   const double dy = y1 - y0;
   const double length = std::sqrt(dx * dx + dy * dy);
@@ -261,13 +260,13 @@ bool Level::LineOfSight(double x0, double y0, double x1, double y1) const {
   for (int step = 1; step < steps; ++step) {
     const double along = static_cast<double>(step) / steps;
     if (PointBlocked(x0 + dx * along, y0 + dy * along)) {
-      return false;  // walls and furniture block sight
+      return false;
     }
   }
   return true;
 }
 
-bool Level::LoadFile(const std::string& path, std::string* error) {
+bool Level::LoadFile(const std::string& path, std::string* const error) {
   std::string text;
   if (!ReadFile(path, text)) {
     if (error) *error = "missing level file " + path;
@@ -280,5 +279,4 @@ bool Level::LoadFile(const std::string& path, std::string* error) {
   }
   return true;
 }
-
-}  // namespace mythos
+}

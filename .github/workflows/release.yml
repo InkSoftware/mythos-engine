@@ -5,7 +5,7 @@ name: Release
 # engine's assets (pass them with --assets, next to --project <game repo>).
 on:
   push:
-    tags: ["v*"]
+    tags: [ "v*" ]
 
 permissions:
   contents: write

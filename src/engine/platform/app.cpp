@@ -4,14 +4,13 @@
 #include "engine/core/vfs.h"
 
 namespace mythos {
-
 std::string UserFiles::Read(const std::string& file) const {
   const std::string full_path = Path(file);
   return full_path.empty() ? std::string() : ReadTextFile(full_path);
 }
 
 bool UserFiles::Write(const std::string& file, const std::string& text,
-                      bool remove_if_empty) const {
+                      const bool remove_if_empty) const {
   const std::string full_path = Path(file);
   if (full_path.empty()) return false;
   if (WriteFileAtomic(full_path, text, remove_if_empty)) return true;
@@ -28,13 +27,14 @@ MousePointer::~MousePointer() {
   if (hand_) SDL_DestroyCursor(hand_);
 }
 
-int MousePointer::ItemAt(const Window& window, int overlay_w, int overlay_h,
-                         const std::vector<Hotspot>& hotspots, int mx, int my,
-                         int* value) {
+int MousePointer::ItemAt(const Window& window, const int overlay_w,
+                         const int overlay_h,
+                         const std::vector<Hotspot>& hotspots, const int mx,
+                         const int my, int* const value) {
   int window_w = 0, window_h = 0;
   SDL_GetWindowSize(window.Sdl(), &window_w, &window_h);
   if (window_w <= 0 || window_h <= 0) return -1;
-  // Window pixels to overlay pixels.
+
   const float overlay_x = static_cast<float>(mx) *
                           static_cast<float>(overlay_w) /
                           static_cast<float>(window_w);
@@ -44,8 +44,8 @@ int MousePointer::ItemAt(const Window& window, int overlay_w, int overlay_h,
   return HitTest(hotspots, overlay_x, overlay_y, value);
 }
 
-void MousePointer::UpdateCursor(const Window& window, int overlay_w,
-                                int overlay_h,
+void MousePointer::UpdateCursor(const Window& window, const int overlay_w,
+                                const int overlay_h,
                                 const std::vector<Hotspot>& hotspots) const {
   float mouse_x = 0, mouse_y = 0;
   SDL_GetMouseState(&mouse_x, &mouse_y);
@@ -72,9 +72,9 @@ std::map<std::string, double> ClipLengths(
 }
 
 std::string MountAssetPack(const std::string& pack_key) {
-  const char* base =
-      SDL_GetBasePath();  // owned by SDL, with a trailing separator
+  const char* base = SDL_GetBasePath();
   if (!base) return "";
+  // The pack stands in for an `assets` folder next to it.
   const std::string name = "assets.pak";
   for (const char* rel : {"assets.pak", "../Resources/assets.pak"}) {
     const std::string pak = std::string(base) + rel;
@@ -87,5 +87,4 @@ std::string MountAssetPack(const std::string& pack_key) {
   }
   return "";
 }
-
-}  // namespace mythos
+}

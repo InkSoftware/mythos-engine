@@ -1,7 +1,6 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_APP_H_
 #define MYTHOS_ENGINE_PLATFORM_APP_H_
-// The odds and ends every game's front end needs: per-user files, the frame
-// clock, the menu pointer, and playing a sound cue.
+
 #include <SDL3/SDL.h>
 
 #include <map>
@@ -14,34 +13,41 @@
 #include "engine/ui/ui.h"
 
 namespace mythos {
-
-// Files in the user's preferences folder for one game (settings, the save, the
-// profile).
+// Per-user writable files (settings, saves) under the SDL preference folder for
+// an organization and application name.
 class UserFiles {
  public:
   UserFiles(std::string org, std::string app)
       : org_(std::move(org)), app_(std::move(app)) {}
-  std::string Path(const std::string& file) const {
+
+  // Full path of `file` in the preference folder (just `file` if SDL has none).
+  [[nodiscard]] std::string Path(const std::string& file) const {
     return PrefFilePath(org_, app_, file);
   }
-  std::string Read(const std::string& file) const;
-  // Writes atomically; an empty text removes the file when removeIfEmpty. Logs
-  // on failure.
-  bool Write(const std::string& file, const std::string& text,
-             bool remove_if_empty = false) const;
+
+  // Returns the file's text, or an empty string if it cannot be read.
+  [[nodiscard]] std::string Read(const std::string& file) const;
+
+  // Writes atomically and logs on failure. With `remove_if_empty` an empty
+  // `text` deletes the file instead. Returns false on failure.
+  [[nodiscard]] bool Write(const std::string& file, const std::string& text,
+                           bool remove_if_empty = false) const;
 
  private:
   std::string org_, app_;
 };
 
-// Seconds since the last step. A fixed step (1/60) makes screenshot runs
-// repeatable.
+// Measures frame time with the SDL performance counter and accumulates total
+// elapsed time.
 class FrameClock {
  public:
   FrameClock()
       : freq_(SDL_GetPerformanceFrequency()),
         last_(SDL_GetPerformanceCounter()) {}
-  double Step(bool fixed60) {
+
+  // Advances the clock and returns the frame's delta in seconds. With `fixed60`
+  // the delta is a constant 1/60 s (for deterministic runs and captures).
+  double Step(const bool fixed60) {
     const Uint64 now = SDL_GetPerformanceCounter();
     const double dt =
         fixed60 ? 1.0 / 60.0
@@ -50,18 +56,21 @@ class FrameClock {
     seconds_ += dt;
     return dt;
   }
-  double Seconds() const { return seconds_; }  // total time stepped
+
+  [[nodiscard]] double Seconds() const { return seconds_; }
 
  private:
   Uint64 freq_, last_;
   double seconds_ = 0.0;
 };
 
-// Holds a loop to a frame rate: call wait(fps) once per frame, after swapping.
-// 0 does nothing.
+// Caps the frame rate by sleeping until a running deadline.
 class FramePacer {
  public:
-  void Wait(int fps) {
+  // Sleeps until the next frame is due at `fps`; 0 or less means unlimited. The
+  // deadline is reset when the loop has fallen more than four frames behind, so
+  // a stall does not cause a burst of catch-up frames.
+  void Wait(const int fps) {
     if (fps <= 0) {
       deadline_ = 0;
       return;
@@ -70,7 +79,7 @@ class FramePacer {
     const Uint64 frame =
         SDL_GetPerformanceFrequency() / static_cast<Uint64>(fps);
     if (deadline_ == 0 || now > deadline_ + frame * 4) {
-      deadline_ = now;  // first frame, or far behind: restart
+      deadline_ = now;
     }
     deadline_ += frame;
     if (deadline_ > now) {
@@ -83,20 +92,26 @@ class FramePacer {
   Uint64 deadline_ = 0;
 };
 
-// The mouse on the menu pages: window coordinates -> overlay pixels -> the
-// hotspot there, and a hand cursor over anything clickable.
+// Owns the arrow and hand system cursors and maps window pixels to overlay
+// hotspots.
 class MousePointer {
  public:
   MousePointer();
+
   ~MousePointer();
+
   MousePointer(const MousePointer&) = delete;
+
   MousePointer& operator=(const MousePointer&) = delete;
-  // The item under window position (mx, my), given the overlay's size and last
-  // frame's hotspots.
+
+  // Hotspot index under window position (mx, my), or -1. The position is scaled
+  // from window size to the overlay's resolution; `value` receives the
+  // hotspot's value when it is hit.
   static int ItemAt(const Window& window, int overlay_w, int overlay_h,
                     const std::vector<Hotspot>& hotspots, int mx, int my,
                     int* value = nullptr);
-  // Shows the hand when the pointer is over an item, the arrow otherwise.
+
+  // Shows the hand cursor over a hotspot and the arrow elsewhere.
   void UpdateCursor(const Window& window, int overlay_w, int overlay_h,
                     const std::vector<Hotspot>& hotspots) const;
 
@@ -105,22 +120,20 @@ class MousePointer {
   SDL_Cursor* hand_ = nullptr;
 };
 
-// Plays a sound cue: its chosen clip at its gain, with the pitch variation it
-// asks for.
+// Picks a clip, gain and pitch variation from `cue` and plays it. Does nothing
+// for a cue without clips.
 void PlayCue(AudioEngine& audio, const SoundCue& cue, Rng& rng);
 
-// The lengths in seconds of the loaded clips among `names` (clips that did not
-// load are left out).
+// Lengths in seconds of the loaded clips among `names`; unknown or empty clips
+// are left out.
 std::map<std::string, double> ClipLengths(
     const AudioEngine& audio, const std::vector<std::string>& names);
 
-// A packed build ships assets.pak next to the executable (or, in a macOS
-// bundle, in ../Resources) instead of an assets folder. Mounts it under the key
-// `pack_key` (the one mythos_pack was given) and returns the virtual "assets"
-// folder every asset read should go below, so the files are not on disk to
-// edit. Empty if there is no pack or it does not open.
+// Mounts `assets.pak` found beside the executable (or in a macOS bundle's
+// Resources) into the virtual file system, decrypting with a key derived from
+// `pack_key`. Returns the virtual `assets` root, or an empty string when there
+// is no pack or it cannot be mounted.
 std::string MountAssetPack(const std::string& pack_key);
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_PLATFORM_APP_H_
+#endif

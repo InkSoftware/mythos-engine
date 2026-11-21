@@ -4,7 +4,6 @@
 
 namespace mythos {
 namespace {
-
 using gl::ActiveTexture;
 using gl::BindBuffer;
 using gl::BindVertexArray;
@@ -38,9 +37,6 @@ using gl::PixelStorei;
 using gl::TexImage2D;
 using gl::VertexAttribPointer;
 
-// Text from a distance-field atlas: 0.5 is the outline of a letter. vParams.x
-// widens the letter by an outline ring (in field units), vParams.y blurs it
-// outwards (shadows, glows).
 const char* k_text_vs = R"GLSL(
 #version 410 core
 in vec2 aPos;
@@ -61,6 +57,9 @@ void main() {
 }
 )GLSL";
 
+// Field value 0.5 is the glyph edge. A blur pass fades out softly (squared for
+// a smoother falloff); otherwise the edge is anti-aliased by the field's
+// screen-space derivative, with an outline band growing outward from it.
 const char* k_text_fs = R"GLSL(
 #version 410 core
 in vec2 vUV;
@@ -89,21 +88,20 @@ void main() {
 }
 )GLSL";
 
-// Limits of the distance-field effects, in field units (0.5 is the full reach
-// of the field).
+// Limits in distance-field units, so the outline and blur stay inside the
+// atlas's padding.
 constexpr float kMaxOutlineField = 0.45f, kMaxBlurField = 0.5f;
-constexpr int kVertsPerGlyph = 6;  // two triangles
+constexpr int kVertsPerGlyph = 6;
 constexpr int kAttribCount = 5;
 
-// 0xAARRGGBB to four floats, r g b a.
-void UnpackColor(uint32_t argb, float* rgba) {
+// Splits 0xAARRGGBB into floats in 0..1.
+void UnpackColor(const uint32_t argb, float* const rgba) {
   rgba[0] = ((argb >> 16) & 0xFF) / 255.0f;
   rgba[1] = ((argb >> 8) & 0xFF) / 255.0f;
   rgba[2] = (argb & 0xFF) / 255.0f;
   rgba[3] = ((argb >> 24) & 0xFF) / 255.0f;
 }
-
-}  // namespace
+}
 
 bool TextRenderer::Init() {
   if (!program_.Build(k_text_vs, k_text_fs,
@@ -119,8 +117,8 @@ bool TextRenderer::Init() {
   vao_.Bind();
   BindBuffer(kArrayBuffer, vbo_.Id());
   const GLsizei stride = kFloats * sizeof(float);
-  // pos, uv, colour, outline colour, params: floats per attribute and its
-  // shader location
+
+  // Locations 0, 2..5; the layout matches the vertex shader above.
   const GLuint sizes[kAttribCount] = {2, 2, 4, 4, 2},
                locations[kAttribCount] = {0, 2, 3, 4, 5};
   size_t offset = 0;
@@ -149,17 +147,17 @@ void TextRenderer::AddFont(const SdfFont& font) {
   built_ = false;
 }
 
-// One pass over a run (the shadow, then the letters themselves): appends two
-// triangles per glyph.
 void TextRenderer::AppendPass(const TextRun& run,
                               const std::vector<uint32_t>& cps,
-                              const SdfFont& font, float sx, float sy, float dx,
-                              float dy, uint32_t color, uint32_t outline_color,
-                              float outline, float blur) {
-  const float k =
-      run.size /
-      SdfFont::kBakeSize;  // bake pixels -> overlay pixels (the glyph scale)
-  // Overlay pixels -> distance-field units (0.5 = the full reach of the field).
+                              const SdfFont& font, const float sx,
+                              const float sy, const float dx, const float dy,
+                              const uint32_t color,
+                              const uint32_t outline_color, const float outline,
+                              const float blur) {
+  // Scale from the baked glyph size to the run's pixel size.
+  const float k = run.size / SdfFont::kBakeSize;
+
+  // Converts overlay pixels to distance-field units.
   const float to_field = 1.0f / (k * 2.0f * SdfFont::kSdfReach);
   const float iw = 1.0f / font.AtlasWidth(), ih = 1.0f / font.AtlasHeight();
   float col[4], ocol[4];
@@ -169,8 +167,7 @@ void TextRenderer::AppendPass(const TextRun& run,
                            std::min(blur * to_field, kMaxBlurField)};
   float pen_x = run.x + dx;
   const float baseline = run.y + dy + font.Ascent(run.size);
-  // Written straight into the vector: room for every glyph, trimmed to what was
-  // drawn.
+
   const size_t base = verts_.size();
   verts_.resize(base + cps.size() * kVertsPerGlyph * kFloats);
   float* out = verts_.data() + base;
@@ -199,11 +196,10 @@ void TextRenderer::AppendPass(const TextRun& run,
   verts_.resize(static_cast<size_t>(out - verts_.data()));
 }
 
-void TextRenderer::AppendRun(const TextRun& run, const SdfFont& font, float sx,
-                             float sy) {
+void TextRenderer::AppendRun(const TextRun& run, const SdfFont& font,
+                             const float sx, const float sy) {
   const TextEffect& fx = run.fx;
-  const std::vector<uint32_t> cps =
-      Utf8Codepoints(run.text);  // decoded once for both passes
+  const std::vector<uint32_t> cps = Utf8Codepoints(run.text);
   if (fx.shadow_blur > 0.0f && (fx.shadow_color >> 24) != 0) {
     AppendPass(run, cps, font, sx, sy, fx.shadow_x, fx.shadow_y,
                fx.shadow_color, 0, 0.0f, fx.shadow_blur);
@@ -212,12 +208,9 @@ void TextRenderer::AppendRun(const TextRun& run, const SdfFont& font, float sx,
              fx.outline, 0.0f);
 }
 
-// Lays out every run (grouped by font, so each font is one draw) into verts_
-// and uploads it.
-void TextRenderer::RebuildVertices(const TextLayer& text, int overlay_w,
-                                   int overlay_h) {
-  const float sx = 2.0f / overlay_w,
-              sy = 2.0f / overlay_h;  // overlay pixels -> clip space
+void TextRenderer::RebuildVertices(const TextLayer& text, const int overlay_w,
+                                   const int overlay_h) {
+  const float sx = 2.0f / overlay_w, sy = 2.0f / overlay_h;
   verts_.clear();
   ranges_.assign(fonts_.size(), FontRange{});
   for (size_t font_index = 0; font_index < fonts_.size(); ++font_index) {
@@ -237,7 +230,8 @@ void TextRenderer::RebuildVertices(const TextLayer& text, int overlay_w,
   built_ = true;
 }
 
-void TextRenderer::Draw(const TextLayer& text, int overlay_w, int overlay_h) {
+void TextRenderer::Draw(const TextLayer& text, const int overlay_w,
+                        const int overlay_h) {
   if (!program_.Valid() || text.runs.empty()) return;
   program_.Use();
   program_.Set("uAtlas", 0);
@@ -257,5 +251,4 @@ void TextRenderer::Draw(const TextLayer& text, int overlay_w, int overlay_h) {
   }
   Disable(kBlend);
 }
-
-}  // namespace mythos
+}

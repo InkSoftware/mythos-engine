@@ -5,7 +5,6 @@
 #include "engine/world/movement.h"
 
 namespace mythos {
-
 bool LoadPlayerParams(json::Reader& r, const std::string& path,
                       PlayerParams& out) {
   out.radius = r.Number(path + ".radius");
@@ -26,7 +25,7 @@ void ApplyLook(Player& player, const MoveInput& in,
 }
 
 std::optional<char> PlayerWalker::Update(const Level& level, Player& player,
-                                         double dt, const MoveInput& in,
+                                         const double dt, const MoveInput& in,
                                          const PlayerParams& params) {
   const double turn = params.turn_speed * dt;
   if (in.turn_left) player.angle -= turn;
@@ -49,8 +48,8 @@ std::optional<char> PlayerWalker::Update(const Level& level, Player& player,
                   static_cast<int>(std::floor(player.pos.y)));
 }
 
-int FindAimed(const Level& level, const Player& player, double eye_height,
-              double reach, const std::vector<AimCandidate>& candidates) {
+int FindAimed(const Level& level, const Player& player, const double eye_height,
+              const double reach, const std::vector<AimCandidate>& candidates) {
   const double cos_pitch = std::cos(player.pitch);
   const Vec3 dir{.x = std::cos(player.angle) * cos_pitch,
                  .y = std::sin(player.pitch),
@@ -66,10 +65,11 @@ int FindAimed(const Level& level, const Player& player, double eye_height,
         {.x = candidate.at.x, .y = candidate.height, .z = candidate.at.y},
         candidate.radius, nearest_hit);
     if (hit < 0) continue;
-    // The wall check stops half a metre short of the prop, so an object
-    // standing against a wall stays visible.
+
     const double to_x = candidate.at.x - eye_x, to_z = candidate.at.y - eye_z;
     const double flat_distance = std::hypot(to_x, to_z);
+    // Back off half a meter (or all the way, when closer) so the target's own
+    // wall or furniture cell does not hide it.
     const double back_off = flat_distance > 0.5 ? 0.5 / flat_distance : 1.0;
     if (!level.LineOfSight(eye_x, eye_z, candidate.at.x - to_x * back_off,
                            candidate.at.y - to_z * back_off)) {
@@ -80,5 +80,4 @@ int FindAimed(const Level& level, const Player& player, double eye_height,
   }
   return best;
 }
-
-}  // namespace mythos
+}

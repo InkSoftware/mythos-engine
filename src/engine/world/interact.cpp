@@ -4,7 +4,6 @@
 #include <cmath>
 
 namespace mythos {
-
 bool ParseVerb(const std::string& word, Verb& out) {
   if (word == "read") {
     out = Verb::kRead;
@@ -78,10 +77,11 @@ bool ApplyEffects(Progress& progress, const Effects& effects) {
   return new_clue;
 }
 
-Use Interactor::Use(const Prop& prop, bool home, const std::string& held,
-                    double dt, bool pressed, bool holding,
-                    double listen_seconds) {
-  if (home) {  // the empty place of the prop in hand
+Use Interactor::Use(const Prop& prop, const bool home, const std::string& held,
+                    const double dt, const bool pressed, const bool holding,
+                    const double listen_seconds) {
+  // The empty place of the prop in hand: the only thing to do is put it back.
+  if (home) {
     listen_ = 0;
     return pressed ? Use::kPutBack : Use::kNone;
   }
@@ -107,5 +107,4 @@ Use Interactor::Use(const Prop& prop, bool home, const std::string& held,
   }
   return Use::kNone;
 }
-
-}  // namespace mythos
+}

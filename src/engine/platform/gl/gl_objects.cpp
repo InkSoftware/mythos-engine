@@ -6,7 +6,6 @@
 #include <cstdint>
 
 namespace mythos {
-
 using gl::AttachShader;
 using gl::BindAttribLocation;
 using gl::BindBuffer;
@@ -95,56 +94,63 @@ using gl::Viewport;
 
 namespace {
 constexpr int kCubeFaces = 6;
-constexpr GLenum kDepthFormat = kDepthComponent24;  // every depth buffer here
-constexpr size_t kInfoLogBytes = 1024;  // room for a shader / program build log
-}  // namespace
+constexpr GLenum kDepthFormat = kDepthComponent24;
+constexpr size_t kInfoLogBytes = 1024;
+}
 
-// ---- GlBuffer
 void GlBuffer::Create() {
   if (!id_) GenBuffers(1, &id_);
 }
+
 void GlBuffer::Reset() {
   if (id_ && gl::Loaded()) DeleteBuffers(1, &id_);
   id_ = 0;
 }
-void GlBuffer::Upload(const void* data, size_t bytes, gl::GLenum usage) {
+
+void GlBuffer::Upload(const void* const data, const size_t bytes,
+                      const gl::GLenum usage) {
   Create();
   BindBuffer(kArrayBuffer, id_);
   BufferData(kArrayBuffer, static_cast<GLsizeiptr>(bytes), data, usage);
 }
 
-// ---- GlVertexArray
 void GlVertexArray::Create() {
   if (!id_) GenVertexArrays(1, &id_);
 }
+
 void GlVertexArray::Reset() {
   if (id_ && gl::Loaded()) DeleteVertexArrays(1, &id_);
   id_ = 0;
 }
+
 void GlVertexArray::Bind() const { BindVertexArray(id_); }
 
-// ---- GlTexture
 void GlTexture::Create() {
   if (!id_) GenTextures(1, &id_);
 }
+
 void GlTexture::Reset() {
   if (id_ && gl::Loaded()) DeleteTextures(1, &id_);
   id_ = 0;
 }
+
 void GlTexture::Bind() const { BindTexture(kTexture2D, id_); }
-void GlTexture::SetParams(GLint min_filter, GLint mag_filter,
-                          GLint wrap) const {
+
+void GlTexture::SetParams(const GLint min_filter, const GLint mag_filter,
+                          const GLint wrap) const {
   Bind();
   TexParameteri(kTexture2D, kTextureMinFilter, min_filter);
   TexParameteri(kTexture2D, kTextureMagFilter, mag_filter);
   TexParameteri(kTexture2D, kTextureWrapS, wrap);
   TexParameteri(kTexture2D, kTextureWrapT, wrap);
 }
-void GlTexture::Allocate(int w, int h, const void* rgba_pixels,
-                         gl::GLenum internal_format) const {
+
+void GlTexture::Allocate(const int w, const int h,
+                         const void* const rgba_pixels,
+                         const gl::GLenum internal_format) const {
   Bind();
-  TexImage2D(kTexture2D, 0, internal_format, w, h, 0, kRgba, kUnsignedByte,
-             rgba_pixels);
+  TexImage2D(kTexture2D, 0, static_cast<gl::GLint>(internal_format), w, h, 0,
+             kRgba, kUnsignedByte, rgba_pixels);
 }
 
 void SurfaceToRgbaFlipped(const Surface& s, std::vector<uint8_t>& out) {
@@ -163,8 +169,7 @@ void SurfaceToRgbaFlipped(const Surface& s, std::vector<uint8_t>& out) {
   }
 }
 
-// ---- RenderTarget
-void RenderTarget::Create(int w, int h) {
+void RenderTarget::Create(const int w, const int h) {
   Reset();
   w_ = w;
   h_ = h;
@@ -182,6 +187,7 @@ void RenderTarget::Create(int w, int h) {
                           depth_);
   BindFramebuffer(kFramebuffer, 0);
 }
+
 int RenderTarget::MaxSamples() {
   static int cached = -1;
   if (cached < 0 || !gl::Loaded()) {
@@ -191,6 +197,7 @@ int RenderTarget::MaxSamples() {
   }
   return cached;
 }
+
 void RenderTarget::DropMultisample() {
   if (gl::Loaded()) {
     if (ms_fbo_) DeleteFramebuffers(1, &ms_fbo_);
@@ -199,6 +206,7 @@ void RenderTarget::DropMultisample() {
   }
   ms_fbo_ = ms_color_ = ms_depth_ = 0;
 }
+
 void RenderTarget::RebuildMultisample() {
   DropMultisample();
   if (samples_ < 2 || w_ <= 0 || h_ <= 0) return;
@@ -222,6 +230,7 @@ void RenderTarget::RebuildMultisample() {
     samples_ = 0;
   }
 }
+
 void RenderTarget::SetSamples(int n) {
   n = n < 2 ? 0 : std::min(n, MaxSamples());
   if (n < 2) n = 0;
@@ -229,6 +238,7 @@ void RenderTarget::SetSamples(int n) {
   samples_ = n;
   RebuildMultisample();
 }
+
 void RenderTarget::Resolve() const {
   if (!ms_fbo_) return;
   BindFramebuffer(kReadFramebuffer, ms_fbo_);
@@ -236,6 +246,7 @@ void RenderTarget::Resolve() const {
   BlitFramebuffer(0, 0, w_, h_, 0, 0, w_, h_, kColorBufferBit, kNearestFilter);
   BindFramebuffer(kFramebuffer, 0);
 }
+
 void RenderTarget::Reset() {
   DropMultisample();
   samples_ = 0;
@@ -247,7 +258,8 @@ void RenderTarget::Reset() {
   color_.Reset();
   w_ = h_ = 0;
 }
-void RenderTarget::Resize(int w, int h) {
+
+void RenderTarget::Resize(const int w, const int h) {
   if (w == w_ && h == h_) return;
   w_ = w;
   h_ = h;
@@ -256,24 +268,25 @@ void RenderTarget::Resize(int w, int h) {
   RenderbufferStorage(kRenderbuffer, kDepthFormat, w, h);
   RebuildMultisample();
 }
+
 void RenderTarget::Bind() const {
   BindFramebuffer(kFramebuffer, ms_fbo_ ? ms_fbo_ : fbo_);
 }
+
 void RenderTarget::BindWindow() { BindFramebuffer(kFramebuffer, 0); }
 
-// ---- DepthBuffer
-void DepthBuffer::Create(int w, int h) {
+void DepthBuffer::Create(const int w, const int h) {
   if (!id_) GenRenderbuffers(1, &id_);
   BindRenderbuffer(kRenderbuffer, id_);
   RenderbufferStorage(kRenderbuffer, kDepthFormat, w, h);
 }
+
 void DepthBuffer::Reset() {
   if (id_ && gl::Loaded()) DeleteRenderbuffers(1, &id_);
   id_ = 0;
 }
 
-// ---- ShadowCube
-void ShadowCube::Create(int size, const DepthBuffer& depth) {
+void ShadowCube::Create(const int size, const DepthBuffer& depth) {
   Reset();
   size_ = size;
   GenTextures(1, &tex_);
@@ -300,6 +313,7 @@ void ShadowCube::Create(int size, const DepthBuffer& depth) {
   }
   BindFramebuffer(kFramebuffer, 0);
 }
+
 void ShadowCube::Reset() {
   if (gl::Loaded()) {
     if (fbo_) DeleteFramebuffers(1, &fbo_);
@@ -308,7 +322,8 @@ void ShadowCube::Reset() {
   tex_ = fbo_ = 0;
   size_ = 0;
 }
-void ShadowCube::BindFace(int face) const {
+
+void ShadowCube::BindFace(const int face) const {
   BindFramebuffer(kFramebuffer, fbo_);
   FramebufferTexture2D(kFramebuffer, kColorAttachment0,
                        kTextureCubeMapPositiveX + static_cast<GLenum>(face),
@@ -316,16 +331,15 @@ void ShadowCube::BindFace(int face) const {
   Viewport(0, 0, size_, size_);
 }
 
-// ---- GlProgram
-bool GlProgram::Build(const char* vertex_src, const char* fragment_src,
-                      std::initializer_list<Attrib> attribs,
-                      const char* fragment_extra) {
+bool GlProgram::Build(const char* const vertex_src,
+                      const char* const fragment_src,
+                      const std::initializer_list<Attrib> attribs,
+                      const char* const fragment_extra) {
   Reset();
-  const auto compile = [](GLenum type, const char* src,
-                          const char* extra) -> GLuint {
+  const auto compile = [](const GLenum type, const char* const src,
+                          const char* const extra) -> GLuint {
     const GLuint shader = CreateShader(type);
-    const char* sources[2] = {src,
-                              extra};  // `extra` is appended to the main source
+    const char* sources[2] = {src, extra};
     ShaderSource(shader, extra ? 2 : 1, sources, nullptr);
     CompileShader(shader);
     GLint ok = 0;
@@ -344,7 +358,7 @@ bool GlProgram::Build(const char* vertex_src, const char* fragment_src,
   AttachShader(program, vertex_shader);
   AttachShader(program, fragment_shader);
   for (const auto& [location, name] : attribs) {
-    BindAttribLocation(program, location, name);  // unused names are ignored
+    BindAttribLocation(program, location, name);
   }
   LinkProgram(program);
   GLint linked = 0;
@@ -363,34 +377,42 @@ bool GlProgram::Build(const char* vertex_src, const char* fragment_src,
   id_ = program;
   return true;
 }
+
 void GlProgram::Reset() {
   if (id_ && gl::Loaded()) DeleteProgram(id_);
   id_ = 0;
   uniforms_.clear();
 }
+
 void GlProgram::Use() const { UseProgram(id_); }
 
-GLint GlProgram::Uniform(std::string_view name) const {
+GLint GlProgram::Uniform(const std::string_view name) const {
   const auto it = uniforms_.find(name);
   if (it != uniforms_.end()) return it->second;
   const GLint loc = GetUniformLocation(id_, std::string(name).c_str());
   uniforms_.emplace(std::string(name), loc);
   return loc;
 }
-void GlProgram::Set(std::string_view n, int v) const {
+
+void GlProgram::Set(const std::string_view n, const int v) const {
   Uniform1i(Uniform(n), v);
 }
-void GlProgram::Set(std::string_view n, float v) const {
+
+void GlProgram::Set(const std::string_view n, const float v) const {
   Uniform1f(Uniform(n), v);
 }
-void GlProgram::Set(std::string_view n, float a, float b) const {
+
+void GlProgram::Set(const std::string_view n, const float a,
+                    const float b) const {
   Uniform2f(Uniform(n), a, b);
 }
-void GlProgram::Set(std::string_view n, float a, float b, float c) const {
+
+void GlProgram::Set(const std::string_view n, const float a, const float b,
+                    const float c) const {
   Uniform3f(Uniform(n), a, b, c);
 }
-void GlProgram::SetMat4(std::string_view n, const float* m) const {
+
+void GlProgram::SetMat4(const std::string_view n, const float* const m) const {
   UniformMatrix4fv(Uniform(n), 1, kFalse, m);
 }
-
-}  // namespace mythos
+}

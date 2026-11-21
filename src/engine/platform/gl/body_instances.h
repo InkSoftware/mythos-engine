@@ -1,7 +1,5 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_GL_BODY_INSTANCES_H_
 #define MYTHOS_ENGINE_PLATFORM_GL_BODY_INSTANCES_H_
-// The renderer side of engine/world/body.h: the body parts, the torch and the
-// lighter as uploaded models, and the model instances of a frame's pose.
 
 #include <vector>
 
@@ -11,26 +9,26 @@
 #include "engine/world/mirror.h"
 
 namespace mythos {
-
-// The ids of the models a body draws (-1: the library has no such model, and
-// that part is not drawn).
+// Renderer ids of the models that make up the player's body and held light; -1
+// for one that is missing.
 struct BodyModels {
-  int torso = -1, head = -1, leg = -1, arm = -1,
-      forearm = -1;  // body_torso, body_head, body_leg, body_arm, body_forearm
-  int torch = -1, lighter = -1, flame = -1;  // torch, lighter, flame
+  int torso = -1, head = -1, leg = -1, arm = -1, forearm = -1;
+  int torch = -1, lighter = -1, flame = -1;
 };
 
-// Uploads those models (by those names) from the library into the renderer.
+// Uploads the body, torch, lighter and flame models found in `models` by name
+// (`body_torso`, `body_head`, `body_leg`, `body_arm`, `body_forearm`, `torch`,
+// `lighter`, `flame`).
 BodyModels UploadBodyModels(SceneRenderer& scene, const ModelLibrary& models);
 
-// Appends the instances of a pose: the body shows only in the mirror; the light
-// in the hand (the torch, or the lighter and its flame) shows in the view and
-// in the mirror, when `lightHeld`.
+// Appends the instances to draw for `pose`. The figure appears only in the
+// mirror; the held light (a lighter and its flame, or the torch when `lighter`
+// is false) is drawn in both views. Missing models are skipped.
 void AddBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose,
                       const BodyModels& ids, bool light_held, bool lighter);
 
-// Hangs the renderer's mirror where `p` says (leaves its alpha and tint alone);
-// `p.on` false switches it off.
+// Copies a mirror placement into the camera's mirror state; the geometry is
+// left untouched when the mirror is off.
 inline void SetMirror(MirrorState& out, const MirrorPlacement& p) {
   out.on = p.on;
   if (!p.on) return;
@@ -42,7 +40,6 @@ inline void SetMirror(MirrorState& out, const MirrorPlacement& p) {
   out.half_w = p.half_w;
   out.half_h = p.half_h;
 }
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_PLATFORM_GL_BODY_INSTANCES_H_
+#endif

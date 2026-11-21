@@ -1,34 +1,28 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_INPUT_H_
 #define MYTHOS_ENGINE_PLATFORM_INPUT_H_
-// The keyboard and mouse as one frame of game input.
-//
-//   W / Up, S / Down   walk and menu up / down        A, D       strafe and
-//   menu left / right Left, Right        turn                           Shift
-//   run E or Space         interact (held: listen)        F          flashlight
-//   Tab                notebook                       Enter      confirm
-//   Esc                pause / back                   F11        fullscreen
-//   mouse              look while captured; hover and click on menus otherwise
+
 #include <functional>
 
 #include "engine/ui/menu.h"
 #include "engine/world/player.h"
 
 namespace mythos {
-
+// What a poll found beyond the data written to the input structs.
 struct InputPoll {
-  bool quit = false;               // the window was closed
-  bool toggle_fullscreen = false;  // F11 was pressed
+  bool quit = false;
+  bool toggle_fullscreen = false;
 };
 
-// Maps a window position to the menu item (and value) drawn there; -1 for none.
+// Maps a window position to a UI hotspot index (-1 for none) and optionally its
+// value.
 using PointAt = std::function<int(int x, int y, int* value)>;
 
-// Drains the SDL event queue and reads the key state into one frame of input.
-// While `relativeMouse` the mouse moves the view; otherwise it hovers and
-// clicks on `pointAt`'s items.
+// Drains the SDL event queue and reads held keys. Edge-triggered inputs
+// (clicks, key presses) are set in `ui` and `act` and the caller clears them;
+// mouse deltas accumulate into `move`. With `relative_mouse` the mouse looks
+// around, otherwise it hovers and clicks UI items found through `point_at`.
 InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
                     bool relative_mouse, const PointAt& point_at);
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_PLATFORM_INPUT_H_
+#endif

@@ -6,17 +6,16 @@
 
 namespace mythos {
 namespace {
-
-// A door lets people through (and shows as open) once it is more than half
-// open.
+// A door lets people through (and the glyph reads as open) once it is more than
+// half open.
 constexpr double kPassableOpen = 0.5;
-// regionSize stops counting at this many cells (also what a blocked start cell
-// reports).
+
+// RegionSize stops counting at this many cells.
 constexpr int kRegionCap = 400;
+
 // Depth stops counting at this many cells.
 constexpr int kDepthCap = 8;
-
-}  // namespace
+}
 
 void RoomDoors::Scan(const Level& level) {
   doors_.clear();
@@ -28,18 +27,19 @@ void RoomDoors::Scan(const Level& level) {
       Door door;
       door.x = x;
       door.y = y;
+      // The passage runs along x when walls lie to the north and south.
       door.along_x =
           tiles.Solid(level.At(x, y - 1)) && tiles.Solid(level.At(x, y + 1));
       door.open = glyph == 'n' ? 1.0 : 0.0;
       door.opening = glyph == 'n';
-      // It swings into the room. A room is deeper than a corridor, however
-      // narrow the corridor: it goes into the side that runs further straight
-      // on from the door (counted over bare floor, not furniture). If the two
-      // are as deep, it goes into the smaller of the two spaces the door
-      // separates.
+
       const int side_x = door.along_x ? 1 : 0, side_y = door.along_x ? 0 : 1;
       const int ahead = Depth(level, x, y, side_x, side_y);
       const int behind = Depth(level, x, y, -side_x, -side_y);
+      // A door swings into the room: a room is deeper than a corridor, however
+      // narrow the corridor, so it goes into the side that runs further
+      // straight on from the door (counted over bare floor). On a tie it goes
+      // into the smaller of the two spaces the door separates.
       if (ahead != behind) {
         door.swing = ahead > behind ? 1 : -1;
       } else {
@@ -53,7 +53,7 @@ void RoomDoors::Scan(const Level& level) {
   }
 }
 
-int RoomDoors::Use(int x, int y) {
+int RoomDoors::Use(const int x, const int y) {
   for (auto& door : doors_) {
     if (door.x != x || door.y != y) continue;
     door.opening = !door.opening;
@@ -62,16 +62,16 @@ int RoomDoors::Use(int x, int y) {
   return 0;
 }
 
-int RoomDoors::Update(Level& level, double dt, const Vec2& body,
-                      double body_radius, double open_seconds,
-                      double close_seconds) {
-  // A door stops blocking (glyph 'n') once past half open, and blocks again
-  // once it falls below half.
+int RoomDoors::Update(Level& level, const double dt, const Vec2& body,
+                      const double body_radius, const double open_seconds,
+                      const double close_seconds) {
   int closed = 0;
   for (auto& door : doors_) {
     if (door.opening) {
       if (door.open >= 1.0) continue;
       door.open = std::min(1.0, door.open + dt / open_seconds);
+      // The glyph switches at the half-open point: open once past half, solid
+      // again once it falls below half.
       if (door.open > kPassableOpen && level.At(door.x, door.y) == 'N') {
         level.Set(door.x, door.y, 'n');
       }
@@ -79,7 +79,7 @@ int RoomDoors::Update(Level& level, double dt, const Vec2& body,
       double next = std::max(0.0, door.open - dt / close_seconds);
       if (next < kPassableOpen && level.At(door.x, door.y) == 'n') {
         if (Overlaps(body, body_radius, door.x, door.y)) {
-          next = kPassableOpen;  // wait, ajar, until they step out
+          next = kPassableOpen;
         } else {
           level.Set(door.x, door.y, 'N');
         }
@@ -101,7 +101,8 @@ void RoomDoors::AppendStates(std::vector<DoorState>& out) const {
   }
 }
 
-int RoomDoors::Depth(const Level& level, int x, int y, int step_x, int step_y) {
+int RoomDoors::Depth(const Level& level, const int x, const int y,
+                     const int step_x, const int step_y) {
   const TileSet& tiles = level.Tiles();
   int depth = 0;
   for (int i = 1; i <= kDepthCap; ++i) {
@@ -112,8 +113,9 @@ int RoomDoors::Depth(const Level& level, int x, int y, int step_x, int step_y) {
   return depth;
 }
 
-int RoomDoors::RegionSize(const Level& level, int x, int y) {
+int RoomDoors::RegionSize(const Level& level, const int x, const int y) {
   if (!level.Passable(x, y)) return kRegionCap;
+
   // Flood fill that stops at doors; cells are keyed row * 1000 + column (levels
   // are narrower than 1000).
   std::set<int> seen{y * 1000 + x};
@@ -130,19 +132,18 @@ int RoomDoors::RegionSize(const Level& level, int x, int y) {
         continue;
       }
       if (seen.insert(next_y * 1000 + next_x).second) {
-        todo.push_back({next_x, next_y});
+        todo.emplace_back(next_x, next_y);
       }
     }
   }
   return static_cast<int>(seen.size());
 }
 
-bool RoomDoors::Overlaps(const Vec2& pos, double radius, int x, int y) {
-  // Distance from the circle's centre to the nearest point of the door's cell.
+bool RoomDoors::Overlaps(const Vec2& pos, const double radius, const int x,
+                         const int y) {
   const double nearest_x = Clampd(pos.x, x, x + 1.0),
                nearest_y = Clampd(pos.y, y, y + 1.0);
   const double dx = pos.x - nearest_x, dy = pos.y - nearest_y;
   return dx * dx + dy * dy < radius * radius;
 }
-
-}  // namespace mythos
+}

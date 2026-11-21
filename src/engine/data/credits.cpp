@@ -3,28 +3,25 @@
 #include "engine/core/json_reader.h"
 
 namespace mythos {
-
 bool LoadCredits(const json::Value& root, const std::string& file,
-                 std::vector<CreditSection>& out, std::string* error) {
+                 std::vector<CreditSection>& out, std::string* const error) {
   json::Reader reader(root, file);
   const json::Value* sections = reader.At("sections");
   if (sections && !sections->is_array()) {
     reader.Fail("\"sections\" must be an array");
   }
   if (sections && sections->is_array()) {
-    // Reads a required string member into `target`; records the first failure
-    // and returns false.
-    const auto read_string = [&](const json::Value& object, const char* key,
-                                 const std::string& where,
-                                 std::string& target) {
-      const json::Value* value = json::Find(object, key);
-      if (!value || !value->is_string()) {
-        reader.Fail(where + ": missing or bad \"" + key + "\"");
-        return false;
-      }
-      target = value->get<std::string>();
-      return true;
-    };
+    const auto read_string =
+        [&](const json::Value& object, const char* const key,
+            const std::string& where, std::string& target) {
+          const json::Value* value = json::Find(object, key);
+          if (!value || !value->is_string()) {
+            reader.Fail(where + ": missing or bad \"" + key + "\"");
+            return false;
+          }
+          target = value->get<std::string>();
+          return true;
+        };
     for (const auto& section_json : *sections) {
       CreditSection section;
       if (!read_string(section_json, "title", "credits section",
@@ -34,7 +31,7 @@ bool LoadCredits(const json::Value& root, const std::string& file,
       const json::Value* entries = json::Find(section_json, "entries");
       if (!entries || !entries->is_array()) {
         reader.Fail("credits section \"" + section.title +
-                    "\": \"entries\" must be an array");
+                    R"(": "entries" must be an array)");
         break;
       }
       for (const auto& entry_json : *entries) {
@@ -58,5 +55,4 @@ bool LoadCredits(const json::Value& root, const std::string& file,
   if (!reader.Ok() && error) *error = reader.Error();
   return reader.Ok();
 }
-
-}  // namespace mythos
+}

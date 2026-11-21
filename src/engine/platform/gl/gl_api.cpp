@@ -3,7 +3,6 @@
 #include <SDL3/SDL.h>
 
 namespace gl {
-
 #define MYTHOS_GL_DEFINE(ret, name, ...) \
   ret(MYTHOS_GL_CALL* name)(__VA_ARGS__) = nullptr;
 MYTHOS_GL_FUNCTIONS(MYTHOS_GL_DEFINE)
@@ -29,5 +28,4 @@ void UnloadFunctions() {
 }
 
 bool Loaded() { return DeleteBuffers != nullptr; }
-
-}  // namespace gl
+}

@@ -1,9 +1,5 @@
 #ifndef MYTHOS_ENGINE_UI_UI_H_
 #define MYTHOS_ENGINE_UI_UI_H_
-// A small 2D overlay toolkit: pixel boxes on a Surface, styled text runs in a
-// TextLayer, and clickable hotspots. The overlay takes the window's shape at a
-// whole-number scale, so pixels stay square. Nothing here knows what is drawn
-// with it.
 
 #include <string>
 #include <vector>
@@ -12,69 +8,83 @@
 #include "engine/gfx/text.h"
 
 namespace mythos {
-
-// The overlay size for a windowW x windowH drawable: the window divided by the
-// largest whole scale that still leaves at least minW x minH.
+// Picks the overlay resolution for a window: the largest integer scale at which
+// `min_w` x `min_h` still fits, so overlay pixels stay square and whole.
+// Returns the size in `w` and `h`, never below the minimum.
 void OverlaySize(int window_w, int window_h, int min_w, int min_h, int& w,
                  int& h);
 
-// A clickable area of the overlay, in its pixels: a row (item) and, for
-// sliders, the level it stands for (value; -1 otherwise).
+// A clickable rectangle in overlay pixels, with the menu item it belongs to and
+// an optional sub-value (such as a meter pip).
 struct Hotspot {
   int item = -1;
   int value = -1;
   float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
 };
 
-// The hotspot under (x, y): the last one listed wins, so a pip beats its row.
-// Returns its item (-1 for none) and stores its value in *value.
+// Returns the item of the topmost (last added) hotspot containing (x, y), or
+// -1. The hotspot's value is stored in `value` when given (-1 when none hit).
 int HitTest(const std::vector<Hotspot>& hotspots, float x, float y,
             int* value = nullptr);
 
+// Fills the half-open rectangle [x0, x1) x [y0, y1), clipped to the surface.
+// The color is written as is, with no blending.
 void FillRect(Surface& s, int x0, int y0, int x1, int y1, uint32_t color);
+
+// Fills a rectangle and draws a one pixel border inside its edge.
 void DrawBox(Surface& s, int x0, int y0, int x1, int y1, uint32_t fill,
              uint32_t border);
 
-// The colour with its alpha scaled by k.
+// Scales the alpha byte of a color by `k` (clamped to 0..255).
 uint32_t WithAlpha(uint32_t c, double k);
 
-// A font, a size (line height in overlay pixels), a colour and its decoration.
+// Font, size, color and effect of a piece of text. The helpers return modified
+// copies.
 struct Style {
   const SdfFont* font;
   float size;
   uint32_t color;
   TextEffect fx;
 
-  Style Recolored(uint32_t c) const {
+  [[nodiscard]] Style Recolored(const uint32_t c) const {
     Style s = *this;
     s.color = c;
     return s;
   }
-  Style Faded(double k) const {  // the whole style at a fraction of its opacity
+
+  [[nodiscard]] Style Faded(const double k) const {
     Style s = *this;
     s.color = WithAlpha(color, k);
     s.fx.shadow_color = WithAlpha(fx.shadow_color, k);
     s.fx.outline_color = WithAlpha(fx.outline_color, k);
     return s;
   }
-  float LineHeight() const { return size * 0.98f; }
+
+  [[nodiscard]] float LineHeight() const { return size * 0.98f; }
 };
 
+// Ready-made text effects: a soft dark shadow, a colored glow with an optional
+// dark outline, and a pulsing amber glow for the selected menu row.
 TextEffect DropShadow(float blur = 1.2f);
+
 TextEffect Glow(uint32_t color, float blur, float outline = 0.0f);
-// The selected menu item's warm, slowly breathing glow.
+
 TextEffect SelectionGlow(double time_sec, float blur);
 
+// Horizontal anchor of text relative to its x position.
 enum class Align { kLeft, kCenter, kRight };
 
-// The overlay's two layers: pixels (boxes, bars) and text drawn over them.
+// What UI code draws on: the overlay surface for boxes, the text layer for
+// text, and optionally a list that collects hotspots (null when the caller does
+// not need hit testing).
 struct UiCanvas {
   Surface& fb;
   TextLayer& layer;
   std::vector<Hotspot>* hotspots = nullptr;
 
-  void Hot(int item, float x0, float y0, float x1, float y1,
-           int value = -1) const {
+  // Registers a hotspot if the canvas collects them.
+  void Hot(const int item, const float x0, const float y0, const float x1,
+           const float y1, const int value = -1) const {
     if (hotspots) {
       hotspots->push_back({.item = item,
                            .value = value,
@@ -89,9 +99,10 @@ struct UiCanvas {
     return s.font->Width(str, s.size);
   }
 
-  // Writes one line with its box's top at y; returns its width.
-  float Text(const Style& s, float x, float y, const std::string& str,
-             Align a = Align::kLeft) {
+  // Queues one line of text and returns its width. `x` is the left, center or
+  // right edge according to `a`.
+  float Text(const Style& s, const float x, const float y,
+             const std::string& str, const Align a = Align::kLeft) {
     const float w = Width(s, str);
     const float x0 =
         a == Align::kLeft ? x : (a == Align::kCenter ? x - w / 2 : x - w);
@@ -105,9 +116,8 @@ struct UiCanvas {
     return w;
   }
 
-  // Word-wraps a paragraph into maxWidth and writes it; returns the y below the
-  // last line.
-  float Paragraph(const Style& s, float x, float y, float max_width,
+  // Queues text wrapped to `max_width` and returns the y below the last line.
+  float Paragraph(const Style& s, const float x, float y, const float max_width,
                   const std::string& str) {
     for (const auto& line : s.font->Wrap(str, s.size, max_width)) {
       Text(s, x, y, line);
@@ -115,12 +125,13 @@ struct UiCanvas {
     }
     return y;
   }
-  static int LineCount(const Style& s, float max_width,
+
+  // Number of lines `Paragraph` would use.
+  static int LineCount(const Style& s, const float max_width,
                        const std::string& str) {
     return static_cast<int>(s.font->Wrap(str, s.size, max_width).size());
   }
 };
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_UI_UI_H_
+#endif

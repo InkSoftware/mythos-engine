@@ -1,10 +1,5 @@
 #ifndef MYTHOS_ENGINE_GFX_MESH_H_
 #define MYTHOS_ENGINE_GFX_MESH_H_
-// Geometry for the 3D view. A level is turned into triangles here (pure CPU,
-// testable); the platform layer uploads the vertices to the GPU and draws them.
-//
-// Coordinates: world x = map column, world z = map row, world y = up.
-// One map cell is one unit; walls are kWallHeight tall.
 
 #include <string>
 #include <vector>
@@ -16,12 +11,21 @@ class ModelLibrary;
 }
 
 namespace mythos {
-
+// Geometry for the 3D view. A level is turned into triangles here (pure CPU,
+// testable); the platform layer uploads the vertices and draws them.
+//
+// Coordinates: world x = map column, world z = map row, world y = up. One map
+// cell is one unit; walls are kWallHeight tall.
+//
+// Height of walls and of the floor-to-ceiling space, in meters.
 constexpr float kWallHeight = 2.5f;
-// The distance between the floors of a house stacked in one scene: a hair more
-// than a wall, so the ceiling below and the floor above never share a plane.
+
+// Distance between the floors of a house stacked in one scene: a hair more than
+// a wall, so the ceiling below and the floor above never share a plane.
 constexpr float kFloorPitch = kWallHeight + 0.01f;
 
+// One vertex: position, unit normal and texture coordinates. Models and the
+// mesher both produce these.
 struct Vertex {
   float px, py, pz;
   float nx, ny, nz;
@@ -31,42 +35,49 @@ struct Vertex {
 // Triangles that share one texture and one set of draw flags.
 struct Batch {
   std::string texture;
-  bool emissive = false;      // drawn at full brightness (eyes)
-  bool alpha_test = false;    // texels with alpha < 0.5 are discarded (sprites)
-  std::vector<Vertex> verts;  // 3 vertices per triangle, no index buffer
+  // Drawn at full brightness, unaffected by lighting.
+  bool emissive = false;
+  // Texels with alpha below 0.5 are discarded (sprites).
+  bool alpha_test = false;
+  // Three vertices per triangle; there is no index buffer.
+  std::vector<Vertex> verts;
 };
 
+// The static geometry of one scene.
 struct SceneGeometry {
-  std::vector<Batch> world;  // walls, floors, ceilings, doors
-  std::vector<Batch> props;  // items and the exit gate, as crossed billboards
+  // Walls, floors, ceilings, door frames and baked furniture.
+  std::vector<Batch> world;
+  // Sprites placed by tiles, as crossed billboards.
+  std::vector<Batch> props;
 };
 
-// Builds the world geometry of a level: floors, ceilings, walls, sprites and
-// all furniture models, placed and turned as the level file says. Furniture is
-// baked into the world. What each glyph looks like comes from the level's
-// TileSet. An outdoor level gets no ceiling: the renderer draws the night sky
-// there instead. Door cells (closed or open, per the TileSet) become doorway
-// assemblies: wall fillers around a door-shaped hole, wooden posts and a
-// lintel. The swinging panel itself is NOT part of the static world; the
-// renderer draws it per frame (see buildDoorPanel). Room openings get wooden
-// door frames too.
+// Builds the geometry of a level: floors, ceilings, walls, sprites and the
+// furniture models, placed and turned as the level file says. Appearance of
+// each glyph comes from the level's TileSet. An `outdoor` level gets no ceiling
+// (the renderer draws the sky instead). Door cells become doorway assemblies
+// (wall around a door-shaped hole, posts, lintel); the swinging panel itself is
+// not included, see BuildDoorPanel. Furniture whose model is not in `models` is
+// skipped.
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
                                  bool outdoor = false);
 
-// The geometry of the level raised by `y` (a floor of a house: floor * pitch).
+// As above, with every vertex raised by `y` meters: one floor of a house (floor
+// index times kFloorPitch).
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
                                  bool outdoor, float y);
 
-// Adds `from` to `into`: the floors of a house drawn as one scene.
+// Moves the batches of `from` onto `into`, joining the floors of a house into
+// one scene.
 void AppendSceneGeometry(SceneGeometry& into, SceneGeometry&& from);
 
-// The swinging door panel, hinged at the local origin, spanning local +x (width
-// kDoorPanelWidth, height kDoorPanelHeight). The renderer places it at a door's
-// hinge and turns it by the door's current swing angle.
+// Size of the swinging door panel, in meters.
 constexpr float kDoorPanelWidth = 0.70f;
 constexpr float kDoorPanelHeight = 2.02f;
+
+// The swinging door panel, hinged at the local origin and spanning local +x
+// (kDoorPanelWidth by kDoorPanelHeight). The renderer places it at a door's
+// hinge and turns it by the door's current swing angle.
 std::vector<Batch> BuildDoorPanel();
+}
 
-}  // namespace mythos
-
-#endif  // MYTHOS_ENGINE_GFX_MESH_H_
+#endif

@@ -8,22 +8,22 @@
 
 namespace mythos::json {
 namespace {
-
 int LineAt(const std::string& text, size_t pos) {
   pos = std::min(pos, text.size());
   return 1 + static_cast<int>(std::count(
                  text.begin(), text.begin() + static_cast<std::ptrdiff_t>(pos),
                  '\n'));
 }
+}
 
-}  // namespace
-
-bool Parse(const std::string& text, Value& out, std::string* error) {
+// Duplicates are found while parsing but reported only once parsing succeeds,
+// so syntax errors take priority.
+bool Parse(const std::string& text, Value& out, std::string* const error) {
   out = Value{};
-  std::vector<std::set<std::string>>
-      keys;  // the keys seen so far in each open object
+  std::vector<std::set<std::string>> keys;
   std::string duplicate;
-  const auto watch = [&](int, Value::parse_event_t event, Value& parsed) {
+  const auto watch = [&](int, const Value::parse_event_t event,
+                         const Value& parsed) {
     if (event == Value::parse_event_t::object_start) {
       keys.emplace_back();
     } else if (event == Value::parse_event_t::object_end) {
@@ -48,8 +48,8 @@ bool Parse(const std::string& text, Value& out, std::string* error) {
     return false;
   }
   if (error) {
-    // nlohmann does not say where; the duplicate is the key's last appearance
-    // in the text.
+    // The parser gives no position for a duplicate, so point at its last
+    // textual occurrence.
     const size_t where = text.rfind(Quote(duplicate));
     *error =
         "line " +
@@ -59,7 +59,7 @@ bool Parse(const std::string& text, Value& out, std::string* error) {
   return false;
 }
 
-bool ParseFile(const std::string& path, Value& out, std::string* error) {
+bool ParseFile(const std::string& path, Value& out, std::string* const error) {
   std::string text;
   if (!vfs::ReadFile(path, text)) {
     if (error) *error = "missing file " + path;
@@ -74,5 +74,4 @@ bool ParseFile(const std::string& path, Value& out, std::string* error) {
 }
 
 std::string Quote(const std::string& text) { return Value(text).dump(); }
-
-}  // namespace mythos::json
+}

@@ -2,17 +2,17 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 
 namespace mythos {
-
-int ResolutionIndex(int w, int h) {
+int ResolutionIndex(const int w, const int h) {
   for (int i = 0; i < kResolutionCount; ++i) {
     if (kResolutions[i].w == w && kResolutions[i].h == h) return i;
   }
   return 0;
 }
 
-const std::vector<int>& SettingsPageItems(SettingsPage page) {
+const std::vector<int>& SettingsPageItems(const SettingsPage page) {
   const static std::vector<int> kMain = {kSetGraphics, kSetAudio, kSetLanguage,
                                          kSetBack};
   const static std::vector<int> kGraphics = {
@@ -28,28 +28,25 @@ const std::vector<int>& SettingsPageItems(SettingsPage page) {
 }
 
 namespace {
+constexpr int kMaxVolume = 10;
 
-constexpr int kMaxVolume =
-    10;  // volumes are 0..10 (also the number of pips drawn)
-
-// Where `item` sits among a page's rows, or -1.
-int RowPosition(const std::vector<int>& items, int item) {
+int RowPosition(const std::vector<int>& items, const int item) {
   for (size_t i = 0; i < items.size(); ++i) {
     if (items[i] == item) return static_cast<int>(i);
   }
   return -1;
 }
 
-// What a frame of input asks of the selected row.
 struct RowInput {
-  bool click = false;   // a click landed on this row
-  int dir = 0;          // -1 / 0 / +1: left / right keys, or the click's step
-  bool toggle = false;  // flip an on/off row
-  bool choose = false;  // take a link or Back (rather than step a value)
+  bool click = false;
+  int dir = 0;
+  bool toggle = false;
+  bool choose = false;
 };
 
-// Steps v by dir within [lo, hi]: keys stop at the ends, clicks cycle round.
-int StepValue(const RowInput& in, int v, int lo, int hi) {
+// Moves a value by `in.dir`: wrapping at the ends for a click, stopping at them
+// for the keyboard.
+int StepValue(const RowInput& in, const int v, const int lo, const int hi) {
   if (in.click) {
     const int span = hi - lo + 1;
     return lo + ((v - lo + in.dir) % span + span) % span;
@@ -57,19 +54,19 @@ int StepValue(const RowInput& in, int v, int lo, int hi) {
   return std::max(lo, std::min(hi, v + in.dir));
 }
 
-// A click on a volume row's pip sets that level (clicking the lit last pip
-// again turns it down).
-void ClickVolumePip(GameSettings& s, int item, int pip) {
+// Sets a volume from a click on pip 1..10; clicking the current top pip lowers
+// it by one, so a volume can be turned to 0.
+void ClickVolumePip(GameSettings& s, const int item, const int pip) {
   int* const volumes[3] = {&s.master_volume, &s.ambience_volume,
                            &s.effects_volume};
   int& volume = *volumes[item - kSetMaster];
   volume = std::clamp(pip == volume ? pip - 1 : pip, 0, kMaxVolume);
 }
 
-// Applies the input to the selected row `index`. Returns true when the row asks
-// to leave its page.
+// Applies the input to the selected row. Returns true when the row is Back and
+// was chosen.
 bool ApplyToRow(GameSettings& s, SettingsPage& page, int& index,
-                const RowInput& in, int max_resolution) {
+                const RowInput& in, const int max_resolution) {
   switch (index) {
     case kSetGraphics:
       if (in.choose) {
@@ -142,15 +139,15 @@ bool ApplyToRow(GameSettings& s, SettingsPage& page, int& index,
   }
   return false;
 }
-
-}  // namespace
+}
 
 bool UpdateSettingsPage(GameSettings& s, SettingsPage& page, int& index,
-                        const UiInput& in, bool activate, int max_resolution) {
+                        const UiInput& in, const bool activate,
+                        const int max_resolution) {
   const std::vector<int>& items = SettingsPageItems(page);
   const int row_count = static_cast<int>(items.size());
   int selected = RowPosition(items, index);
-  selected = std::max(selected, 0);  // not a row of this page: start at the top
+  selected = std::max(selected, 0);
   if (in.down_pressed) selected = (selected + 1) % row_count;
   if (in.up_pressed) selected = (selected + row_count - 1) % row_count;
   if (RowPosition(items, in.hover_item) >= 0) {
@@ -170,11 +167,11 @@ bool UpdateSettingsPage(GameSettings& s, SettingsPage& page, int& index,
   row.dir = row.click ? in.click_step
                       : (in.right_pressed ? 1 : 0) - (in.left_pressed ? 1 : 0);
   row.toggle = row.dir != 0 || in.confirm_pressed;
-  row.choose = in.confirm_pressed || activate ||
-               row.click;  // a link or Back is taken, not stepped
+  row.choose = in.confirm_pressed || activate || row.click;
   const bool leave = ApplyToRow(s, page, index, row, max_resolution);
-  // Leaving: a sub-page goes back to the main page (on the link it was opened
-  // from); the main page closes the settings.
+
+  // Back and pause leave a subpage to the main page (selecting its entry), or
+  // the menu from the main page.
   if (leave || in.pause_pressed) {
     if (page == SettingsPage::kMain) return true;
     index = page == SettingsPage::kGraphics ? kSetGraphics : kSetAudio;
@@ -208,15 +205,21 @@ std::map<std::string, std::string> ToKeyValues(const GameSettings& s) {
 
 void ApplyKeyValues(GameSettings& s,
                     const std::map<std::string, std::string>& values) {
-  const auto num = [](const std::string& text, int lo, int hi) {
-    return std::clamp(std::atoi(text.c_str()), lo, hi);
+  const auto to_int = [](const std::string& text) {
+    const long long v = std::strtoll(text.c_str(), nullptr, 10);
+    return static_cast<int>(std::clamp<long long>(
+        v, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+  };
+  const auto num = [&to_int](const std::string& text, const int lo,
+                             const int hi) {
+    return std::clamp(to_int(text), lo, hi);
   };
   for (const auto& [key, val] : values) {
     if (key == "resolution") {
-      const size_t sep = val.find('x');  // "1280x720"
+      const size_t sep = val.find('x');
       if (sep != std::string::npos && sep > 0 && sep + 1 < val.size()) {
-        s.resolution = ResolutionIndex(std::atoi(val.substr(0, sep).c_str()),
-                                       std::atoi(val.substr(sep + 1).c_str()));
+        s.resolution = ResolutionIndex(to_int(val.substr(0, sep)),
+                                       to_int(val.substr(sep + 1)));
       }
     } else if (key == "renderScale") {
       s.render_scale = num(val, 0, kRenderScaleCount - 1);
@@ -229,7 +232,7 @@ void ApplyKeyValues(GameSettings& s,
     } else if (key == "filmGrain") {
       s.film_grain = val != "0";
     } else if (key == "motionBlurScale") {
-      const int pct = std::atoi(val.c_str());
+      const int pct = to_int(val);
       s.motion_blur = 0;
       for (int i = 0; i < kMotionBlurCount; ++i) {
         if (kMotionBlurScales[i] == pct) s.motion_blur = i;
@@ -241,7 +244,7 @@ void ApplyKeyValues(GameSettings& s,
     } else if (key == "vsync") {
       s.vsync = val != "0";
     } else if (key == "fpsCap") {
-      const int fps = std::atoi(val.c_str());
+      const int fps = to_int(val);
       s.fps_cap = 0;
       for (int i = 0; i < kFpsCapCount; ++i) {
         if (kFpsCaps[i] == fps) s.fps_cap = i;
@@ -258,13 +261,10 @@ void ApplyKeyValues(GameSettings& s,
       s.language = val == "el" ? Lang::kGreek : Lang::kEnglish;
     }
   }
-  // A file from before the split has "cameraEffect" alone, and it meant the
-  // cinematic look (now "visualFx"): carry its value over and leave the
-  // camcorder look off.
+
   if (!values.contains("visualFx") && values.contains("cameraEffect")) {
     s.visual_fx = s.camera_effect;
     s.camera_effect = false;
   }
 }
-
-}  // namespace mythos
+}
