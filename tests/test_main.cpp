@@ -682,7 +682,7 @@ TEST(EngineBuildsAFloorHigherUp) {
   for (const Batch& b : up.world)
     for (const auto& v : b.verts) lo = std::min(lo, v.py);
   CHECK(std::abs(lo - kFloorPitch) < 1e-4f);
-  CHECK(kFloorPitch > kWallHeight);
+  static_assert(kFloorPitch > kWallHeight);
   SceneGeometry both = BuildSceneGeometry(l, models, false);
   const size_t n = both.world.size();
   AppendSceneGeometry(both, std::move(up));
