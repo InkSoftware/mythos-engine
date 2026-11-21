@@ -31,7 +31,7 @@ jobs:
         run: |
           export PATH="$(brew --prefix llvm@23)/bin:$PATH"
           git ls-files 'src/*.cpp' 'tools/*.cpp' 'tests/*.cpp' ':!:third_party/**' \
-            | xargs clang-tidy -p build --warnings-as-errors='*'
+            | xargs clang-tidy --quiet -p build --warnings-as-errors='*'
 
   build-test:
     name: ${{ matrix.os }} (portable ${{ matrix.portable }})
