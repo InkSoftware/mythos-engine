@@ -31,6 +31,7 @@ uniform int uLightCount;
 uniform vec3 uLightPos[8];
 uniform vec3 uLightColor[8];
 uniform float uLightRadius[8];
+uniform float uLightHalo[8];  // how much of a light the air scatters (the glow round a lamp)
 uniform float uShadowTexel;     // angular size of one shadow-map texel (2 / face size)
 uniform int uShadowCount;       // the first uShadowCount lamps cast shadows
 uniform samplerCube uShadow0;
@@ -157,12 +158,12 @@ vec3 airLight(vec3 rd, float dist) {
     for (int i = 0; i < uLightCount; ++i) {
         vec3 L = uLightPos[i] - uCam;
         float t0 = dot(L, rd);
-        float h = sqrt(max(dot(L, L) - t0 * t0, 0.0144));  // closest approach, never zero
+        float h = sqrt(max(dot(L, L) - t0 * t0, 0.1));  // closest approach, never near zero: a soft core, not a hard ball
         float reach = clamp(1.0 - length(L) / (uLightRadius[i] * 1.4), 0.0, 1.0);
         float seen = (atan((dist - t0) / h) - atan(-t0 / h)) / h;  // 1 / d^2 summed along the ray
         // The light has to be in front of the surface, not behind it (a lamp in the next room).
         float inFront = smoothstep(-0.2, 0.6, dist - max(t0, 0.0) + 0.4);
-        acc += uLightColor[i] * (density * 0.30 * seen * reach * reach * inFront);
+        acc += uLightColor[i] * (density * 0.30 * seen * reach * reach * inFront * uLightHalo[i]);
     }
     if (uFlashOn > 0.5) {  // dust in the beam
         float cone = smoothstep(mix(0.91, 0.30, uLighter), mix(0.985, 0.85, uLighter), dot(rd, normalize(uFlashDir)));

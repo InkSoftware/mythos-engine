@@ -217,6 +217,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   WorldUniforms& u = world_u_;
   u.mist = world_program_.Uniform("uMist");
   u.mist_height = world_program_.Uniform("uMistHeight");
+  u.light_halo = world_program_.Uniform("uLightHalo[0]");
   u.view = world_program_.Uniform("uView");
   u.proj = world_program_.Uniform("uProj");
   u.cam = world_program_.Uniform("uCam");
@@ -550,7 +551,7 @@ void SceneRenderer::SetLampUniforms() {
   const WorldUniforms& u = world_u_;
   const int n = static_cast<int>(lamps_.size());
   float pos[CameraState::kMaxLights * 3], col[CameraState::kMaxLights * 3],
-      rad[CameraState::kMaxLights];
+      rad[CameraState::kMaxLights], halo[CameraState::kMaxLights];
   for (int i = 0; i < n; ++i) {
     const PointLight& l = lamps_[static_cast<size_t>(i)];
     const size_t o = static_cast<size_t>(i) * 3;
@@ -561,12 +562,14 @@ void SceneRenderer::SetLampUniforms() {
     col[o + 1] = static_cast<float>(l.g);
     col[o + 2] = static_cast<float>(l.b);
     rad[i] = static_cast<float>(std::max(0.001, l.radius));
+    halo[i] = static_cast<float>(std::clamp(l.halo, 0.0, 1.0));
   }
   Uniform1i(u.light_count, n);
   if (n > 0) {
     Uniform3fv(u.light_pos, n, pos);
     Uniform3fv(u.light_color, n, col);
     Uniform1fv(u.light_radius, n, rad);
+    Uniform1fv(u.light_halo, n, halo);
   }
 }
 

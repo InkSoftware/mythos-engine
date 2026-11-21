@@ -35,6 +35,11 @@ struct PointLight {
   double x = 0, y = 0, z = 0;
   double r = 1, g = 1, b = 1;
   double radius = 4;
+  // How much of the light the fog scatters towards the eye, 0..1: the glow
+  // round a lamp in the air. 1 for a lamp the eye can see; 0 for a light that
+  // only lights (a window's, a pool of headlight), which would otherwise show
+  // as a ball of glow floating in the room.
+  double halo = 1;
 };
 
 // One draw of an uploaded model (see SceneRenderer::UploadModel) at a
@@ -425,10 +430,10 @@ class SceneRenderer {
               fog_color = -1, fog_density = -1, time = -1, ambient_base = -1,
               ambient_near = -1, lightning = -1, zone_count = -1, zone_xz = -1,
               zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
-              light_radius = -1, shadow_count = -1, shadow_texel = -1,
-              hand_shadow = -1, hand_pos = -1, hand_faces = -1, res = -1,
-              grain = -1, materials = -1, clip = -1, mist = -1,
-              mist_height = -1;
+              light_radius = -1, light_halo = -1, shadow_count = -1,
+              shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
+              hand_faces = -1, res = -1, grain = -1, materials = -1, clip = -1,
+              mist = -1, mist_height = -1;
   } world_u_;
 };
 }
