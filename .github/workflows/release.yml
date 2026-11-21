@@ -11,8 +11,14 @@ permissions:
   contents: write
 
 jobs:
+  # clang-format, clang-tidy, build and tests on every OS (ci.yml); nothing is built for release unless they pass.
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
   editor:
     name: MythosEditor (${{ matrix.name }})
+    needs: ci
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

@@ -19,7 +19,6 @@
 #include <string>
 #include <vector>
 
-#include "engine/world/gamepad.h"
 #include "engine/audio/audio_math.h"
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/sound_bank.h"
@@ -52,6 +51,7 @@
 #include "engine/ui/settings.h"
 #include "engine/ui/ui.h"
 #include "engine/world/body.h"
+#include "engine/world/gamepad.h"
 #include "engine/world/interact.h"
 #include "engine/world/level.h"
 #include "engine/world/mirror.h"
@@ -126,7 +126,7 @@ size_t Utf8Length(const std::string& s) {
 // in the middle of a code point.
 TEST(GamepadSticksHaveADeadZoneAndAQuadraticLook) {
   CHECK_EQ(StickDeadzone(0.0), 0.0);
-  CHECK_EQ(StickDeadzone(0.15), 0.0);   // drift inside the zone is ignored
+  CHECK_EQ(StickDeadzone(0.15), 0.0);  // drift inside the zone is ignored
   CHECK_EQ(StickDeadzone(-0.2), 0.0);
   CHECK(std::fabs(StickDeadzone(1.0) - 1.0) < 1e-9);  // the rim still reaches 1
   CHECK(std::fabs(StickDeadzone(-1.0) + 1.0) < 1e-9);
@@ -136,7 +136,8 @@ TEST(GamepadSticksHaveADeadZoneAndAQuadraticLook) {
   CHECK_EQ(StickAxisToUnit(-32768), -1.0);
   CHECK_EQ(StickLookPixels(1.0, 0.5, 800.0), 400.0);
   CHECK_EQ(StickLookPixels(-1.0, 0.5, 800.0), -400.0);
-  CHECK(StickLookPixels(0.5, 1.0, 800.0) < 0.5 * 800.0);  // a gentle push is slow
+  CHECK(StickLookPixels(0.5, 1.0, 800.0) <
+        0.5 * 800.0);  // a gentle push is slow
 }
 
 TEST(PaginateTextEdgeCases) {

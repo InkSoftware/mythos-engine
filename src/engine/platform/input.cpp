@@ -74,15 +74,15 @@ void HandleMouseDown(const SDL_MouseButtonEvent& button, UiInput& ui,
 // Cross/A uses (E), Circle/B pauses (Esc), Square/X is the torch (F),
 // Triangle/Y the notebook (Tab), R1 confirms (Enter), Options pauses, the
 // touchpad or Share opens the notebook, L3 or L2 runs.
-constexpr double kStickMove = 0.45;     // a push this far walks or steps a menu
-constexpr double kLookPixels = 900.0;   // pixels per second at full deflection
-constexpr double kTriggerRun = 0.5;     // L2 pulled this far runs
+constexpr double kStickMove = 0.45;    // a push this far walks or steps a menu
+constexpr double kLookPixels = 900.0;  // pixels per second at full deflection
+constexpr double kTriggerRun = 0.5;    // L2 pulled this far runs
 
-SDL_Gamepad* g_pad = nullptr;           // the one in use (the first found)
+SDL_Gamepad* g_pad = nullptr;  // the one in use (the first found)
 bool g_pad_started = false;
 Uint64 g_last_ns = 0;
 bool g_stick_up = false, g_stick_down = false, g_stick_left = false,
-     g_stick_right = false;             // for press edges in menus
+     g_stick_right = false;  // for press edges in menus
 
 void OpenFirstGamepad() {
   if (g_pad) return;
@@ -154,8 +154,8 @@ void ReadGamepad(MoveInput& move, UiInput& ui, ActionInput& act,
   const double ly = StickDeadzone(PadAxis(SDL_GAMEPAD_AXIS_LEFTY));
   const double rx = StickDeadzone(PadAxis(SDL_GAMEPAD_AXIS_RIGHTX));
   const double ry = StickDeadzone(PadAxis(SDL_GAMEPAD_AXIS_RIGHTY));
-  const bool up = ly < -kStickMove, down = ly > kStickMove;
-  const bool left = lx < -kStickMove, right = lx > kStickMove;
+  const bool up = ly<-kStickMove, down = ly> kStickMove;
+  const bool left = lx<-kStickMove, right = lx> kStickMove;
   move.forward = move.forward || up;
   move.back = move.back || down;
   move.strafe_left = move.strafe_left || left;
@@ -163,9 +163,8 @@ void ReadGamepad(MoveInput& move, UiInput& ui, ActionInput& act,
   move.run = move.run ||
              SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_LEFT_STICK) ||
              PadAxis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > kTriggerRun;
-  act.interact_held =
-      act.interact_held ||
-      SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_SOUTH);
+  act.interact_held = act.interact_held ||
+                      SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_SOUTH);
   if (relative_mouse) {
     move.mouse_dx += StickLookPixels(rx, dt, kLookPixels);
     move.mouse_dy += StickLookPixels(ry, dt, kLookPixels);
