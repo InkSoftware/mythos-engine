@@ -28,8 +28,8 @@ struct Corner {
 
 // Turns a 1-based OBJ index (negative counts back from the end) into a 0-based
 // slot of a list of `count` items. False if it is out of range.
-bool ResolveIndex(long idx, const size_t count, size_t& out) {
-  if (idx < 0) idx = static_cast<long>(count) + idx + 1;
+bool ResolveIndex(int64_t idx, const size_t count, size_t& out) {
+  if (idx < 0) idx = static_cast<int64_t>(count) + idx + 1;
   if (idx < 1 || std::cmp_greater(idx, count)) return false;
   out = static_cast<size_t>(idx - 1);
   return true;
