@@ -1,6 +1,6 @@
 # mythos-engine
 
-A small C++20 engine for first-person grid games on SDL3 and OpenGL 4.1 core, with no game engine
+A small C++23 engine for first-person grid games on SDL3 and OpenGL 4.1 core, with no game engine
 underneath. It carries games of one kind: a player walking a grid of rooms, doors, things to read,
 listen to and pick up, menus, and a bit of procedural art.
 
@@ -71,7 +71,7 @@ Options: `MYTHOS_BUILD_PLATFORM` (SDL layer, default ON), `MYTHOS_BUILD_TESTS` (
 `MYTHOS_LTO` (link-time optimization for Release, on by default). MSVC builds use `/utf-8`, which games inherit.
 
 Targets the releases each vendor still supports: Ubuntu 22.04+ (GCC 11+), macOS 15+ and Windows 11 (MSVC 2022), with
-CMake 3.22+, hence C++20. On macOS `CMAKE_OSX_DEPLOYMENT_TARGET` defaults to 15.0 when the engine is the top-level project
+CMake 3.22+, hence C++23 (GCC 11 accepts it as `-std=c++2b`). On macOS `CMAKE_OSX_DEPLOYMENT_TARGET` defaults to 15.0 when the engine is the top-level project
 (a game sets its own before its `project()`), and `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` builds a universal binary (needs
 `MYTHOS_PORTABLE`, since an installed SDL such as Homebrew's is usually arm64 only). Windows 10 is out of support, but nothing
 in the code needs 11. CI builds and tests the oldest supported release of each OS (a binary built there runs on newer ones),
