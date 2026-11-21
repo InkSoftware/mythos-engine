@@ -86,6 +86,7 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
           return fail("bad decor line: " + line);
         doc.decor.push_back(it);
       } else {
+        ls >> it.off_x >> it.off_z >> it.lift;  // optional on furniture
         doc.furniture.push_back(it);
       }
     } else {
@@ -110,9 +111,14 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
   s += "[map]\n";
   for (const auto& r : doc.rows) s += r + "\n";
   s += "[furniture]\n";
-  for (const auto& i : doc.furniture)
+  for (const auto& i : doc.furniture) {
     s += std::to_string(i.x) + " " + std::to_string(i.y) + " " + i.model + " " +
-         FormatNumber(i.yaw) + "\n";
+         FormatNumber(i.yaw);
+    if (i.off_x != 0 || i.off_z != 0 || i.lift != 0)  // pushed against a wall
+      s += " " + FormatNumber(i.off_x) + " " + FormatNumber(i.off_z) + " " +
+           FormatNumber(i.lift);
+    s += '\n';
+  }
   s += "[decor]\n";
   for (const auto& i : doc.decor)
     s += std::to_string(i.x) + " " + std::to_string(i.y) + " " + i.model + " " +

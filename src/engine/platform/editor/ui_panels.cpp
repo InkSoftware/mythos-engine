@@ -557,7 +557,7 @@ void EditorApp::DrawInspector() {
         it.yaw = snap_rot_ ? std::round(yaw / 15.0f) * 15.0f : yaw;
         level_changed = true;
       }
-      if (sel_.kind == kDecor) {
+      {
         float off[2] = {static_cast<float>(it.off_x),
                         static_cast<float>(it.off_z)};
         if (ImGui::DragFloat2("Offset", off, 0.005f, -1.0f, 1.0f, "%.3f")) {
@@ -572,7 +572,8 @@ void EditorApp::DrawInspector() {
         }
       }
       if (sel_.kind == kFurniture)
-        ImGui::TextDisabled("Furniture is solid and fills its cell.");
+        ImGui::TextDisabled(
+            "Furniture is solid in its cell; Offset and Lift place it freely.");
     } else {
       Value* d = project_.Data(Here(), sel_);
       float p[3] = {static_cast<float>(pose.x), static_cast<float>(pose.y),

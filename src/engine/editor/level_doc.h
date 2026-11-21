@@ -7,7 +7,8 @@
 namespace mythos::editor {
 // One `[furniture]` or `[decor]` line of a level: the cell (x = column, y =
 // row), model name and yaw in degrees. The offsets (world units from the cell
-// center) and `lift` (height above the floor) are used by decor only.
+// center) and `lift` (height above the floor) belong to decor and, optionally,
+// to furniture (a piece pushed against the wall behind it).
 struct Item {
   int x = 0, y = 0;
   std::string model;

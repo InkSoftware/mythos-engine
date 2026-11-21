@@ -267,6 +267,25 @@ TEST(ObjParserReadsBlendMaterialsAsOpacity) {
   }
 }
 
+// A `cutout_<texture>` material discards the transparent texels: leaves and
+// fences.
+TEST(ObjParserReadsCutoutMaterialsAsAlphaTest) {
+  const std::string obj =
+      "v 0 0 0\nv 1 0 0\nv 1 1 0\n"
+      "usemtl cutout_leaf\nf 1 2 3\n"
+      "usemtl wood\nf 1 2 3\n";
+  std::vector<Batch> out;
+  std::string err;
+  CHECK(ParseObj(obj, out, &err));
+  CHECK_EQ(out.size(), 2u);
+  if (out.size() == 2) {
+    CHECK(out[0].texture == "leaf");
+    CHECK(out[0].alpha_test);
+    CHECK(out[1].texture == "wood");
+    CHECK(!out[1].alpha_test);
+  }
+}
+
 TEST(ObjParserRejectsBadFaces) {
   std::vector<Batch> out;
   std::string err;
@@ -280,6 +299,32 @@ TEST(ZoneParserRejectsBadFurniture) {
   std::string err;
   CHECK(!l.ParseText("[map]\n...\n...\n[furniture]\n1 1 bed x\n", &err));
   CHECK(!err.empty());
+}
+
+// A [furniture] line may carry the offsets and lift decor has: a piece pushed
+// against the wall behind it. It stays solid in its cell, and the editor's
+// document round-trips it (offsets are written only when there are any).
+TEST(FurnitureCanBePushedAgainstAWallWithOffsets) {
+  Level l;
+  std::string err;
+  CHECK(l.ParseText(
+      "[map]\n....\n....\n[furniture]\n1 0 sink 270 0.3 -0.1 0\n2 1 bed 0\n",
+      &err));
+  const Placement* sink = l.FurnitureAt(1, 0);
+  CHECK(sink != nullptr && sink->solid);
+  CHECK(sink && std::fabs(sink->off_x - 0.3) < 1e-9 &&
+        std::fabs(sink->off_z + 0.1) < 1e-9);
+  CHECK(l.FurnitureAt(2, 1) && l.FurnitureAt(2, 1)->off_x == 0.0);
+  editor::LevelDoc doc;
+  CHECK(
+      editor::ParseLevelDoc("[map]\n..\n..\n[furniture]\n0 0 sink 270 0.3 -0.1 "
+                            "0\n1 1 bed 0\n[decor]\n",
+                            &doc, &err));
+  CHECK_EQ(doc.furniture.size(), 2u);
+  CHECK(std::fabs(doc.furniture[0].off_x - 0.3) < 1e-9);
+  const std::string out = editor::SerializeLevelDoc(doc);
+  CHECK(out.find("0 0 sink 270 0.3 -0.1 0\n") != std::string::npos);
+  CHECK(out.find("1 1 bed 0\n") != std::string::npos);  // none: not written
 }
 
 // [decor] lines are non-solid placements: they never block a cell, are not
@@ -1758,6 +1803,7 @@ TEST(EditorEditsLevelsWithNoAdapter) {
   CHECK(p.SetPose(w, table, pose));
   CHECK_EQ(p.Level("ground")->furniture[0].x, 3);
   CHECK_EQ(p.Level("ground")->furniture[0].y, 1);
+  CHECK(std::abs(p.Level("ground")->furniture[0].off_x - 0.3) < 1e-9);
   const editor::EntityRef vase{editor::kDecor, 0, ""};
   CHECK(p.GetPose(w, vase, &pose));
   CHECK(std::abs(pose.x - 2.75) < 1e-9 && std::abs(pose.y - 0.9) < 1e-9);

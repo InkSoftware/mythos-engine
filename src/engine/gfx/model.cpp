@@ -80,6 +80,12 @@ class ObjParser {
     if (material.starts_with(prefix)) {
       batch.texture = material.substr(prefix.size());
       batch.emissive = true;
+    } else if (material.starts_with("cutout_") && material.size() > 7) {
+      // "cutout_leaf": the texture leaf, drawn with its transparent texels
+      // cut away (leaves, fences, grass cards): the texture needs an alpha
+      // channel (a PNG).
+      batch.texture = material.substr(7);
+      batch.alpha_test = true;
     } else if (material.starts_with("blend") && material.size() > 6 &&
                std::isdigit(static_cast<unsigned char>(material[5]))) {
       // "blend35_dust": the texture dust, blended at 35 percent.

@@ -79,6 +79,9 @@ class Spec:
     glass   False drops the model's see-through (BLEND) materials: the renderer has no blending, so a glass pane or a
             lamp chimney would be drawn as a solid black sheet
     art     a game texture to show on the model's "..._artwork" material instead of the model's own placeholder picture
+    cutout  True keeps a model's leaf cards: a material the glTF marks MASK or BLEND (alpha) is baked with its alpha
+            into a PNG and written as "cutout_<texture>", which the renderer draws with the transparent texels cut
+            away (trees, shrubs, fences). Without it, a BLEND material is dropped (see glass)
     size    texture size in pixels for this model (default: the --size option); small props need little
     what    what it is in the game, for the credits
     local   a glTF file you downloaded yourself (then `ph` is only a label); needs `credit`
@@ -86,9 +89,9 @@ class Spec:
     """
 
     def __init__(self, ph, scale=None, fit=(CELL, CELL), height=None, yaw=0, stretch=1.35, what="", local=None,
-                 credit=None, pitch=0, size=None, roll=0, glass=True, art=None):
+                 credit=None, pitch=0, size=None, roll=0, glass=True, art=None, cutout=False):
         self.pitch, self.size, self.roll = pitch, size, roll
-        self.glass, self.art = glass, art
+        self.glass, self.art, self.cutout = glass, art, cutout
         self.ph, self.scale, self.fit, self.height, self.yaw, self.stretch, self.what = ph, scale, fit, height, yaw, stretch, what
         self.local, self.credit = local, credit
         if local and not credit:
@@ -237,6 +240,18 @@ def jpg_to_bmp(src, dst, size):
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def png_with_alpha(src, dst, size):
+    """The texture as a PNG that keeps its alpha channel, at most `size` pixels on a side (sips on macOS, else
+    ImageMagick)."""
+    if shutil.which("sips"):
+        cmd = ["sips", "-Z", str(size), "-s", "format", "png", src, "--out", dst]
+    elif shutil.which("magick"):
+        cmd = ["magick", src, "-resize", f"{size}x{size}>", "PNG32:" + dst]
+    else:
+        sys.exit("need `sips` (macOS) or ImageMagick (`magick`) to bake a leaf card's alpha")
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def read_bmp(path):
     """Decodes an uncompressed 24/32-bit BMP: (width, height, rows top to bottom of (r, g, b))."""
     d = open(path, "rb").read()
@@ -326,7 +341,7 @@ def convert(name, spec, cache, size):
         info["license"] = "CC0 1.0"
         info["url"] = f"https://polyhaven.com/a/{spec.ph}"
     gltf, groups = load_geometry(gltf_path)
-    if not spec.glass:
+    if not spec.glass and not spec.cutout:
         groups = {mi: t for mi, t in groups.items()
                   if (gltf["materials"][mi].get("alphaMode") if gltf.get("materials") else None) != "BLEND"}
     folder = os.path.dirname(gltf_path)
@@ -371,9 +386,16 @@ def convert(name, spec, cache, size):
         if spec.art and mat.get("name", "").endswith("_artwork"):
             mats[mi] = spec.art  # a texture the game already has
             continue
+        bct = pbr.get("baseColorTexture")
+        if spec.cutout and mat.get("alphaMode") in ("MASK", "BLEND") and bct is not None:
+            # a leaf card: keep the alpha, in a PNG (a BMP from sips has none)
+            uri = gltf["images"][gltf["textures"][bct["index"]]["source"]]["uri"]
+            out = os.path.join(TEX_DIR, tex_name + ".png")
+            png_with_alpha(os.path.join(folder, uri), out, size)
+            mats[mi] = "cutout_" + tex_name
+            continue
         mats[mi] = tex_name
         out = os.path.join(TEX_DIR, tex_name + ".bmp")
-        bct = pbr.get("baseColorTexture")
         if bct is not None:
             uri = gltf["images"][gltf["textures"][bct["index"]]["source"]]["uri"]
             jpg_to_bmp(os.path.join(folder, uri), out, size)

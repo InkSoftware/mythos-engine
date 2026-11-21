@@ -82,6 +82,9 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
         if (error) *error = "bad furniture line: " + line;
         return false;
       }
+      // Optional: the offsets from the cell centre and the lift, as decor has
+      // them (a piece pushed against the wall behind it).
+      fields >> placement.off_x >> placement.off_z >> placement.lift;
       furniture.push_back(placement);
     } else if (section == "[decor]") {
       std::istringstream fields(line);

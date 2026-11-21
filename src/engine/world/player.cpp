@@ -79,8 +79,20 @@ int FindAimed(const Level& level, const Player& player, const double eye_height,
     const double to_x = candidate.at.x - eye_x, to_z = candidate.at.y - eye_z;
     const double flat_distance = std::hypot(to_x, to_z);
     // Back off half a meter (or all the way, when closer) so the target's own
-    // wall or furniture cell does not hide it.
-    const double back_off = flat_distance > 0.5 ? 0.5 / flat_distance : 1.0;
+    // wall or furniture cell does not hide it; a target standing on furniture
+    // pushed against a wall (the letter on the oven) backs off further, to the
+    // edge of the cell it is in.
+    const double reach_start = std::min(0.5, flat_distance);
+    const double reach_max = std::min(1.5, flat_distance);
+    double reach_back = reach_start;
+    for (int step = 1; reach_back < reach_max; ++step) {
+      const double ex = candidate.at.x - to_x / flat_distance * reach_back;
+      const double ez = candidate.at.y - to_z / flat_distance * reach_back;
+      if (!level.BoxBlocked(ex - 0.01, ez - 0.01, ex + 0.01, ez + 0.01)) break;
+      reach_back = reach_start + step * 0.1;
+    }
+    const double back_off =
+        flat_distance > 1e-9 ? reach_back / flat_distance : 1.0;
     if (!level.LineOfSight(eye_x, eye_z, candidate.at.x - to_x * back_off,
                            candidate.at.y - to_z * back_off)) {
       continue;

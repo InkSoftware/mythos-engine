@@ -220,11 +220,11 @@ bool Project::SetPose(const Where& w, const EntityRef& r, const Pose& p) {
                               std::max(0, doc->Height() - 1));
     i.x = cx;
     i.y = cy;
-    if (r.kind == kDecor) {
-      i.off_x = Round3(p.x - (cx + 0.5));
-      i.off_z = Round3(p.z - (cy + 0.5));
-      i.lift = Round3(std::max(0.0, p.y));
-    }
+    // Furniture keeps its cell for collision but may sit anywhere in it, so a
+    // toilet can touch a wall; the file stores the offsets only when non-zero.
+    i.off_x = Round3(p.x - (cx + 0.5));
+    i.off_z = Round3(p.z - (cy + 0.5));
+    i.lift = Round3(std::max(0.0, p.y));
     i.yaw = std::fmod(std::fmod(p.yaw, 360.0) + 360.0, 360.0);
     Touch(w.level);
     return true;

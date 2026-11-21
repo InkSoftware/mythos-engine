@@ -37,7 +37,8 @@ struct Batch {
   std::string texture;
   // Drawn at full brightness, unaffected by lighting.
   bool emissive = false;
-  // Texels with alpha below 0.5 are discarded (sprites).
+  // Texels with alpha below 0.5 are discarded (sprites; a model material
+  // "cutout_<texture>" sets it).
   bool alpha_test = false;
   // 1 is solid. Below 1 the batch is blended over what is behind it, in a pass
   // after the solid ones (glass, dust, mist cards, a ghost); it casts no

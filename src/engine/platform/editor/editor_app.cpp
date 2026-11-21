@@ -457,13 +457,12 @@ float EditorApp::SnapValue(const float v, const bool fine) const {
   return std::round(v / snap_) * snap_;
 }
 
-// Furniture moves by whole cells; everything else by the snap step (or
-// 5 cm when snapping is off).
+// Everything moves by the snap step (or 5 cm when snapping is off); furniture
+// too, though it stays solid in the cell its centre is in.
 void EditorApp::Nudge(const float dx, const float dz, const float dy) {
   Pose p;
   if (!SelectedPose(&p)) return;
-  const bool cell = sel_.kind == kFurniture;
-  const float step = cell ? 1.0f : (snap_ > 0 ? snap_ : 0.05f);
+  const float step = snap_ > 0 ? snap_ : 0.05f;
   p.x += dx * step;
   p.z += dz * step;
   p.y += dy * (snap_ > 0 ? snap_ : 0.05f);
@@ -697,7 +696,6 @@ void EditorApp::GizmoInput(const Ray& ray, const ImVec2 mouse,
         cam_.Project(origin, size.x, size.y, &sx, &sy)) {
       const Vec3 dirs[3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
       for (int i = 0; i < 3; ++i) {
-        if (i == 1 && sel_.kind == kFurniture) continue;
         if (!cam_.Project(origin + dirs[i] * len, size.x, size.y, &tx, &ty))
           continue;
         const float d = DistToSegment(m, {sx, sy}, {tx, ty});
@@ -804,10 +802,6 @@ void EditorApp::GizmoInput(const Ray& ray, const ImVec2 mouse,
         const Vec3 p = ray.At(t) + drag_offset_;
         np.x = SnapValue(p.x, fine);
         np.z = SnapValue(p.z, fine);
-        if (sel_.kind == kFurniture) {
-          np.x = std::floor(p.x) + 0.5f;
-          np.z = std::floor(p.z) + 0.5f;
-        }
         project_.SetPose(Here(), sel_, np);
       }
     } else if (drag_ == Drag::kRotate) {
@@ -1080,11 +1074,10 @@ void EditorApp::DrawOverlay(const ImVec2 size) {
                       lit(kRed, hover_axis_ == 0 || (drag_ == Drag::kAxis &&
                                                      drag_axis_.x != 0)),
                       len * 0.16f);
-      if (sel_.kind != kFurniture)
-        viewport_.Arrow(o, o + Vec3{0, len, 0},
-                        lit(kGreen, hover_axis_ == 1 || (drag_ == Drag::kAxis &&
-                                                         drag_axis_.y != 0)),
-                        len * 0.16f);
+      viewport_.Arrow(o, o + Vec3{0, len, 0},
+                      lit(kGreen, hover_axis_ == 1 || (drag_ == Drag::kAxis &&
+                                                       drag_axis_.y != 0)),
+                      len * 0.16f);
       viewport_.Arrow(o, o + Vec3{0, 0, len},
                       lit(kBlue, hover_axis_ == 2 || (drag_ == Drag::kAxis &&
                                                       drag_axis_.z != 0)),
