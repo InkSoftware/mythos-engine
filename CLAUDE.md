@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-mythos-engine is a C++20 library (not an application) for first-person grid games on SDL3 + OpenGL 4.1 core. Games live in other repos and consume it via `FetchContent`/`add_subdirectory`. See `README.md` for the consumer-facing description.
+mythos-engine is a C++23 library (not an application) for first-person grid games on SDL3 + OpenGL 4.1 core. Games live in other repos and consume it via `FetchContent`/`add_subdirectory`. See `README.md` for the consumer-facing description.
 
 ## Commands
 
