@@ -179,6 +179,11 @@ if(MYTHOS_BUILD_PLATFORM)
                 FetchContent_Declare(SDL3 URL ${MYTHOS_SDL_URL})
             endif()
             FetchContent_MakeAvailable(SDL3)
+            if(APPLE)
+                # SDL's Cocoa backend still uses APIs Apple has deprecated (kUTType*, CVDisplayLink*, ...);
+                # that is SDL's code, not ours, so keep it from burying our own warnings.
+                target_compile_options(SDL3-static PRIVATE -Wno-deprecated-declarations)
+            endif()
         else()
             message(FATAL_ERROR "SDL3 not found. Install it or set MYTHOS_FETCH_SDL=ON.")
         endif()
