@@ -176,8 +176,8 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
                      {{0, "aPos"}, {2, "aUV"}}, shaders::kToneMapAndGrainFrag);
   mirror_program_.Build(shaders::kMirrorGlassVert, shaders::kMirrorGlassFrag,
                         {{0, "aPos"}});
-  glass_program_.Build(shaders::kMirrorGlassVert, shaders::kGlassPaneFrag,
-                       {{0, "aPos"}});
+  glass_program_.Build(shaders::kGlassPaneVert, shaders::kGlassPaneFrag,
+                       {{0, "aPos"}, {2, "aUV"}});
   bloom_program_.Build(shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
                        {{0, "aPos"}, {2, "aUV"}});
   const bool text_ok = text_.Init();
@@ -816,6 +816,8 @@ void SceneRenderer::DrawGlassPanes(const CameraState& cam, const Frame& f) {
       v.px = static_cast<float>(x);
       v.py = static_cast<float>(y);
       v.pz = static_cast<float>(z);
+      v.u = static_cast<float>(std::hypot(x - pane.x0, z - pane.z0));  // along
+      v.v = static_cast<float>(y);                                     // up
       return v;
     };
     const Vertex a = corner(pane.x0, pane.z0, pane.y0),
@@ -826,6 +828,9 @@ void SceneRenderer::DrawGlassPanes(const CameraState& cam, const Frame& f) {
     glass_vbo_.Upload(quad, sizeof(quad), kDynamicDraw);
     glass_program_.Set("uTint", pane.tint[0], pane.tint[1], pane.tint[2]);
     glass_program_.Set("uAlpha", pane.alpha);
+    glass_program_.Set("uDrops", pane.drops);
+    glass_program_.Set("uTime", static_cast<float>(cam.time));
+    glass_program_.Set("uEye", f.eye[0], f.eye[1], f.eye[2]);
     DrawArrays(kTriangles, 0, 6);
   }
   Disable(kBlend);
@@ -1005,7 +1010,7 @@ void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
   Disable(kBlend);
   if (cam.outdoor) DrawSky(cam, f);
   DrawWorld(cam, f);
-  if (mirrored) DrawGlassPanes(cam, f);
+  DrawGlassPanes(cam, f);
   if (mirrored) DrawMirrorGlass(cam, f);
   target_.Resolve();
 }

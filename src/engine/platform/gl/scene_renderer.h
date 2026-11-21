@@ -75,6 +75,8 @@ struct GlassPane {
   double y0 = 0, y1 = 0;
   float tint[3] = {0.55f, 0.65f, 0.75f};
   float alpha = 0.18f;
+  // Beads of water on the pane, 0 dry .. 1 wet (rain, or dew in the mist).
+  float drops = 0.0f;
 };
 
 // A box (x/z corners and a y range, world units) lit by lightning when

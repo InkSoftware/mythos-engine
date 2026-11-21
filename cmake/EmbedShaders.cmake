@@ -10,6 +10,7 @@ set(_map
         kLensAndFxaaFrag=fragment/lens_and_fxaa.frag
         kMirrorGlassVert=vertex/mirror_glass.vert
         kMirrorGlassFrag=fragment/mirror_glass.frag
+        kGlassPaneVert=vertex/glass_pane.vert
         kGlassPaneFrag=fragment/glass_pane.frag
         kOverlayFrag=fragment/overlay.frag
         kBloomBlurFrag=fragment/bloom_blur.frag)
