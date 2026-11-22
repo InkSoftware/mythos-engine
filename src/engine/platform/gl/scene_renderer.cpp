@@ -842,6 +842,32 @@ void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
                       static_cast<float>(m.tint[1]),
                       static_cast<float>(m.tint[2]));
   mirror_program_.Set("uAlpha", static_cast<float>(m.alpha));
+  {
+    // The glare of the hand light: from the torch's tip when the game says
+    // where it is, else from where the hand rests.
+    float origin[3] = {hand_pos_[0], hand_pos_[1], hand_pos_[2]};
+    if (!hand_origin_on_) {
+      const float rx = -std::sin(static_cast<float>(cam.yaw)),
+                  rz = std::cos(static_cast<float>(cam.yaw));
+      const float side = 0.14f + static_cast<float>(cam.hand_side);
+      origin[0] = f.eye[0] + rx * side + f.dir[0] * 0.05f;
+      origin[1] = f.eye[1] - 0.20f - static_cast<float>(cam.hand_down);
+      origin[2] = f.eye[2] + rz * side + f.dir[2] * 0.05f;
+    }
+    const float on =
+        cam.flash_on ? static_cast<float>(std::max(0.0, m.flare)) : 0.0f;
+    mirror_program_.Set("uFlare", on);
+    mirror_program_.Set("uFlareOrigin", origin[0], origin[1], origin[2]);
+    mirror_program_.Set("uFlareDir", f.flash[0], f.flash[1], f.flash[2]);
+    if (cam.lighter)
+      mirror_program_.Set("uFlareColor", 1.0f, 0.62f, 0.30f);
+    else
+      mirror_program_.Set("uFlareColor", 1.0f, 0.86f, 0.62f);
+    mirror_program_.Set("uEye", f.eye[0], f.eye[1], f.eye[2]);
+    mirror_program_.Set("uGlassCenter", center_x, center_y, center_z);
+    mirror_program_.Set("uGlassNormal", nx, 0.0f, nz);
+    mirror_program_.Set("uGlassAlong", along_x, 0.0f, along_z);
+  }
   ActiveTexture(kTexture0);
   mirror_target_.Color().Bind();
   Enable(kDepthTest);

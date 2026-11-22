@@ -71,6 +71,9 @@ struct MirrorState {
   double nx = 0, nz = 1;
   double half_w = 0.3, half_h = 0.4;
   double alpha = 0.94;
+  // How strongly the hand light glares on the glass (0 off): the spot where
+  // its beam strikes it, a streak, and the glint of its reflection.
+  double flare = 1.0;
 
   double tint[3] = {0.80, 0.84, 0.86};
 };
