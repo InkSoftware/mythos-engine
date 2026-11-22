@@ -8,6 +8,7 @@
 #include "engine/core/mat4.h"
 #include "engine/gfx/grade.h"
 #include "engine/gfx/mesh.h"
+#include "engine/gfx/particles.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -151,6 +152,13 @@ struct CameraState {
   // Outdoor scene: draws the night sky and uses outdoor fog.
   bool outdoor = false;
   bool grain = true;
+
+  // Particle sprites for this frame (`ParticleSystem::Collect`): drawn after
+  // the world and before the glass, depth-tested against the scene but not
+  // written, translucent ones sorted far to near. At most `kMaxParticles` are
+  // drawn. Not shown in the mirror.
+  std::vector<ParticleSprite> particles;
+  static constexpr int kMaxParticles = 8192;
 
   // Tone mapping and colour grading (see gfx/grade.h). The default is the
   // engine's original look; values are clamped to sane ranges. A colour table
@@ -362,6 +370,8 @@ class SceneRenderer {
   // Draws the glass quad sampling the mirror target by screen position.
   void DrawMirrorGlass(const CameraState& cam, const Frame& f);
   // Draws the tinted, blended panes of `cam.glass`.
+  void DrawParticles(const CameraState& cam, const Frame& f);
+
   void DrawGlassPanes(const CameraState& cam, const Frame& f);
 
   // (Re)creates the cube maps when the shadow level changes.
@@ -381,12 +391,15 @@ class SceneRenderer {
   bool BuildBloom(const CameraState& cam);
 
   GlProgram world_program_, quad_program_, sky_program_, shadow_program_,
-      composite_program_, mirror_program_, glass_program_, bloom_program_;
+      composite_program_, mirror_program_, glass_program_, bloom_program_,
+      particle_program_;
   RenderTarget bloom_a_, bloom_b_;
   RenderTarget mirror_target_;
   GlVertexArray mirror_vao_;
   GlBuffer mirror_vbo_;
-  GlVertexArray glass_vao_;
+  GlVertexArray glass_vao_, particle_vao_;
+  GlBuffer particle_vbo_;
+  std::vector<float> particle_verts_;  // reused each frame
   GlBuffer glass_vbo_;
   std::vector<BatchList> models_;
   ShadowCube hand_shadow_;

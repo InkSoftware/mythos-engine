@@ -44,6 +44,7 @@
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/model.h"
 #include "engine/gfx/normalmap.h"
+#include "engine/gfx/particles.h"
 #include "engine/gfx/pbr.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
@@ -2334,6 +2335,320 @@ TEST(camerafx_intensity_scales_and_clear_stops) {
   fx.AddShake(1.0);
   fx.Update(0.05);
   CHECK(fx.Sample().yaw != 0.0 || fx.Sample().pitch != 0.0);
+}
+
+// ---- particles ----
+
+namespace {
+mythos::EmitterParams PlainEmitter() {
+  mythos::EmitterParams p;
+  p.life_min = p.life_max = 1.0;
+  p.speed_min = p.speed_max = 1.0;
+  p.spread = 0.0;
+  return p;
+}
+
+std::vector<mythos::ParticleSprite> Sprites(const mythos::ParticleSystem& sys) {
+  std::vector<mythos::ParticleSprite> out;
+  sys.Collect(out, 100000);
+  return out;
+}
+}  // namespace
+
+TEST(particles_rate_spawns_and_lives_end) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.rate = 10.0;
+  const int id = sys.AddEmitter(p, {0, 0, 0});
+  CHECK(id > 0);
+  sys.Update(1.0);
+  CHECK_EQ(sys.Count(), 10);
+  sys.SetActive(id, false);
+  sys.Update(0.5);
+  CHECK_EQ(sys.Count(), 10);  // none new, none dead yet
+  sys.Update(2.0);
+  CHECK_EQ(sys.Count(), 0);
+}
+
+TEST(particles_rate_carries_the_fraction) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.rate = 3.0;
+  p.life_min = p.life_max = 1000.0;
+  sys.AddEmitter(p, {0, 0, 0});
+  for (int i = 0; i < 10; ++i) sys.Update(0.1);  // 3 per second for 1 s
+  CHECK_EQ(sys.Count(), 3);
+}
+
+TEST(particles_burst_and_cap) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.max_particles = 5;
+  const int id = sys.AddEmitter(p, {1, 2, 3});
+  sys.Burst(id, 3);
+  CHECK_EQ(sys.Count(), 3);
+  sys.Burst(id, 100);
+  CHECK_EQ(sys.Count(), 5);
+  sys.Burst(0, 5);  // unknown ids are ignored
+  sys.Burst(99, 5);
+  CHECK_EQ(sys.Count(), 5);
+  for (const auto& s : Sprites(sys)) {
+    CHECK(s.x == 1.0f && s.y == 2.0f && s.z == 3.0f);
+  }
+}
+
+TEST(particles_a_long_frame_cannot_flood) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.rate = 1000.0;
+  p.max_particles = 50;
+  p.life_min = p.life_max = 1000.0;
+  sys.AddEmitter(p, {0, 0, 0});
+  sys.Update(3600.0);
+  CHECK_EQ(sys.Count(), 50);
+}
+
+TEST(particles_are_deterministic_and_seeded) {
+  const auto run = [](const uint32_t seed) {
+    mythos::ParticleSystem sys(seed);
+    mythos::EmitterParams p;
+    p.spread = 1.0;
+    p.radius = 0.5;
+    p.rate = 40.0;
+    p.size_jitter = 0.5;
+    sys.AddEmitter(p, {0, 1, 0});
+    for (int i = 0; i < 20; ++i) sys.Update(0.05);
+    return Sprites(sys);
+  };
+  const auto a = run(5), b = run(5), c = run(6);
+  CHECK(!a.empty() && a.size() == b.size());
+  bool same = true, differs = false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (a[i].x != b[i].x || a[i].y != b[i].y || a[i].size != b[i].size) {
+      same = false;
+    }
+    if (i < c.size() && a[i].x != c[i].x) differs = true;
+  }
+  CHECK(same);
+  CHECK(differs);
+}
+
+TEST(particles_launch_inside_the_cone) {
+  mythos::ParticleSystem sys(3);
+  mythos::EmitterParams p = PlainEmitter();
+  p.direction = {0, 0, 5};  // not a unit vector: only its direction counts
+  p.spread = 0.4;
+  p.speed_min = p.speed_max = 2.0;
+  p.life_min = p.life_max = 100.0;
+  p.max_particles = 500;
+  const int id = sys.AddEmitter(p, {0, 0, 0});
+  sys.Burst(id, 500);
+  sys.Update(0.5);  // each is now 1 m out along its own direction
+  for (const auto& s : Sprites(sys)) {
+    const double len = std::sqrt(s.x * s.x + s.y * s.y + s.z * s.z);
+    CHECK(std::fabs(len - 1.0) < 1e-4);
+    CHECK(s.z / len >= std::cos(0.4) - 1e-4);
+  }
+}
+
+TEST(particles_full_sphere_goes_everywhere) {
+  mythos::ParticleSystem sys(9);
+  mythos::EmitterParams p = PlainEmitter();
+  p.spread = mythos::kPi;
+  p.life_min = p.life_max = 100.0;
+  p.max_particles = 400;
+  const int id = sys.AddEmitter(p, {0, 0, 0});
+  sys.Burst(id, 400);
+  sys.Update(0.1);
+  bool up = false, down = false;
+  for (const auto& s : Sprites(sys)) {
+    up = up || s.y > 0.05f;
+    down = down || s.y < -0.05f;
+  }
+  CHECK(up && down);
+}
+
+TEST(particles_gravity_and_drag) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.direction = {0, 1, 0};
+  p.speed_min = p.speed_max = 0.0;
+  p.gravity = {0, -10, 0};
+  p.life_min = p.life_max = 100.0;
+  const int id = sys.AddEmitter(p, {0, 5, 0});
+  sys.Burst(id, 1);
+  for (int i = 0; i < 100; ++i) sys.Update(0.01);  // 1 s of falling
+  const float y = Sprites(sys)[0].y;
+  CHECK(y < 5.0f - 4.0f && y > 5.0f - 6.0f);  // about 5 - 0.5 * 10 * 1^2
+
+  mythos::ParticleSystem drag_sys;
+  mythos::EmitterParams d = PlainEmitter();
+  d.speed_min = d.speed_max = 10.0;
+  d.drag = 5.0;
+  d.life_min = d.life_max = 100.0;
+  const int did = drag_sys.AddEmitter(d, {0, 0, 0});
+  drag_sys.Burst(did, 1);
+  for (int i = 0; i < 400; ++i) drag_sys.Update(0.01);
+  // Without drag it would be 40 m up; with drag it stops near speed / drag.
+  CHECK(Sprites(drag_sys)[0].y < 2.5f);
+}
+
+TEST(particles_size_and_colour_over_a_life) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.speed_min = p.speed_max = 0.0;
+  p.size_start = 1.0;
+  p.size_end = 3.0;
+  p.color_start[0] = 1.0f;
+  p.color_end[0] = 0.0f;
+  p.color_start[3] = 1.0f;
+  p.color_end[3] = 0.0f;
+  const int id = sys.AddEmitter(p, {0, 0, 0});
+  sys.Burst(id, 1);
+  auto s = Sprites(sys)[0];
+  CHECK(std::fabs(s.size - 1.0f) < 1e-5f && s.color[3] == 1.0f);
+  sys.Update(0.5);
+  s = Sprites(sys)[0];
+  CHECK(std::fabs(s.size - 2.0f) < 1e-5f);
+  CHECK(std::fabs(s.color[0] - 0.5f) < 1e-5f);
+  CHECK(std::fabs(s.color[3] - 0.5f) < 1e-5f);
+}
+
+TEST(particles_collide_with_walls_floor_and_ceiling) {
+  mythos::Level level;
+  CHECK(level.ParseText("[map]\n#####\n#...#\n#####\n"));
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.collide = true;
+  p.bounce = 0.5;
+  p.speed_min = p.speed_max = 3.0;
+  p.direction = {1, 0, 0};  // at the east wall
+  p.life_min = p.life_max = 100.0;
+  const int id = sys.AddEmitter(p, {2.5, 1.0, 1.5});
+  sys.Burst(id, 1);
+  for (int i = 0; i < 200; ++i) sys.Update(0.01, &level);
+  const auto s = Sprites(sys)[0];
+  CHECK(s.x < 4.0f && s.x > 0.9f);  // never through the wall
+
+  // Without a level there is no wall to hit.
+  mythos::ParticleSystem free_sys;
+  const int fid = free_sys.AddEmitter(p, {2.5, 1.0, 1.5});
+  free_sys.Burst(fid, 1);
+  for (int i = 0; i < 200; ++i) free_sys.Update(0.01);
+  CHECK(Sprites(free_sys)[0].x > 4.0f);
+
+  // A dropped particle bounces on the floor and ends up resting on it.
+  mythos::ParticleSystem drop;
+  mythos::EmitterParams g = p;
+  g.direction = {0, -1, 0};
+  g.speed_min = g.speed_max = 0.0;
+  g.gravity = {0, -9.8, 0};
+  const int gid = drop.AddEmitter(g, {2.5, 1.0, 1.5});
+  drop.Burst(gid, 1);
+  float lowest = 10.0f;
+  for (int i = 0; i < 300; ++i) {
+    drop.Update(0.01, &level);
+    lowest = std::min(lowest, Sprites(drop)[0].y);
+  }
+  CHECK(lowest >= 0.0f);
+  CHECK(Sprites(drop)[0].y < 0.05f);
+}
+
+TEST(particles_ceiling_and_die_on_hit) {
+  mythos::Level level;
+  CHECK(level.ParseText("[map]\n###\n#.#\n###\n"));
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.collide = true;
+  p.speed_min = p.speed_max = 20.0;
+  p.life_min = p.life_max = 100.0;
+  const int id = sys.AddEmitter(p, {1.5, 1.0, 1.5});  // straight up
+  sys.Burst(id, 1);
+  for (int i = 0; i < 50; ++i) sys.Update(0.01, &level);
+  CHECK(Sprites(sys)[0].y <= mythos::kWallHeight + 1e-4f);
+
+  mythos::ParticleSystem dying;
+  mythos::EmitterParams d = p;
+  d.die_on_hit = true;
+  const int did = dying.AddEmitter(d, {1.5, 1.0, 1.5});
+  dying.Burst(did, 5);
+  dying.Update(0.5, &level);
+  CHECK_EQ(dying.Count(), 0);
+}
+
+TEST(particles_removed_emitter_drains_then_goes) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.rate = 20.0;
+  const int id = sys.AddEmitter(p, {0, 0, 0});
+  sys.Update(0.5);
+  const int live = sys.Count();
+  CHECK(live > 0);
+  sys.RemoveEmitter(id);
+  sys.Update(0.1);  // no new particles, existing ones fly on
+  CHECK(sys.Count() <= live);
+  CHECK_EQ(sys.EmitterCount(), 1);
+  sys.Burst(id, 10);  // a removed emitter takes no more
+  sys.SetActive(id, true);
+  sys.Update(5.0);
+  CHECK_EQ(sys.Count(), 0);
+  CHECK_EQ(sys.EmitterCount(), 0);
+}
+
+TEST(particles_emitter_limit_and_clear) {
+  mythos::ParticleSystem sys;
+  for (int i = 0; i < mythos::kMaxEmitters; ++i) {
+    CHECK(sys.AddEmitter(PlainEmitter(), {0, 0, 0}) > 0);
+  }
+  CHECK_EQ(sys.AddEmitter(PlainEmitter(), {0, 0, 0}), 0);
+  sys.Clear();
+  CHECK_EQ(sys.EmitterCount(), 0);
+  CHECK_EQ(sys.Count(), 0);
+  CHECK(sys.AddEmitter(PlainEmitter(), {0, 0, 0}) > 0);
+}
+
+TEST(particles_collect_respects_the_limit) {
+  mythos::ParticleSystem sys;
+  mythos::EmitterParams p = PlainEmitter();
+  p.max_particles = 100;
+  const int id = sys.AddEmitter(p, {0, 0, 0});
+  sys.Burst(id, 100);
+  std::vector<mythos::ParticleSprite> out;
+  sys.Collect(out, 30);
+  CHECK_EQ(static_cast<int>(out.size()), 30);
+  sys.Collect(out, 0);
+  CHECK_EQ(static_cast<int>(out.size()), 30);  // appends nothing
+}
+
+TEST(particles_bad_numbers_are_made_safe) {
+  mythos::EmitterParams p;
+  p.life_min = -4.0;
+  p.life_max = std::nan("");
+  p.speed_max = 1e12;
+  p.rate = std::nan("");
+  p.max_particles = -3;
+  p.spread = 99.0;
+  p.size_start = std::nan("");
+  p.direction = {0, 0, 0};
+  p.gravity = {1e9, 0, 0};
+  p.color_start[0] = std::nanf("");
+  const mythos::EmitterParams s = mythos::Sanitize(p);
+  CHECK(s.life_min > 0.0 && s.life_max >= s.life_min);
+  CHECK(s.speed_max <= 100.0);
+  CHECK(s.rate == 0.0);
+  CHECK(s.max_particles >= 1);
+  CHECK(s.spread <= mythos::kPi);
+  CHECK(std::isfinite(s.size_start));
+  CHECK(s.gravity.x <= 100.0);
+  CHECK(s.color_start[0] == 1.0f);
+
+  mythos::ParticleSystem sys;
+  const int id = sys.AddEmitter(p, {0, 0, 0});  // a zero direction still works
+  sys.Burst(id, 5);
+  sys.Update(std::nan(""));
+  sys.Update(-1.0);
+  sys.Update(0.1);
+  for (const auto& sp : Sprites(sys)) CHECK(std::isfinite(sp.x + sp.y + sp.z));
 }
 
 }

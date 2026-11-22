@@ -24,6 +24,7 @@ using GLbitfield = unsigned int;
 using GLsizeiptr = std::ptrdiff_t;
 
 constexpr GLboolean kFalse = 0;
+constexpr GLboolean kTrue = 1;
 constexpr GLenum kFloat = 0x1406;
 constexpr GLenum kUnsignedByte = 0x1401;
 constexpr GLenum kRgba = 0x1908;
@@ -41,6 +42,7 @@ constexpr GLbitfield kDepthBufferBit = 0x00000100;
 constexpr GLenum kDepthTest = 0x0B71;
 constexpr GLenum kBlend = 0x0BE2;
 constexpr GLenum kLequal = 0x0203;
+constexpr GLenum kOne = 0x0001;
 constexpr GLenum kSrcAlpha = 0x0302;
 constexpr GLenum kOneMinusSrcAlpha = 0x0303;
 constexpr GLenum kArrayBuffer = 0x8892;
@@ -86,6 +88,7 @@ constexpr GLenum kNearestFilter = 0x2600;
   X(void, Disable, GLenum cap)                                               \
   X(void, BlendFunc, GLenum src, GLenum dst)                                 \
   X(void, DepthFunc, GLenum func)                                            \
+  X(void, DepthMask, GLboolean flag)                                         \
   X(void, DrawArrays, GLenum mode, GLint first, GLsizei count)               \
   X(void, GenTextures, GLsizei n, GLuint* textures)                          \
   X(void, DeleteTextures, GLsizei n, const GLuint* textures)                 \

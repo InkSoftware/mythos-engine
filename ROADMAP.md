@@ -39,13 +39,14 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Done when:** off is pixel-identical, and a game can set a per-level grade.
 - **Risk:** 3D textures are fine on GL 4.1; keep the LUT 32^3.
 
-### 1.2 Particles (M)
+### 1.2 Particles (M) - done
 - **Why:** dust, sparks, smoke, steam, rain splashes. The largest visual gap.
 - **Where:** `gfx/particles.h` is a CPU emitter and simulator (spawn rate,
   lifetime, velocity cone, gravity, drag, size/colour over life, cell
   collision against `Level`), all deterministic from a seed and testable.
-  `platform/gl/` draws instanced billboards in the blended pass. Soft edges
-  come from the depth buffer when it is available.
+  `platform/gl/` draws billboards in the blended pass (built on the CPU, not
+  instanced). Soft edges from the depth buffer and lit particles are not done:
+  the sprites are unlit and a game tints them.
 - **API:** `CameraState::particles` (a list of emitters or a flat particle
   buffer); a game owns emitters, the engine simulates and draws.
 - **Tests:** determinism, lifetime and spawn counts, collision with walls.

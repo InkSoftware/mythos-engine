@@ -16,6 +16,8 @@ extern const char* const kToneMapAndGrainFrag;
 extern const char* const kLensAndFxaaFrag;
 extern const char* const kMirrorGlassFrag;
 extern const char* const kGlassPaneVert;
+extern const char* const kParticleVert;
+extern const char* const kParticleFrag;
 extern const char* const kGlassPaneFrag;
 extern const char* const kOverlayFrag;
 extern const char* const kBloomBlurFrag;

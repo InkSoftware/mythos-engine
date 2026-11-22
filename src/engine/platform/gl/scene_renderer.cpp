@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <numbers>
 #include <utility>
@@ -24,6 +25,7 @@ using gl::BlendFunc;
 using gl::Clear;
 using gl::ClearColor;
 using gl::DepthFunc;
+using gl::DepthMask;
 using gl::Disable;
 using gl::DrawArrays;
 using gl::Enable;
@@ -46,6 +48,7 @@ using gl::kLequal;
 using gl::kLinear;
 using gl::kLinearMipmapLinear;
 using gl::kNearest;
+using gl::kOne;
 using gl::kOneMinusSrcAlpha;
 using gl::kRepeat;
 using gl::kRgba8;
@@ -56,6 +59,7 @@ using gl::kTexture0;
 using gl::kTexture2D;
 using gl::kTextureCubeMap;
 using gl::kTriangles;
+using gl::kTrue;
 using gl::kUnsignedInt8888Rev;
 using gl::TexImage2D;
 using gl::TexSubImage2D;
@@ -144,6 +148,25 @@ void SetVertexLayout(const GLuint vbo) {
                       reinterpret_cast<const void*>(24));
 }
 
+// Particle vertex: position (3 floats), corner uv (2), colour (4), shape (1).
+constexpr GLsizei kParticleFloats = 10;
+constexpr GLsizei kParticleStride = kParticleFloats * sizeof(float);
+
+void SetParticleLayout(const GLuint vbo) {
+  BindBuffer(kArrayBuffer, vbo);
+  EnableVertexAttribArray(0);
+  VertexAttribPointer(0, 3, kFloat, kFalse, kParticleStride, nullptr);
+  EnableVertexAttribArray(1);
+  VertexAttribPointer(1, 2, kFloat, kFalse, kParticleStride,
+                      reinterpret_cast<const void*>(12));
+  EnableVertexAttribArray(2);
+  VertexAttribPointer(2, 4, kFloat, kFalse, kParticleStride,
+                      reinterpret_cast<const void*>(20));
+  EnableVertexAttribArray(3);
+  VertexAttribPointer(3, 1, kFloat, kFalse, kParticleStride,
+                      reinterpret_cast<const void*>(36));
+}
+
 // Empty box that any point grows.
 void ResetBounds(float* const bmin, float* const bmax) {
   for (int k = 0; k < 3; ++k) {
@@ -179,6 +202,9 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
                         {{0, "aPos"}});
   glass_program_.Build(shaders::kGlassPaneVert, shaders::kGlassPaneFrag,
                        {{0, "aPos"}, {2, "aUV"}});
+  particle_program_.Build(
+      shaders::kParticleVert, shaders::kParticleFrag,
+      {{0, "aPos"}, {1, "aUV"}, {2, "aColor"}, {3, "aShape"}});
   bloom_program_.Build(shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
                        {{0, "aPos"}, {2, "aUV"}});
   const bool text_ok = text_.Init();
@@ -195,6 +221,11 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
   glass_vao_.Create();
   glass_vao_.Bind();
   SetVertexLayout(glass_vbo_.Id());
+  BindVertexArray(0);
+  particle_vbo_.Upload(nullptr, 0, kDynamicDraw);
+  particle_vao_.Create();
+  particle_vao_.Bind();
+  SetParticleLayout(particle_vbo_.Id());
   BindVertexArray(0);
   // The mirror view starts at half size; DrawMirrorView resizes it.
   mirror_target_.Create(kInternalW / 2, kInternalH / 2);
@@ -810,6 +841,90 @@ void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
   Disable(kBlend);
 }
 
+void SceneRenderer::DrawParticles(const CameraState& cam, const Frame& f) {
+  if (cam.particles.empty() || !particle_program_.Valid()) return;
+  const size_t count = std::min(
+      cam.particles.size(), static_cast<size_t>(CameraState::kMaxParticles));
+  // The camera's right and up vectors, so every sprite faces the eye.
+  const float dx = f.dir[0], dy = f.dir[1], dz = f.dir[2];
+  const float right_len = std::max(1e-4f, std::hypot(dx, dz));
+  const float rx = -dz / right_len, rz = dx / right_len;
+  const float ux = -rz * dy, uy = rz * dx - rx * dz, uz = rx * dy;
+  const auto scroll = static_cast<float>(cam.scroll_z);
+
+  // Translucent sprites far to near, then the additive ones (their order does
+  // not matter).
+  std::vector<std::pair<float, size_t>> order;
+  std::vector<size_t> additive;
+  for (size_t i = 0; i < count; ++i) {
+    const ParticleSprite& s = cam.particles[i];
+    if (!std::isfinite(s.x + s.y + s.z + s.size + s.rotation) ||
+        s.size <= 0.0f) {
+      continue;
+    }
+    if (s.blend == ParticleBlend::kAdditive) {
+      additive.push_back(i);
+      continue;
+    }
+    const float ex = s.x - f.eye[0], ey = s.y - f.eye[1],
+                ez = s.z + scroll - f.eye[2];
+    order.emplace_back(ex * ex + ey * ey + ez * ez, i);
+  }
+  std::ranges::sort(order, std::greater<>());
+  const auto translucent = static_cast<GLsizei>(order.size()) * 6;
+  const auto glow = static_cast<GLsizei>(additive.size()) * 6;
+  if (translucent + glow == 0) return;
+  for (const size_t i : additive) order.emplace_back(0.0f, i);
+
+  particle_verts_.clear();
+  particle_verts_.reserve(order.size() * 6 * kParticleFloats);
+  constexpr float kCorner[6][2] = {{-0.5f, -0.5f}, {0.5f, -0.5f},
+                                   {0.5f, 0.5f},   {-0.5f, -0.5f},
+                                   {0.5f, 0.5f},   {-0.5f, 0.5f}};
+  for (const auto& entry : order) {
+    const ParticleSprite& s = cam.particles[entry.second];
+    const float c = std::cos(s.rotation), sn = std::sin(s.rotation);
+    for (const auto& corner : kCorner) {
+      const float px = (corner[0] * c - corner[1] * sn) * s.size;
+      const float py = (corner[0] * sn + corner[1] * c) * s.size;
+      const float v[kParticleFloats] = {
+          s.x + rx * px + ux * py,
+          s.y + uy * py,
+          s.z + scroll + rz * px + uz * py,
+          corner[0] + 0.5f,
+          corner[1] + 0.5f,
+          s.color[0],
+          s.color[1],
+          s.color[2],
+          s.color[3],
+          static_cast<float>(static_cast<int>(s.shape))};
+      particle_verts_.insert(particle_verts_.end(), v, v + kParticleFloats);
+    }
+  }
+  particle_vbo_.Upload(particle_verts_.data(),
+                       particle_verts_.size() * sizeof(float), kDynamicDraw);
+
+  particle_program_.Use();
+  UniformMatrix4fv(particle_program_.Uniform("uView"), 1, kFalse, f.view);
+  UniformMatrix4fv(particle_program_.Uniform("uProj"), 1, kFalse, f.proj);
+  Enable(kDepthTest);
+  DepthFunc(kLequal);
+  DepthMask(
+      kFalse);  // sprites test against the scene but never hide each other
+  Enable(kBlend);
+  particle_vao_.Bind();
+  if (translucent > 0) {
+    BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
+    DrawArrays(kTriangles, 0, translucent);
+  }
+  if (glow > 0) {
+    BlendFunc(kSrcAlpha, kOne);
+    DrawArrays(kTriangles, translucent, glow);
+  }
+  Disable(kBlend);
+  DepthMask(kTrue);
+}
+
 void SceneRenderer::DrawGlassPanes(const CameraState& cam, const Frame& f) {
   if (cam.glass.empty() || !glass_program_.Valid()) return;
   glass_program_.Use();
@@ -1053,6 +1168,7 @@ void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
   Disable(kBlend);
   if (cam.outdoor) DrawSky(cam, f);
   DrawWorld(cam, f);
+  DrawParticles(cam, f);
   DrawGlassPanes(cam, f);
   if (mirrored) DrawMirrorGlass(cam, f);
   target_.Resolve();

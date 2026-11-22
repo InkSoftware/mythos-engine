@@ -65,6 +65,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/mesh.cpp
     src/engine/gfx/model.cpp
     src/engine/gfx/normalmap.cpp
+    src/engine/gfx/particles.cpp
     src/engine/gfx/pbr.cpp
     src/engine/gfx/stb_image_impl.cpp
     src/engine/gfx/stb_truetype_impl.cpp
