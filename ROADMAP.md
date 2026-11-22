@@ -67,13 +67,15 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   `ApplyCameraFx` and one new `CameraState::fov_scale` read. Roll is left out
   for now: it needs the view matrix and the sky basis to change.
 
-### 1.5 Debug overlay and console (M)
+### 1.5 Debug overlay and console (M) - done
 - **Why:** Unity's Stats and Unreal's `stat` and console variables.
 - **Where:** frame time, draw calls, light and shadow counts, chunk counts from
   `SceneRenderer` (a `RenderStats` struct). A `core/cvar.h` registry
   (typed variables, get/set by name, tested). An overlay panel drawn with the
   existing `ui` boxes, toggled by a key; a free-fly camera.
-- **Done when:** every setting is reachable as a cvar.
+- **Done when:** every setting is reachable as a cvar. Done. Chunk counts and
+  GPU timings are not included (no GPU timer queries are loaded); the frame
+  time is the game's own clock.
 
 ---
 

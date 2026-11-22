@@ -181,10 +181,21 @@ void SceneRenderer::DrawShadows(const CameraState& cam) {
   const uint64_t scene = SceneKey(cam);
   // A cache key combines the scene state with a lamp's position and reach; the
   // low bit keeps it non-zero so a fresh key never matches an empty slot.
+  // The shadow casters near a lamp (a body that moves) are part of its key, so
+  // its cube is redrawn while they move and cached while nothing does.
   const auto key_for = [&](const float* const pos, const float reach) {
     uint64_t h = scene;
     Mix(h, pos, 3 * sizeof(float));
     Mix(h, reach);
+    const float near_reach = reach + 2.0f;
+    for (const ModelInstance& inst : cam.instances) {
+      if (!(inst.views & ModelInstance::kShadow) || inst.model < 0) continue;
+      const float dx = inst.matrix[12] - pos[0], dy = inst.matrix[13] - pos[1],
+                  dz = inst.matrix[14] - pos[2];
+      if (dx * dx + dy * dy + dz * dz > near_reach * near_reach) continue;
+      Mix(h, inst.model);
+      Mix(h, inst.matrix, sizeof(inst.matrix));
+    }
     return h | 1;
   };
 
@@ -246,7 +257,10 @@ void SceneRenderer::DrawShadowCube(const CameraState& cam, ShadowCube& cube,
     ClearColor(kShadowFar, 0.0f, 0.0f, 1.0f);
     Clear(kColorBufferBit | kDepthBufferBit);
     draw_state_ = DrawState{};
-    DrawScene(cam, frustum, 0);
+    ++stats_.shadow_faces;
+    counting_shadows_ = true;
+    DrawScene(cam, frustum, ModelInstance::kShadow);
+    counting_shadows_ = false;
   }
 }
 }

@@ -22,6 +22,7 @@
 #include "engine/audio/audio_math.h"
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/sound_bank.h"
+#include "engine/core/cvar.h"
 #include "engine/core/fileio.h"
 #include "engine/core/json.h"
 #include "engine/core/json_reader.h"
@@ -46,15 +47,20 @@
 #include "engine/gfx/normalmap.h"
 #include "engine/gfx/particles.h"
 #include "engine/gfx/pbr.h"
+#include "engine/gfx/render_stats.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
+#include "engine/ui/debug_console.h"
+#include "engine/ui/debug_overlay.h"
 #include "engine/ui/menu.h"
 #include "engine/ui/paging.h"
 #include "engine/ui/settings.h"
+#include "engine/ui/settings_cvars.h"
 #include "engine/ui/ui.h"
 #include "engine/world/body.h"
 #include "engine/world/camera_fx.h"
+#include "engine/world/free_cam.h"
 #include "engine/world/gamepad.h"
 #include "engine/world/interact.h"
 #include "engine/world/level.h"
@@ -2649,6 +2655,448 @@ TEST(particles_bad_numbers_are_made_safe) {
   sys.Update(-1.0);
   sys.Update(0.1);
   for (const auto& sp : Sprites(sys)) CHECK(std::isfinite(sp.x + sp.y + sp.z));
+}
+
+// ---- console variables, the debug console, the free camera ----
+
+TEST(cvar_bind_get_set_and_clamp) {
+  mythos::CvarRegistry reg;
+  bool b = false;
+  int n = 5;
+  double d = 1.5;
+  CHECK(reg.AddBool("flag", &b));
+  CHECK(reg.AddInt("count", &n, 0, 10));
+  CHECK(reg.AddDouble("ratio", &d, 0.0, 2.0));
+  CHECK(reg.Get("flag") == "0" && reg.Get("count") == "5");
+  CHECK(reg.Get("ratio") == "1.5");
+  CHECK(reg.Set("flag", "on").ok && b);
+  CHECK(reg.Set("flag", "FALSE").ok && !b);
+  CHECK(reg.Set("count", "99").ok);
+  CHECK_EQ(n, 10);  // clamped
+  CHECK(reg.Set("count", "-4").ok);
+  CHECK_EQ(n, 0);
+  CHECK(reg.Set("ratio", "0.25").ok);
+  CHECK(std::fabs(d - 0.25) < 1e-12);
+  CHECK(reg.Set("ratio", "9").ok);
+  CHECK(d == 2.0);
+}
+
+TEST(cvar_rejects_bad_values_and_names) {
+  mythos::CvarRegistry reg;
+  bool b = true;
+  int n = 3;
+  double d = 1.0;
+  reg.AddBool("flag", &b);
+  reg.AddInt("count", &n, 0, 10);
+  reg.AddDouble("ratio", &d, 0.0, 2.0);
+  CHECK(!reg.Set("flag", "maybe").ok && b);
+  CHECK(!reg.Set("count", "3x").ok && n == 3);
+  CHECK(!reg.Set("count", "").ok);
+  CHECK(!reg.Set("count", "2.5").ok);
+  CHECK(!reg.Set("ratio", "nan").ok && d == 1.0);
+  CHECK(!reg.Set("ratio", "abc").ok);
+  CHECK(!reg.Set("nothing", "1").ok);
+  CHECK(!reg.AddBool("", &b));
+  CHECK(!reg.AddBool("two words", &b));
+  CHECK(!reg.AddBool("quo\"te", &b));
+  CHECK(!reg.AddBool("ok", nullptr));
+  CHECK(!reg.AddInt("bad", &n, 5, 1));
+  CHECK(!reg.Has("bad"));
+}
+
+TEST(cvar_names_ignore_case_and_replace) {
+  mythos::CvarRegistry reg;
+  int a = 1, b = 2;
+  reg.AddInt("Debug.Level", &a, 0, 9);
+  CHECK(reg.Has("debug.level") && reg.Has("DEBUG.LEVEL"));
+  CHECK(reg.Set("DEBUG.level", "7").ok);
+  CHECK_EQ(a, 7);
+  reg.AddInt("debug.level", &b, 0, 9);  // replaces the first
+  CHECK(reg.Get("Debug.Level") == "2");
+  CHECK(reg.Remove("DEBUG.LEVEL"));
+  CHECK(!reg.Has("debug.level"));
+  CHECK(!reg.Remove("debug.level"));
+}
+
+TEST(cvar_execute_lines) {
+  mythos::CvarRegistry reg;
+  int n = 4;
+  reg.AddInt("count", &n, 0, 10);
+  std::vector<std::string> got;
+  reg.AddCommand("say", [&](const mythos::CvarRegistry::Args& args) {
+    got = args;
+    return mythos::CvarResult{.ok = true, .text = "said"};
+  });
+  CHECK(reg.Execute("").text.empty() && reg.Execute("   ").ok);
+  CHECK(reg.Execute("count").text == "count = 4");
+  CHECK(reg.Execute("COUNT 8").text == "count = 8");
+  CHECK_EQ(n, 8);
+  CHECK(!reg.Execute("count 1 2").ok);
+  CHECK(!reg.Execute("nope").ok);
+  const mythos::CvarResult r = reg.Execute("say one \"two words\" three");
+  CHECK(r.ok && r.text == "said");
+  CHECK(got.size() == 3 && got[1] == "two words");
+  CHECK(!reg.Set("say", "1").ok);  // a command is not a variable
+  CHECK(reg.Get("say").empty());
+}
+
+TEST(cvar_split_command_line) {
+  using mythos::SplitCommandLine;
+  CHECK(SplitCommandLine("").empty());
+  CHECK(SplitCommandLine("  a   b ").size() == 2);
+  const auto w = SplitCommandLine(R"(say "hello  world" x"y z")");
+  CHECK(w.size() == 3 && w[1] == "hello  world" && w[2] == "xy z");
+  CHECK(SplitCommandLine("a \"unclosed text").back() == "unclosed text");
+  CHECK(SplitCommandLine("\"\"").size() == 1);  // an empty word
+}
+
+TEST(cvar_builtin_commands_and_completion) {
+  mythos::CvarRegistry reg;
+  int a = 1, b = 2, c = 3;
+  reg.AddInt("render.scale", &a, 0, 9, "how big");
+  reg.AddInt("render.shadows", &b, 0, 9);
+  reg.AddInt("audio.volume", &c, 0, 9);
+  const auto names = reg.Complete("render.");
+  CHECK(names.size() == 2 && names[0] == "render.scale");
+  CHECK(reg.Complete("RENDER.SH").size() == 1);
+  CHECK(reg.Complete("zzz").empty());
+  CHECK(reg.Execute("help render.scale").text == "how big");
+  CHECK(reg.Execute("help render.shadows").text == "(no help)");
+  CHECK(!reg.Execute("help nothing").ok);
+  const std::string listed = reg.Execute("list render.").text;
+  CHECK(listed.find("render.scale = 1") != std::string::npos);
+  CHECK(listed.find("audio") == std::string::npos);
+  CHECK(reg.Execute("find vol").text == "audio.volume");
+  CHECK(reg.Execute("find qqq").text == "(none)");
+  CHECK(reg.Has("help") && reg.Has("list") && reg.Has("find"));
+  const auto all = reg.Names();
+  CHECK(std::ranges::is_sorted(all));
+}
+
+TEST(cvar_revision_counts_changes) {
+  mythos::CvarRegistry reg;
+  int n = 0;
+  reg.AddInt("n", &n, 0, 9);
+  const uint64_t before = reg.Revision();
+  reg.Execute("n");  // reading changes nothing
+  CHECK(reg.Revision() == before);
+  reg.Execute("n 3");
+  CHECK(reg.Revision() == before + 1);
+  reg.Execute("n bad");  // a failed set changes nothing
+  CHECK(reg.Revision() == before + 1);
+}
+
+TEST(cvar_every_setting_is_a_variable) {
+  mythos::GameSettings s;
+  mythos::CvarRegistry reg;
+  mythos::RegisterSettingsCvars(reg, s);
+  // One variable per settings.txt key, so a new setting is covered for free.
+  const auto keys = mythos::ToKeyValues(s);
+  CHECK(!keys.empty());
+  for (const auto& [key, value] : keys) {
+    CHECK(reg.Has(key));
+    CHECK(reg.Get(key) == value);
+  }
+  CHECK(reg.Set("filmGrain", "0").ok && !s.film_grain);
+  CHECK(reg.Set("renderScale", "99").ok);
+  CHECK_EQ(s.render_scale,
+           mythos::kRenderScaleCount - 1);  // clamped as the menu
+  CHECK(reg.Set("resolution", "1280x720").ok);
+  CHECK(mythos::kResolutions[s.resolution].w == 1280);
+  CHECK(reg.Execute("vsync 0").ok && !s.vsync);
+  // Whatever the settings hold afterwards is what the variables report.
+  for (const auto& [key, value] : mythos::ToKeyValues(s)) {
+    CHECK(reg.Get(key) == value);
+  }
+  CHECK(reg.Revision() > 0);
+}
+
+TEST(debug_console_typing_and_editing) {
+  mythos::CvarRegistry reg;
+  mythos::DebugConsole con(reg);
+  CHECK(!con.Visible());
+  con.Toggle();
+  CHECK(con.Visible());
+  con.Type("he`llo\n\t\x7f");  // the backtick and control keys are dropped
+  CHECK(con.Input() == "hello");
+  con.Backspace();
+  CHECK(con.Input() == "hell");
+  con.Type("\xCE\xB1");  // a Greek alpha: two bytes
+  CHECK(con.Input().size() == 6);
+  con.Backspace();
+  CHECK(con.Input() == "hell");
+  for (int i = 0; i < 10; ++i) con.Backspace();
+  CHECK(con.Input().empty());
+  con.Type(std::string(500, 'x'));
+  CHECK(con.Input().size() == 200);
+  con.Hide();
+  CHECK(!con.Visible());
+}
+
+TEST(debug_console_submit_and_history) {
+  mythos::CvarRegistry reg;
+  int n = 1;
+  reg.AddInt("n", &n, 0, 9);
+  mythos::DebugConsole con(reg);
+  con.Type("n 5");
+  con.Submit();
+  CHECK_EQ(n, 5);
+  CHECK(con.Input().empty());
+  CHECK(con.Lines().size() == 2);
+  CHECK(con.Lines()[0] == "> n 5" && con.Lines()[1] == "n = 5");
+  con.Type("bogus");
+  con.Submit();
+  CHECK(con.Lines().back() == "error: unknown: bogus");
+  con.Type("   ");
+  con.Submit();  // a blank line prints nothing
+  CHECK(con.Lines().size() == 4);
+
+  con.Type("draft");
+  con.HistoryUp();
+  CHECK(con.Input() == "bogus");
+  con.HistoryUp();
+  CHECK(con.Input() == "n 5");
+  con.HistoryUp();  // already the oldest
+  CHECK(con.Input() == "n 5");
+  con.HistoryDown();
+  CHECK(con.Input() == "bogus");
+  con.HistoryDown();
+  CHECK(con.Input() == "draft");  // back to what was being typed
+  con.HistoryDown();
+  CHECK(con.Input() == "draft");
+
+  con.Submit();       // runs "draft"
+  con.Type("draft");  // a repeat of the last line is not stored twice
+  con.Submit();
+  con.HistoryUp();
+  CHECK(con.Input() == "draft");
+  con.HistoryUp();
+  CHECK(con.Input() == "bogus");
+  con.HistoryUp();
+  CHECK(con.Input() == "n 5");
+}
+
+TEST(debug_console_completion) {
+  mythos::CvarRegistry reg;
+  int a = 0, b = 0, c = 0;
+  reg.AddInt("render.scale", &a, 0, 9);
+  reg.AddInt("render.shadows", &b, 0, 9);
+  reg.AddInt("audio", &c, 0, 9);
+  mythos::DebugConsole con(reg);
+  con.Type("au");
+  con.Complete();
+  CHECK(con.Input() == "audio ");  // one match fills it in
+  con.Backspace();
+  con.Backspace();
+  con.Backspace();
+  con.Backspace();
+  con.Backspace();
+  con.Backspace();
+  con.Type("rend");
+  con.Complete();
+  CHECK(con.Input() == "render.s");  // the shared start
+  CHECK(con.Lines().size() == 1);
+  CHECK(con.Lines()[0].find("render.shadows") != std::string::npos);
+  con.Type("x");
+  con.Complete();  // no match: unchanged
+  CHECK(con.Input() == "render.sx");
+  con.Type(" 3");
+  con.Complete();  // only the first word completes
+  CHECK(con.Input() == "render.sx 3");
+}
+
+TEST(debug_console_log_scroll_and_limits) {
+  mythos::CvarRegistry reg;
+  mythos::DebugConsole con(reg);
+  con.Log("one\ntwo\nthree");
+  CHECK(con.Lines().size() == 3 && con.Lines()[1] == "two");
+  for (int i = 0; i < 500; ++i) con.Log("line " + std::to_string(i));
+  CHECK_EQ(static_cast<int>(con.Lines().size()),
+           mythos::DebugConsole::kMaxLines);
+  CHECK(con.Lines().back() == "line 499");
+  con.Scroll(5);
+  CHECK_EQ(con.ScrollBack(), 5);
+  con.Scroll(-99);
+  CHECK_EQ(con.ScrollBack(), 0);
+  con.Scroll(9999);
+  CHECK(con.ScrollBack() < mythos::DebugConsole::kMaxLines);
+  con.Log("new");  // new output snaps back to the newest
+  CHECK_EQ(con.ScrollBack(), 0);
+  con.Clear();
+  CHECK(con.Lines().empty());
+  // The history is capped too.
+  int n = 0;
+  reg.AddInt("n", &n, 0, 999);
+  for (int i = 0; i < 80; ++i) {
+    con.Type("n " + std::to_string(i));
+    con.Submit();
+  }
+  for (int i = 0; i < 80; ++i) con.HistoryUp();
+  CHECK(con.Input() == "n 30");  // the oldest of the last 50
+}
+
+TEST(frame_history_average_order_and_wrap) {
+  mythos::FrameHistory h;
+  CHECK_EQ(h.Count(), 0);
+  CHECK(h.AverageMs() == 0.0 && h.Fps() == 0.0 && h.MaxMs() == 0.0);
+  h.Add(0.010);
+  h.Add(0.020);
+  h.Add(0.030);
+  CHECK_EQ(h.Count(), 3);
+  const auto ms = h.Milliseconds();
+  CHECK(ms.size() == 3 && std::fabs(ms[0] - 10.0) < 1e-9);
+  CHECK(std::fabs(ms[2] - 30.0) < 1e-9);
+  CHECK(std::fabs(h.AverageMs() - 20.0) < 1e-9);
+  CHECK(std::fabs(h.AverageMs(2) - 25.0) < 1e-9);  // the last two
+  CHECK(std::fabs(h.Fps(2) - 40.0) < 1e-9);
+  CHECK(std::fabs(h.MaxMs() - 30.0) < 1e-9);
+  h.Add(-1.0);
+  h.Add(std::nan(""));
+  h.Add(99.0);
+  CHECK_EQ(h.Count(), 3);  // bad samples are ignored
+  for (int i = 0; i < 1000; ++i) h.Add(0.016);
+  CHECK_EQ(h.Count(), mythos::FrameHistory::kCapacity);
+  CHECK(std::fabs(h.AverageMs(500) - 16.0) < 1e-9);
+  CHECK(std::fabs(h.MaxMs() - 16.0) < 1e-9);  // the old 30 ms has gone
+  CHECK(h.AverageMs(0) == 0.0 && h.AverageMs(-4) == 0.0);
+}
+
+TEST(debug_overlay_cvars_toggle_the_panels) {
+  mythos::CvarRegistry reg;
+  mythos::DebugOverlayOptions o;
+  mythos::RegisterDebugCvars(reg, o);
+  CHECK(!o.stats && !o.graph && !o.fly);
+  reg.Execute("debug.stats 1");
+  reg.Execute("debug.fly on");
+  CHECK(o.stats && o.fly && !o.graph);
+}
+
+TEST(debug_overlay_draws_only_with_a_font) {
+  mythos::Surface fb(320, 200, 0);
+  mythos::TextLayer layer;
+  mythos::UiCanvas canvas{fb, layer};
+  mythos::DebugOverlayOptions o;
+  o.stats = o.graph = true;
+  mythos::DebugOverlayTheme theme;
+  theme.text = {.font = nullptr, .size = 8.0f, .color = 0xFFFFFFFF, .fx = {}};
+  mythos::FrameHistory frames;
+  for (int i = 0; i < 100; ++i) frames.Add(0.016 + 0.001 * (i % 7));
+  mythos::RenderStats stats;
+  stats.draw_calls = 120;
+  mythos::CvarRegistry reg;
+  mythos::DebugConsole con(reg);
+  con.Show();
+  mythos::DrawDebugOverlay(canvas, o, theme, frames, stats, &con, 0.0);
+  CHECK(layer.runs.empty());
+  for (const uint32_t px : fb.px) CHECK_EQ(px, 0u);  // nothing without a font
+
+  mythos::SdfFont font;
+  CHECK(font.LoadFile(
+      std::string(MYTHOS_TEST_ASSET_DIR) + "/fonts/Alegreya.ttf", nullptr));
+  if (!font.Loaded()) return;
+  theme.text.font = &font;
+  con.Log("hello console");
+  con.Type("typing");
+  mythos::DrawDebugOverlay(canvas, o, theme, frames, stats, &con, 0.0);
+  CHECK(layer.runs.size() >= 6);  // the stats lines, a log line, the input
+  bool drew = false;
+  for (const uint32_t px : fb.px) drew = drew || px != 0u;
+  CHECK(drew);
+  bool saw_input = false, saw_draws = false;
+  for (const auto& run : layer.runs) {
+    if (run.text.find("typing") != std::string::npos) saw_input = true;
+    if (run.text.find("draws 120") != std::string::npos) saw_draws = true;
+  }
+  CHECK(saw_input && saw_draws);
+
+  // Nothing on: nothing drawn; an empty surface is fine too.
+  mythos::Surface fb2(320, 200, 0);
+  mythos::TextLayer layer2;
+  mythos::UiCanvas canvas2{fb2, layer2};
+  mythos::DrawDebugOverlay(canvas2, mythos::DebugOverlayOptions{}, theme,
+                           frames, stats, nullptr, 0.0);
+  CHECK(layer2.runs.empty());
+  mythos::Surface empty;
+  mythos::UiCanvas canvas3{empty, layer2};
+  mythos::DrawDebugOverlay(canvas3, o, theme, frames, stats, &con, 0.0);
+}
+
+TEST(free_camera_flies_along_the_view) {
+  mythos::FreeCamera cam;
+  cam.x = cam.z = 0;
+  cam.y = 2.0;
+  cam.yaw = 0;  // facing +x
+  cam.pitch = 0;
+  mythos::MoveInput in;
+  in.forward = true;
+  cam.Update(in, 0.0, 1.0, 0.0);
+  CHECK(std::fabs(cam.x - 4.0) < 1e-9 && std::fabs(cam.z) < 1e-9);
+  CHECK(std::fabs(cam.y - 2.0) < 1e-9);
+  in.forward = false;
+  in.back = true;
+  cam.Update(in, 0.0, 0.5, 0.0);
+  CHECK(std::fabs(cam.x - 2.0) < 1e-9);
+
+  mythos::FreeCamera up;
+  up.pitch = mythos::kPi / 4;
+  mythos::MoveInput fwd;
+  fwd.forward = true;
+  up.Update(fwd, 0.0, 1.0, 0.0);
+  CHECK(up.y > 1.55 + 2.0);  // looking up, flying forward climbs
+
+  mythos::FreeCamera side;
+  side.yaw = 0;  // facing +x, so right is +z
+  mythos::MoveInput strafe;
+  strafe.strafe_right = true;
+  side.Update(strafe, 0.0, 1.0, 0.0);
+  CHECK(std::fabs(side.z - 4.0) < 1e-9 && std::fabs(side.x) < 1e-9);
+}
+
+TEST(free_camera_rise_run_look_and_place) {
+  mythos::FreeCamera cam;
+  const double y0 = cam.y;
+  mythos::MoveInput none;
+  cam.Update(none, 1.0, 1.0, 0.0);
+  CHECK(std::fabs(cam.y - (y0 + cam.speed)) < 1e-9);
+  cam.Update(none, 9.0, 1.0, 0.0);  // rise is clamped to 1
+  CHECK(std::fabs(cam.y - (y0 + 2 * cam.speed)) < 1e-9);
+
+  mythos::FreeCamera fast;
+  mythos::MoveInput run;
+  run.forward = true;
+  run.run = true;
+  fast.Update(run, 0.0, 1.0, 0.0);
+  CHECK(std::fabs(fast.x - fast.speed * fast.fast) < 1e-9);
+
+  mythos::FreeCamera look;
+  mythos::MoveInput mouse;
+  mouse.mouse_dx = 100;
+  mouse.mouse_dy = -100;               // up is negative
+  look.Update(mouse, 0.0, 0.0, 0.01);  // dt 0: looks but does not move
+  CHECK(std::fabs(look.yaw - 1.0) < 1e-9 && std::fabs(look.pitch - 1.0) < 1e-9);
+  CHECK(look.x == 0.0);
+  mouse.mouse_dy = -10000;
+  look.Update(mouse, 0.0, 0.0, 0.01);
+  CHECK(look.pitch == look.max_pitch);
+
+  mythos::FreeCamera analog;
+  mythos::MoveInput stick;
+  stick.analog_forward = 0.5;
+  analog.Update(stick, 0.0, 1.0, 0.0);
+  CHECK(std::fabs(analog.x - 2.0) < 1e-9);
+  mythos::MoveInput bad;
+  bad.forward = true;
+  analog.Update(bad, 0.0, std::nan(""), 0.0);  // a bad dt moves nothing
+  CHECK(std::fabs(analog.x - 2.0) < 1e-9);
+
+  mythos::Player p;
+  p.pos = {3.0, 7.0};
+  p.angle = 1.0;
+  p.pitch = 0.2;
+  mythos::FreeCamera placed;
+  placed.Place(p, 1.6);
+  CHECK(placed.x == 3.0 && placed.z == 7.0 && placed.y == 1.6);
+  CHECK(placed.yaw == 1.0 && placed.pitch == 0.2);
 }
 
 }

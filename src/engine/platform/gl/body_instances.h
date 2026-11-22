@@ -22,10 +22,12 @@ struct BodyModels {
 BodyModels UploadBodyModels(SceneRenderer& scene, const ModelLibrary& models);
 
 // Appends the instances to draw for `pose`. The figure appears only in the
-// mirror; the held light (a lighter and its flame, or the torch when `lighter`
-// is false) is drawn in both views. Missing models are skipped.
+// mirror (and, with `casts_shadow`, in the shadow maps of the lamps: the player
+// throws a shadow); the held light (a lighter and its flame, or the torch when
+// `lighter` is false) is drawn in both views. Missing models are skipped.
 void AddBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose,
-                      const BodyModels& ids, bool light_held, bool lighter);
+                      const BodyModels& ids, bool light_held, bool lighter,
+                      bool casts_shadow = false);
 
 // Copies a mirror placement into the camera's mirror state; the geometry is
 // left untouched when the mirror is off.

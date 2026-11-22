@@ -22,7 +22,7 @@ BodyModels UploadBodyModels(SceneRenderer& scene, const ModelLibrary& models) {
 
 void AddBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose,
                       const BodyModels& ids, const bool light_held,
-                      const bool lighter) {
+                      const bool lighter, const bool casts_shadow) {
   const auto add = [&](const int model, const PartMatrix& m,
                        const unsigned views) {
     if (model < 0) return;
@@ -32,8 +32,9 @@ void AddBodyInstances(std::vector<ModelInstance>& out, const BodyPose& pose,
     inst.views = views;
     out.push_back(inst);
   };
-  constexpr unsigned kMirror = ModelInstance::kMirror,
-                     kBoth = ModelInstance::kMain | ModelInstance::kMirror;
+  const unsigned kMirror =
+      ModelInstance::kMirror | (casts_shadow ? ModelInstance::kShadow : 0u);
+  constexpr unsigned kBoth = ModelInstance::kMain | ModelInstance::kMirror;
   add(ids.torso, pose.torso, kMirror);
   add(ids.head, pose.head, kMirror);
   add(ids.leg, pose.leg_l, kMirror);

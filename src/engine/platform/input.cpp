@@ -9,6 +9,49 @@
 
 namespace mythos {
 namespace {
+bool g_console_capture = false;  // the debug console owns the keyboard
+
+// Keys of the debug console. Returns true when the key was the console's (so
+// the game does not see it): the toggle always, everything while it captures.
+bool HandleConsoleKey(const SDL_Keycode key, const bool repeat,
+                      ConsoleInput& console) {
+  if ((key == SDLK_GRAVE || key == SDLK_F12) && !repeat) {
+    console.toggle = true;
+    return true;
+  }
+  if (!g_console_capture) return false;
+  switch (key) {
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:
+      if (!repeat) console.submit = true;
+      break;
+    case SDLK_BACKSPACE:
+      console.backspace = true;
+      break;
+    case SDLK_UP:
+      console.up = true;
+      break;
+    case SDLK_DOWN:
+      console.down = true;
+      break;
+    case SDLK_TAB:
+      if (!repeat) console.complete = true;
+      break;
+    case SDLK_PAGEUP:
+      console.page_up = true;
+      break;
+    case SDLK_PAGEDOWN:
+      console.page_down = true;
+      break;
+    case SDLK_ESCAPE:
+      if (!repeat) console.toggle = true;
+      break;
+    default:
+      break;
+  }
+  return true;
+}
+
 // Key bindings for single presses. Movement keys also drive menu navigation.
 void HandleKeyDown(const SDL_Keycode key, UiInput& ui, ActionInput& act,
                    InputPoll& out) {
@@ -199,6 +242,16 @@ void ReadHeldKeys(MoveInput& move, ActionInput& act) {
 }
 }
 
+void SetConsoleCapture(Window& window, const bool capture) {
+  if (capture == g_console_capture) return;
+  g_console_capture = capture;
+  if (capture) {
+    SDL_StartTextInput(window.Sdl());
+  } else {
+    SDL_StopTextInput(window.Sdl());
+  }
+}
+
 void GamepadRumble(const double low, const double high, const int ms) {
   if (!g_pad) return;
   const auto motor = [](const double v) {
@@ -251,7 +304,13 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         break;
       case SDL_EVENT_KEY_DOWN:
         g_pad_last_used = false;
+        if (HandleConsoleKey(event.key.key, event.key.repeat, out.console)) {
+          break;
+        }
         if (!event.key.repeat) HandleKeyDown(event.key.key, ui, act, out);
+        break;
+      case SDL_EVENT_TEXT_INPUT:
+        if (g_console_capture) out.console.text += event.text.text;
         break;
       case SDL_EVENT_GAMEPAD_ADDED:
         OpenFirstGamepad();
@@ -272,7 +331,14 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         break;
     }
   }
-  ReadHeldKeys(move, act);
+  if (g_console_capture) {
+    // Typing must not walk the player.
+    move.forward = move.back = move.strafe_left = move.strafe_right = false;
+    move.turn_left = move.turn_right = move.run = false;
+    act.interact_held = false;
+  } else {
+    ReadHeldKeys(move, act);
+  }
   ReadGamepad(move, ui, act, relative_mouse, dt);
   return out;
 }

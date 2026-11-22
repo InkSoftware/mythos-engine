@@ -46,6 +46,7 @@ set(MYTHOS_IMGUI_TAG "v1.92.9-docking" CACHE STRING "The Dear ImGui tag (docking
 # ---------------------------------------------------------------- mythos::engine
 add_library(mythos_engine STATIC
     src/engine/audio/sound_bank.cpp
+    src/engine/core/cvar.cpp
     src/engine/core/fileio.cpp
     src/engine/core/json.cpp
     src/engine/core/mat4.cpp
@@ -71,9 +72,12 @@ add_library(mythos_engine STATIC
     src/engine/gfx/stb_truetype_impl.cpp
     src/engine/gfx/text.cpp
     src/engine/gfx/textures.cpp
+    src/engine/ui/debug_console.cpp
+    src/engine/ui/debug_overlay.cpp
     src/engine/ui/menu.cpp
     src/engine/ui/paging.cpp
     src/engine/ui/settings.cpp
+    src/engine/ui/settings_cvars.cpp
     src/engine/ui/settings_ui.cpp
     src/engine/ui/ui.cpp
     src/engine/world/interact.cpp
@@ -81,6 +85,7 @@ add_library(mythos_engine STATIC
     src/engine/world/mirror.cpp
     src/engine/world/movement.cpp
     src/engine/world/body.cpp
+    src/engine/world/free_cam.cpp
     src/engine/world/camera_fx.cpp
     src/engine/world/player.cpp
     src/engine/world/room_doors.cpp

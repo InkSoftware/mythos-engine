@@ -9,6 +9,7 @@
 #include "engine/gfx/grade.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/particles.h"
+#include "engine/gfx/render_stats.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -16,6 +17,7 @@
 #include "engine/platform/gl/gl_objects.h"
 #include "engine/platform/gl/text_renderer.h"
 #include "engine/world/camera_fx.h"
+#include "engine/world/free_cam.h"
 #include "engine/world/room_doors.h"
 
 namespace mythos {
@@ -51,6 +53,10 @@ struct PointLight {
 struct ModelInstance {
   static constexpr unsigned kMain = 1;
   static constexpr unsigned kMirror = 2;
+  // Drawn into the shadow cube maps of the lamps and the hand light (it casts
+  // a shadow); add it to `views` of a model that should. An instance with only
+  // this flag casts a shadow and is never seen (the player's body).
+  static constexpr unsigned kShadow = 4;
   int model = -1;
   float matrix[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   unsigned views = kMain | kMirror;
@@ -227,6 +233,9 @@ class SceneRenderer {
 
   void AddFont(const SdfFont& font) { text_.AddFont(font); }
 
+  // What the last `Render` drew, for the debug overlay.
+  [[nodiscard]] const RenderStats& Stats() const { return stats_; }
+
   // Chooses the internal render height from `kRenderScaleLines`; the width
   // follows the window's aspect ratio.
   void SetRenderScale(int preset);
@@ -372,6 +381,9 @@ class SceneRenderer {
   // Draws the tinted, blended panes of `cam.glass`.
   void DrawParticles(const CameraState& cam, const Frame& f);
 
+  // One triangle draw, counted in `stats_` (the shadow cubes apart).
+  void DrawTris(gl::GLint first, gl::GLsizei count);
+
   void DrawGlassPanes(const CameraState& cam, const Frame& f);
 
   // (Re)creates the cube maps when the shadow level changes.
@@ -429,6 +441,8 @@ class SceneRenderer {
   RenderTarget target_;
   int render_scale_ = 1;
   GlTexture overlay_tex_;
+  RenderStats stats_;
+  bool counting_shadows_ = false;
   GlTexture lut_tex_;
   int lut_size_ = 0;
   int overlay_w_ = 0, overlay_h_ = 0;
@@ -477,6 +491,10 @@ class SceneRenderer {
 // Call it after the game has set the camera from the player, every frame; it
 // adds to the fields, so do not apply the same offsets twice.
 void ApplyCameraFx(const CameraFxOffsets& fx, CameraState& cam);
+
+// Sets the camera's position and look from a free camera (the debug fly
+// camera), replacing what the player gave.
+void ApplyFreeCam(const FreeCamera& free_cam, CameraState& cam);
 }
 
 #endif

@@ -517,6 +517,16 @@ void SceneRenderer::BindBatchState(const GpuBatch& b) {
   b.vao.Bind();
 }
 
+void SceneRenderer::DrawTris(const gl::GLint first, const GLsizei count) {
+  DrawArrays(kTriangles, first, count);
+  if (counting_shadows_) {
+    ++stats_.shadow_draw_calls;
+  } else {
+    ++stats_.draw_calls;
+    stats_.triangles += count / 3;
+  }
+}
+
 void SceneRenderer::DrawBatches(const BatchList& batches,
                                 const float* const model,
                                 const Frustum* const cull,
@@ -529,7 +539,7 @@ void SceneRenderer::DrawBatches(const BatchList& batches,
 
     int run_first = 0, run_count = 0;
     const auto flush = [&] {
-      if (run_count > 0) DrawArrays(kTriangles, run_first, run_count);
+      if (run_count > 0) DrawTris(run_first, run_count);
       run_count = 0;
     };
     for (const auto& c : b.chunks) {
@@ -555,7 +565,7 @@ void SceneRenderer::DrawBatches(const BatchList& batches,
 
 void SceneRenderer::DrawQuad() {
   quad_vao_.Bind();
-  DrawArrays(kTriangles, 0, 6);
+  DrawTris(0, 6);
 }
 
 void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
@@ -837,7 +847,7 @@ void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
   Enable(kBlend);
   BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
   mirror_vao_.Bind();
-  DrawArrays(kTriangles, 0, 6);
+  DrawTris(0, 6);
   Disable(kBlend);
 }
 
@@ -901,6 +911,7 @@ void SceneRenderer::DrawParticles(const CameraState& cam, const Frame& f) {
       particle_verts_.insert(particle_verts_.end(), v, v + kParticleFloats);
     }
   }
+  stats_.particles += static_cast<int>(order.size());
   particle_vbo_.Upload(particle_verts_.data(),
                        particle_verts_.size() * sizeof(float), kDynamicDraw);
 
@@ -915,11 +926,11 @@ void SceneRenderer::DrawParticles(const CameraState& cam, const Frame& f) {
   particle_vao_.Bind();
   if (translucent > 0) {
     BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
-    DrawArrays(kTriangles, 0, translucent);
+    DrawTris(0, translucent);
   }
   if (glow > 0) {
     BlendFunc(kSrcAlpha, kOne);
-    DrawArrays(kTriangles, translucent, glow);
+    DrawTris(translucent, glow);
   }
   Disable(kBlend);
   DepthMask(kTrue);
@@ -956,7 +967,7 @@ void SceneRenderer::DrawGlassPanes(const CameraState& cam, const Frame& f) {
     glass_program_.Set("uDrops", pane.drops);
     glass_program_.Set("uTime", static_cast<float>(cam.time));
     glass_program_.Set("uEye", f.eye[0], f.eye[1], f.eye[2]);
-    DrawArrays(kTriangles, 0, 6);
+    DrawTris(0, 6);
   }
   Disable(kBlend);
 }
@@ -1182,9 +1193,13 @@ void SceneRenderer::Render(const CameraState& cam, const int window_w,
   ResizeTarget(window_w, window_h);
   const Frame f = MakeFrame(cam);
 
+  stats_ = RenderStats{};
   ChooseLamps(cam, f);
+  stats_.lights = static_cast<int>(lamps_.size());
+  stats_.shadow_casters = shadow_count_ + (hand_shadow_on_ ? 1 : 0);
   DrawShadows(cam);
   const bool mirrored = MirrorVisible(cam, f);
+  stats_.mirror = mirrored;
   if (mirrored) {
     DrawMirrorView(cam, f);
   }
@@ -1219,5 +1234,13 @@ void ApplyCameraFx(const CameraFxOffsets& fx, CameraState& cam) {
   cam.z += std::cos(cam.yaw) * fx.right;
   cam.eye_height += fx.up;
   cam.fov_scale *= fx.fov_scale;
+}
+
+void ApplyFreeCam(const FreeCamera& free_cam, CameraState& cam) {
+  cam.x = free_cam.x;
+  cam.z = free_cam.z;
+  cam.eye_height = free_cam.y;
+  cam.yaw = free_cam.yaw;
+  cam.pitch = free_cam.pitch;
 }
 }

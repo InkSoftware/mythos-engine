@@ -2,16 +2,35 @@
 #define MYTHOS_ENGINE_PLATFORM_INPUT_H_
 
 #include <functional>
+#include <string>
 
+#include "engine/platform/window.h"
 #include "engine/ui/menu.h"
 #include "engine/world/player.h"
 
 namespace mythos {
+// What the debug console was sent in a poll. `toggle` (the ` key or F12)
+// is reported always, so a game can open the console; the rest only while
+// `SetConsoleCapture` is on, and then `text` holds what was typed.
+struct ConsoleInput {
+  bool toggle = false;
+  bool submit = false, backspace = false;
+  bool up = false, down = false, complete = false;
+  bool page_up = false, page_down = false;
+  std::string text;
+};
+
 // What a poll found beyond the data written to the input structs.
 struct InputPoll {
   bool quit = false;
   bool toggle_fullscreen = false;
+  ConsoleInput console;
 };
+
+// Turns on text input for the debug console: typed text and the editing keys
+// go to `InputPoll::console`, and the game's own keys (movement, interact,
+// menu) are ignored until it is turned off again.
+void SetConsoleCapture(Window& window, bool capture);
 
 // Maps a window position to a UI hotspot index (-1 for none) and optionally its
 // value.
