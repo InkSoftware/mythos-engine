@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "engine/core/mat4.h"
+#include "engine/core/math.h"
 #include "engine/gfx/normalmap.h"
 #include "engine/gfx/pbr.h"
 #include "engine/platform/gl/scene_shaders.h"
@@ -1023,7 +1024,9 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   f.fog[1] = cam.outdoor ? 0.018f : 0.005f;
   f.fog[2] = cam.outdoor ? 0.034f : 0.005f;
   f.fog_density = cam.outdoor ? kOutdoorFogDensity : kRoomFogDensity;
-  f.fov_y = kFovY;
+  f.fov_y = kFovY * static_cast<float>(std::isfinite(cam.fov_scale)
+                                           ? Clampd(cam.fov_scale, 0.5, 1.5)
+                                           : 1.0);
   f.views = ModelInstance::kMain;
   f.aspect = static_cast<float>(target_.Width()) /
              static_cast<float>(target_.Height());
@@ -1090,5 +1093,15 @@ DoorInstance MakeDoorInstance(const DoorState& d) {
     di.angle = d.swing * swing;
   }
   return di;
+}
+
+void ApplyCameraFx(const CameraFxOffsets& fx, CameraState& cam) {
+  cam.yaw += fx.yaw;
+  cam.pitch += fx.pitch;
+  // The view's right vector is (-sin yaw, cos yaw) on the x, z plane.
+  cam.x += -std::sin(cam.yaw) * fx.right;
+  cam.z += std::cos(cam.yaw) * fx.right;
+  cam.eye_height += fx.up;
+  cam.fov_scale *= fx.fov_scale;
 }
 }

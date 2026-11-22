@@ -27,6 +27,7 @@
 #include "engine/core/json_reader.h"
 #include "engine/core/mat4.h"
 #include "engine/core/noise.h"
+#include "engine/core/tween.h"
 #include "engine/core/vfs.h"
 #include "engine/data/achievements.h"
 #include "engine/data/credits.h"
@@ -52,6 +53,7 @@
 #include "engine/ui/settings.h"
 #include "engine/ui/ui.h"
 #include "engine/world/body.h"
+#include "engine/world/camera_fx.h"
 #include "engine/world/gamepad.h"
 #include "engine/world/interact.h"
 #include "engine/world/level.h"
@@ -2061,6 +2063,277 @@ TEST(grade_invalid_lut_strips) {
   const float c[3] = {0.3f, 0.6f, 0.9f};
   const auto passthrough = mythos::ApplyLut(mythos::Surface(), c);
   CHECK(passthrough[0] == 0.3f && passthrough[2] == 0.9f);
+}
+
+// ---- easing, tweens, sequences ----
+
+TEST(tween_easings_hit_their_ends) {
+  for (int e = 0; e < mythos::kEaseCount; ++e) {
+    const auto ease = static_cast<mythos::Ease>(e);
+    CHECK(mythos::ApplyEase(ease, 0.0) == 0.0);
+    CHECK(mythos::ApplyEase(ease, 1.0) == 1.0);
+    CHECK(mythos::ApplyEase(ease, -4.0) == 0.0);
+    CHECK(mythos::ApplyEase(ease, 9.0) == 1.0);
+    CHECK(mythos::ApplyEase(ease, std::nan("")) == 0.0);
+  }
+}
+
+TEST(tween_easings_shape) {
+  using mythos::Ease;
+  CHECK(std::fabs(mythos::ApplyEase(Ease::kLinear, 0.3) - 0.3) < 1e-12);
+  CHECK(mythos::ApplyEase(Ease::kInQuad, 0.5) < 0.5);
+  CHECK(mythos::ApplyEase(Ease::kOutQuad, 0.5) > 0.5);
+  CHECK(std::fabs(mythos::ApplyEase(Ease::kInOutCubic, 0.5) - 0.5) < 1e-12);
+  CHECK(std::fabs(mythos::ApplyEase(Ease::kInOutSine, 0.5) - 0.5) < 1e-12);
+  // The in-out and monotone curves never run backwards.
+  for (const Ease e :
+       {Ease::kSmoothStep, Ease::kInQuad, Ease::kOutQuad, Ease::kInOutQuad,
+        Ease::kInCubic, Ease::kOutCubic, Ease::kInOutCubic, Ease::kInOutSine}) {
+    double prev = 0;
+    for (int i = 1; i <= 100; ++i) {
+      const double v = mythos::ApplyEase(e, i / 100.0);
+      CHECK(v >= prev - 1e-12);
+      prev = v;
+    }
+  }
+  // Back and elastic overshoot 1 on the way.
+  double top = 0;
+  for (int i = 1; i < 100; ++i) {
+    top = std::max(top, mythos::ApplyEase(Ease::kOutBack, i / 100.0));
+  }
+  CHECK(top > 1.0);
+}
+
+TEST(tween_value_delay_and_done) {
+  mythos::Tween<double> t(10.0, 20.0, 2.0, mythos::Ease::kLinear, 1.0);
+  CHECK(t.Value() == 10.0);
+  t.Update(0.5);  // still in the delay
+  CHECK(t.Value() == 10.0 && !t.Done());
+  t.Update(1.5);  // 1 s into the 2 s run
+  CHECK(std::fabs(t.Value() - 15.0) < 1e-9);
+  CHECK(std::fabs(t.Progress() - 0.5) < 1e-9);
+  t.Update(-5.0);  // ignored
+  CHECK(std::fabs(t.Value() - 15.0) < 1e-9);
+  t.Update(10.0);
+  CHECK(t.Done() && t.Value() == 20.0);
+  t.Reset();
+  CHECK(!t.Done() && t.Value() == 10.0);
+}
+
+TEST(tween_zero_duration_jumps_after_delay) {
+  mythos::Tween<double> t(0.0, 5.0, 0.0, mythos::Ease::kLinear, 1.0);
+  CHECK(!t.Done() && t.Value() == 0.0);
+  t.Update(1.0);
+  CHECK(t.Done() && t.Value() == 5.0);
+}
+
+TEST(tween_vectors_and_retarget) {
+  mythos::Tween<mythos::Vec2> t({0, 0}, {10, -10}, 1.0);
+  t.Update(0.5);
+  CHECK(std::fabs(t.Value().x - 5.0) < 1e-9);
+  CHECK(std::fabs(t.Value().y + 5.0) < 1e-9);
+  t.Retarget({0, 0}, 1.0);  // starts from (5, -5): no jump
+  CHECK(std::fabs(t.Value().x - 5.0) < 1e-9);
+  t.Update(1.0);
+  CHECK(t.Done() && t.Value().x == 0.0);
+
+  mythos::Tween<float> f(1.0f, 3.0f, 2.0);
+  f.Update(1.0);
+  CHECK(std::fabs(f.Value() - 2.0f) < 1e-6f);
+  mythos::Tween<mythos::Vec3> v({0, 0, 0}, {2, 4, 6}, 1.0);
+  v.Update(0.5);
+  CHECK(std::fabs(v.Value().z - 3.0) < 1e-9);
+}
+
+TEST(sequence_runs_in_order_with_carry_over) {
+  std::vector<std::string> log;
+  double last = -1;
+  mythos::Sequence seq;
+  seq.Call([&] { log.emplace_back("a"); })
+      .Wait(1.0)
+      .Tween(0.0, 10.0, 2.0, mythos::Ease::kLinear,
+             [&](const double v) { last = v; })
+      .Call([&] { log.emplace_back("b"); });
+  CHECK(!seq.Done());
+  seq.Update(0.5);  // the first call, then half the wait
+  CHECK(log.size() == 1 && log[0] == "a" && last == -1);
+  seq.Update(1.0);  // 0.5 s of wait left, then 0.5 s into the tween
+  CHECK(std::fabs(last - 2.5) < 1e-9);
+  CHECK(log.size() == 1);
+  seq.Update(5.0);  // the rest of the tween and the last call
+  CHECK(last == 10.0);
+  CHECK(log.size() == 2 && log[1] == "b");
+  CHECK(seq.Done());
+  seq.Update(1.0);  // nothing more happens
+  CHECK(log.size() == 2);
+}
+
+TEST(sequence_one_long_frame_skips_nothing) {
+  int calls = 0;
+  mythos::Sequence seq;
+  seq.Wait(0.1).Call([&] { ++calls; }).Wait(0.1).Call([&] { ++calls; });
+  seq.Update(100.0);
+  CHECK_EQ(calls, 2);
+  CHECK(seq.Done());
+  seq.Reset();
+  CHECK(!seq.Done());
+  seq.Update(100.0);
+  CHECK_EQ(calls, 4);
+}
+
+TEST(sequence_tween_starts_at_from_and_ends_at_to) {
+  std::vector<double> seen;
+  mythos::Sequence seq;
+  seq.Tween(2.0, 4.0, 1.0, mythos::Ease::kOutQuad,
+            [&](const double v) { seen.push_back(v); });
+  seq.Update(0.0);
+  CHECK(!seen.empty() && seen.front() == 2.0);
+  seq.Update(0.5);
+  CHECK(seen.back() > 3.0 && seen.back() < 4.0);  // out-quad runs ahead
+  seq.Update(1.0);
+  CHECK(seen.back() == 4.0 && seq.Done());
+}
+
+TEST(sequence_empty_and_clear) {
+  mythos::Sequence seq;
+  CHECK(seq.Done());
+  seq.Update(1.0);
+  seq.Wait(1.0).Wait(-3.0);  // a negative wait counts as none
+  CHECK_EQ(static_cast<int>(seq.StepCount()), 2);
+  CHECK(!seq.Done());
+  seq.Update(1.0);
+  CHECK(seq.Done());
+  seq.Clear();
+  CHECK_EQ(static_cast<int>(seq.StepCount()), 0);
+}
+
+TEST(sequence_callback_may_reset) {
+  int runs = 0;
+  mythos::Sequence seq;
+  seq.Call([&] {
+    if (++runs < 3) seq.Reset();
+  });
+  seq.Update(0.0);
+  CHECK_EQ(runs, 3);
+  CHECK(seq.Done());
+}
+
+// ---- camera shake and field-of-view kick ----
+
+TEST(camerafx_idle_is_neutral) {
+  mythos::CameraFx fx;
+  fx.Update(1.0);
+  const mythos::CameraFxOffsets o = fx.Sample();
+  CHECK(o.yaw == 0 && o.pitch == 0 && o.right == 0 && o.up == 0);
+  CHECK(o.fov_scale == 1.0);
+}
+
+TEST(camerafx_shake_is_bounded_and_fades) {
+  mythos::CameraFx fx(7);
+  fx.AddShake(5.0);  // the total stays within 1
+  CHECK(fx.Trauma() == 1.0);
+  const mythos::ShakeParams& p = fx.params;
+  bool moved = false;
+  for (int i = 0; i < 400; ++i) {
+    const mythos::CameraFxOffsets o = fx.Sample();
+    CHECK(std::fabs(o.yaw) <= p.max_yaw + 1e-12);
+    CHECK(std::fabs(o.pitch) <= p.max_pitch + 1e-12);
+    CHECK(std::fabs(o.right) <= p.max_right + 1e-12);
+    CHECK(std::fabs(o.up) <= p.max_up + 1e-12);
+    if (o.yaw != 0) moved = true;
+    fx.Update(1.0 / 240.0);
+  }
+  CHECK(moved);
+  fx.Update(5.0);
+  CHECK(fx.Trauma() == 0.0);
+  CHECK(fx.Sample().yaw == 0.0);
+}
+
+TEST(camerafx_is_deterministic_and_seeded) {
+  mythos::CameraFx a(3), b(3), c(4);
+  a.AddShake(0.8);
+  b.AddShake(0.8);
+  c.AddShake(0.8);
+  bool differs = false;
+  for (int i = 0; i < 60; ++i) {
+    a.Update(0.016);
+    b.Update(0.016);
+    c.Update(0.016);
+    CHECK(a.Sample().yaw == b.Sample().yaw);
+    if (a.Sample().yaw != c.Sample().yaw) differs = true;
+  }
+  CHECK(differs);
+}
+
+TEST(camerafx_shake_is_continuous) {
+  mythos::CameraFx fx(5);
+  fx.AddShake(1.0);
+  fx.params.decay = 0.0;
+  double prev = fx.Sample().yaw;
+  for (int i = 0; i < 500; ++i) {
+    fx.Update(0.004);
+    const double now = fx.Sample().yaw;
+    CHECK(std::fabs(now - prev) < fx.params.max_yaw * 0.25);  // no jumps
+    prev = now;
+  }
+}
+
+TEST(camerafx_power_keeps_small_hits_small) {
+  mythos::CameraFx small(1), big(1);
+  small.AddShake(0.2);
+  big.AddShake(1.0);
+  double s = 0, b = 0;
+  for (int i = 0; i < 200; ++i) {
+    s = std::max(s, std::fabs(small.Sample().yaw));
+    b = std::max(b, std::fabs(big.Sample().yaw));
+    small.Update(0.005);
+    big.Update(0.005);
+  }
+  CHECK(s < b * 0.2);
+}
+
+TEST(camerafx_ignores_bad_input) {
+  mythos::CameraFx fx;
+  fx.AddShake(-1.0);
+  fx.AddShake(std::nan(""));
+  fx.KickFov(std::nan(""));
+  fx.Update(-3.0);
+  CHECK(fx.Trauma() == 0.0);
+  CHECK(fx.Sample().fov_scale == 1.0);
+}
+
+TEST(camerafx_fov_kick_eases_back_and_is_limited) {
+  mythos::CameraFx fx;
+  fx.KickFov(0.1);
+  CHECK(std::fabs(fx.Sample().fov_scale - 1.1) < 1e-9);
+  fx.Update(0.1);
+  const double mid = fx.Sample().fov_scale;
+  CHECK(mid > 1.0 && mid < 1.1);
+  fx.Update(10.0);
+  CHECK(fx.Sample().fov_scale == 1.0);
+  fx.KickFov(5.0);
+  CHECK(std::fabs(fx.Sample().fov_scale - (1.0 + fx.params.fov_limit)) < 1e-9);
+  fx.KickFov(-50.0);
+  CHECK(std::fabs(fx.Sample().fov_scale - (1.0 - fx.params.fov_limit)) < 1e-9);
+}
+
+TEST(camerafx_intensity_scales_and_clear_stops) {
+  mythos::CameraFx fx(2);
+  fx.AddShake(1.0);
+  fx.KickFov(0.2);
+  fx.SetIntensity(0.0);
+  const mythos::CameraFxOffsets off = fx.Sample();
+  CHECK(off.yaw == 0 && off.up == 0 && off.fov_scale == 1.0);
+  fx.SetIntensity(1.0);
+  fx.Update(0.05);
+  CHECK(fx.Sample().fov_scale > 1.0);
+  fx.Clear();
+  const mythos::CameraFxOffsets cleared = fx.Sample();
+  CHECK(cleared.yaw == 0 && cleared.fov_scale == 1.0);
+  fx.SetIntensity(std::nan(""));  // falls back to full
+  fx.AddShake(1.0);
+  fx.Update(0.05);
+  CHECK(fx.Sample().yaw != 0.0 || fx.Sample().pitch != 0.0);
 }
 
 }

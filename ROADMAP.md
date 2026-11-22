@@ -59,10 +59,12 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Tests:** placement on each face, culling, a cap with oldest-first removal.
 - **Done when:** a decal list persists in a level file's `[decals]` section.
 
-### 1.4 Camera shake and tweens (S)
+### 1.4 Camera shake and tweens (S) - done
 - **Where:** `core/tween.h` (easing functions, a `Tween<T>`, a sequencer) and
   `world/camera_fx.h` (trauma-based shake, FOV kick). Headless and tested.
-- **Done when:** `PollInput` / the camera consumes them with no GL change.
+- **Done when:** the camera consumes them with no GL code change. Done through
+  `ApplyCameraFx` and one new `CameraState::fov_scale` read. Roll is left out
+  for now: it needs the view matrix and the sky basis to change.
 
 ### 1.5 Debug overlay and console (M)
 - **Why:** Unity's Stats and Unreal's `stat` and console variables.

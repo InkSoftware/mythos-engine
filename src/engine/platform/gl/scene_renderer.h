@@ -14,6 +14,7 @@
 #include "engine/platform/gl/gl_api.h"
 #include "engine/platform/gl/gl_objects.h"
 #include "engine/platform/gl/text_renderer.h"
+#include "engine/world/camera_fx.h"
 #include "engine/world/room_doors.h"
 
 namespace mythos {
@@ -94,6 +95,9 @@ struct CameraState {
   double x = 0, z = 0;
   double eye_height = 1.55;
   double yaw = 0, pitch = 0;
+  // Multiplies the vertical field of view (1 = the engine's 62 degrees),
+  // clamped to 0.5..1.5; `ApplyCameraFx` sets it for a kick.
+  double fov_scale = 1;
   std::vector<DoorInstance> doors;
 
   // Ambient light color far from lamps and near them (linear RGB).
@@ -454,6 +458,12 @@ class SceneRenderer {
               vignette = -1;
   } world_u_;
 };
+
+// Adds a frame's camera shake and field-of-view kick (`CameraFx::Sample`) to
+// the camera: yaw and pitch, a sideways and a vertical shift, `fov_scale`.
+// Call it after the game has set the camera from the player, every frame; it
+// adds to the fields, so do not apply the same offsets twice.
+void ApplyCameraFx(const CameraFxOffsets& fx, CameraState& cam);
 }
 
 #endif

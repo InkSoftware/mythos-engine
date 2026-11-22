@@ -49,6 +49,7 @@ add_library(mythos_engine STATIC
     src/engine/core/fileio.cpp
     src/engine/core/json.cpp
     src/engine/core/mat4.cpp
+    src/engine/core/tween.cpp
     src/engine/core/vfs.cpp
     src/engine/data/achievements.cpp
     src/engine/data/credits.cpp
@@ -79,6 +80,7 @@ add_library(mythos_engine STATIC
     src/engine/world/mirror.cpp
     src/engine/world/movement.cpp
     src/engine/world/body.cpp
+    src/engine/world/camera_fx.cpp
     src/engine/world/player.cpp
     src/engine/world/room_doors.cpp
     src/engine/world/tiles.cpp
