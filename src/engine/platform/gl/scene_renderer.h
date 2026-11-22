@@ -145,6 +145,11 @@ struct CameraState {
   // The hand light (torch or lighter). `hand_yaw` and `hand_pitch` offset its
   // aim from the view direction.
   bool flash_on = false;
+  // Where the hand light shines from, in world units (the torch's tip). While
+  // `hand_origin_set` the beam's cone and falloff start there and its shadows
+  // are cast from there; otherwise the beam starts at the eye.
+  bool hand_origin_set = false;
+  double hand_x = 0, hand_y = 0, hand_z = 0;
   double hand_yaw = 0, hand_pitch = 0;
 
   // Hand offset from its rest position, in world units, used to place the hand
@@ -425,6 +430,7 @@ class SceneRenderer {
   uint64_t scene_revision_ = 1;
   bool hand_shadow_on_ = false;
   float hand_pos_[3] = {0, 0, 0};
+  bool hand_origin_on_ = false;  // the beam starts at hand_pos_, not the eye
   float hand_reach_ = 10.0f;
   int shadow_built_ = -1;
   int shadow_size_ = 512;
@@ -480,9 +486,9 @@ class SceneRenderer {
               zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
               light_radius = -1, light_halo = -1, shadow_count = -1,
               shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
-              hand_faces = -1, res = -1, grain = -1, materials = -1, clip = -1,
-              mist = -1, mist_height = -1, exposure = -1, tonemap = -1,
-              vignette = -1;
+              hand_origin = -1, hand_faces = -1, res = -1, grain = -1,
+              materials = -1, clip = -1, mist = -1, mist_height = -1,
+              exposure = -1, tonemap = -1, vignette = -1;
   } world_u_;
 };
 

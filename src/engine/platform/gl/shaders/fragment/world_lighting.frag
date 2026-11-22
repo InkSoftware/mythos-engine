@@ -43,6 +43,7 @@ uniform samplerCube uShadowHand;
 uniform vec4 uClip;             // plane: the mirror pass drops what is behind the glass
 uniform int uHandShadow;        // 1: the hand light casts shadows from uHandPos
 uniform vec3 uHandPos;
+uniform int uHandOrigin;          // 1: the hand light's cone and falloff start at uHandPos (the torch's tip), not at the eye
 uniform int uHandFaces;         // bit i: face i of the hand light's cube was drawn this frame
 out vec4 outColor;
 
@@ -244,9 +245,11 @@ void main() {
         // The hand light: the torch is a tight warm cone straight ahead; the lighter is a
         // small flame at the fist - wide, short, orange, and never quite steady.
         if (uFlashOn > 0.5) {
-            vec3 viewDir = normalize(vWorld - uCam);
+            vec3 handFrom = uHandOrigin == 1 ? uHandPos : uCam;
+            float handDist = max(length(vWorld - handFrom), 0.001);
+            vec3 viewDir = (vWorld - handFrom) / handDist;
             float cone = smoothstep(mix(0.91, 0.30, uLighter), mix(0.985, 0.85, uLighter), dot(viewDir, normalize(uFlashDir)));
-            float falloff = 1.0 / (1.0 + mix(0.38, 0.95, uLighter) * dist + mix(0.10, 0.55, uLighter) * dist * dist);
+            float falloff = 1.0 / (1.0 + mix(0.38, 0.95, uLighter) * handDist + mix(0.10, 0.55, uLighter) * handDist * handDist);
             float wave = sin(uTime * 23.0) * sin(uTime * 7.1);
             float flicker = mix(0.96 + 0.04 * wave, 0.82 + 0.18 * wave * sin(uTime * 31.0), uLighter);
             vec3 tint = mix(vec3(1.00, 0.80, 0.55), vec3(1.00, 0.62, 0.30), uLighter);

@@ -91,6 +91,14 @@ void SceneRenderer::ChooseLamps(const CameraState& cam, const Frame& f) {
   hand_shadow_on_ = cam.flash_on && hand_shadow_.Valid();
   hand_faces_ = kAllFaces;
   if (hand_shadow_on_) PlaceHandShadow(cam, f);
+  // A game that says where the light is (the torch's tip) overrides the hand
+  // position, for the beam and for its shadows.
+  hand_origin_on_ = cam.flash_on && cam.hand_origin_set;
+  if (hand_origin_on_) {
+    hand_pos_[0] = static_cast<float>(cam.hand_x);
+    hand_pos_[1] = static_cast<float>(cam.hand_y);
+    hand_pos_[2] = static_cast<float>(cam.hand_z);
+  }
   // Order lit lamps by squared distance to the eye so the nearest get the
   // shadow cubes (stable, so the choice does not flicker among equals).
   if (shadow_limit_ == 0 || !shadow_[0].Valid()) return;

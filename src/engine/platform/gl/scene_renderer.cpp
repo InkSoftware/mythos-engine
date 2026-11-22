@@ -276,6 +276,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.shadow_texel = world_program_.Uniform("uShadowTexel");
   u.hand_shadow = world_program_.Uniform("uHandShadow");
   u.hand_pos = world_program_.Uniform("uHandPos");
+  u.hand_origin = world_program_.Uniform("uHandOrigin");
   u.hand_faces = world_program_.Uniform("uHandFaces");
   u.res = world_program_.Uniform("uRes");
   u.grain = world_program_.Uniform("uGrain");
@@ -681,6 +682,7 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform1f(u.shadow_texel, 2.0f / static_cast<float>(shadow_size_));
   Uniform1i(u.hand_shadow, hand_shadow_on_ ? 1 : 0);
   Uniform3f(u.hand_pos, hand_pos_[0], hand_pos_[1], hand_pos_[2]);
+  Uniform1i(u.hand_origin, hand_origin_on_ ? 1 : 0);
   Uniform1i(u.hand_faces, static_cast<int>(hand_faces_));
   BindShadowCubes();
   Uniform2f(u.res, static_cast<float>(target_.Width()),
