@@ -106,5 +106,15 @@ Converted to OBJ and BMP by `tools/fetch_cc0_models.py` (textures in `assets/mod
 | `stool.obj` | [Wooden Stool 01](https://polyhaven.com/a/wooden_stool_01) | Kuutti Siitonen | CC0 1.0 | stools |
 | `toolchest.obj` | [Metal Tool Chest](https://polyhaven.com/a/metal_tool_chest) | Yann Kervran, John Hutcheson | CC0 1.0 | tool chests |
 | `winebottles.obj` | [Wine Bottles 01](https://polyhaven.com/a/wine_bottles_01) | Rico Cilliers, Jurita Burger | CC0 1.0 | wine bottles |
+| `oillamp.obj` | [Vintage Oil Lamp](https://polyhaven.com/a/vintage_oil_lamp) | Monsta3D | CC0 1.0 | oil lamps on the tables of the old house |
+| `handplane.obj` | [Hand Plane No4](https://polyhaven.com/a/hand_plane_no4) | Satyaki Mandal | CC0 1.0 | the mason's plane |
+| `hammer.obj` | [Wooden Hammer 01](https://polyhaven.com/a/wooden_hammer_01) | James Ray Cock | CC0 1.0 | the mason's mallet |
+| `tape.obj` | [Measuring Tape 01](https://polyhaven.com/a/measuring_tape_01) | Kuutti Siitonen | CC0 1.0 | the mason's measuring tape |
+| `duck.obj` | [Rubber Duck Toy](https://polyhaven.com/a/rubber_duck_toy) | Plat251 | CC0 1.0 | the rubber duck in the bathroom |
+| `cake.obj` | [Carrot Cake](https://polyhaven.com/a/carrot_cake) | Greg Zaal, James Ray Cock | CC0 1.0 | the name-day cake |
+| `lamppost.obj` | [Street Lamp 02](https://polyhaven.com/a/street_lamp_02) | Josh Dean | CC0 1.0 | the lamp posts of the village lane |
+| `plant.obj` | [Potted Plant 04](https://polyhaven.com/a/potted_plant_04) | James Ray Cock | CC0 1.0 | the house plants in the corners of the rooms |
+| `shoes.obj` | [Rubber Boots](https://polyhaven.com/a/rubber_boots) | L | CC0 1.0 | the boots by the front door |
+| `hat.obj` | [Fishermans Hat](https://polyhaven.com/a/fishermans_hat) | PierreB3D | CC0 1.0 | the hat on the coat rack |
 
 <!-- cc0-models:end -->

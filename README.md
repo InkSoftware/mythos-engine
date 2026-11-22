@@ -109,7 +109,7 @@ The engine gives mechanisms; a game gives meaning.
 ## Models and textures
 
 **Shipped in `assets/` (Poly Haven, CC0).** The basic models of houses and offices: furniture, household things,
-picture frames, a torch and a lighter, plus common dressing (cupboards, chests, stools, crates, ladders, cushions, a tall clock, curtains, a rug, lamps, a boiler, a workbench, shelving, a bench) of which the last few are procedural placeholders (`tools/generate_models.py`). They are OBJ files in `assets/models/`; each material is a texture named
+picture frames, a torch and a lighter, a plant, boots, a hat, an oil lamp, a street lamp, a mason's plane, mallet and measuring tape, a cake and a rubber duck, plus common dressing (cupboards, chests, stools, crates, ladders, cushions, a tall clock, curtains, a rug, lamps, a workbench, shelving, a bench) of which the last few are procedural placeholders (`tools/generate_models.py`). They are OBJ files in `assets/models/`; each material is a texture named
 `m_<model>_<n>` in `assets/modeltex/` (a game registers every BMP in that folder as a texture), with the optional
 `_nrm`, `_rough`, `_metal` and `_ao` companions the Materials setting reads (`gfx/pbr.h`). Metric (a world unit is a metre),
 feet on the floor and centred on the origin, front facing +z. They are baked by `tools/fetch_cc0_models.py` (the list) through
@@ -129,22 +129,32 @@ and any other see-through (BLEND) material is left out of the baked models unles
 | `bowl` | 0.31 x 0.09 x 0.31 | 14122 | 1 baked | nrm, rough | wooden bowls |
 | `broom` | 0.49 x 1.45 x 0.11 | 14258 | 2 baked | metal, nrm, rough | brooms |
 | `bucket` | 0.37 x 0.55 x 0.34 | 5116 | 1 baked | metal, nrm, rough | buckets |
+| `cake` | 0.23 x 0.10 x 0.23 | 13790 | 1 baked | nrm, rough | a cake |
 | `cardbox` | 0.39 x 0.34 x 0.52 | 16952 | 1 baked | nrm, rough | cardboard boxes |
 | `chair` | 0.43 x 0.97 x 0.58 | 22013 | 1 baked | metal, nrm, rough | chairs |
+| `duck` | 0.11 x 0.14 x 0.15 | 4288 | 1 baked | nrm, rough | a rubber duck |
 | `dustpan` | 0.33 x 0.10 x 0.37 | 4332 | 1 baked | metal, nrm, rough | a dustpan |
 | `frame_fancy` | 0.60 x 0.46 x 0.02 | 938 | 2 baked | nrm, rough | pictures on the walls |
 | `frame_stand` | 0.20 x 0.25 x 0.10 | 1632 | 1 baked + `painting` | metal, nrm, rough | photographs on the tables |
 | `frame_tall` | 0.59 x 0.84 x 0.02 | 2584 | 1 baked + `painting` | metal, nrm, rough | pictures on the walls |
 | `frame_wide` | 0.75 x 0.50 x 0.03 | 3676 | 1 baked + `painting` | metal, nrm, rough | pictures on the walls |
 | `gamepad` | 0.18 x 0.01 x 0.20 | 9546 | 1 baked | metal, nrm, rough | a game controller |
+| `hammer` | 0.11 x 0.02 x 0.28 | 3617 | 1 baked | metal, nrm, rough | mallets |
+| `handplane` | 0.33 x 0.20 x 0.08 | 8220 | 1 baked | metal, nrm, rough | a hand plane |
+| `hat` | 0.32 x 0.12 x 0.35 | 10304 | 1 baked | metal, nrm, rough | a hat |
 | `jug` | 0.28 x 0.21 x 0.17 | 5770 | 1 baked | metal, nrm, rough | jugs |
 | `kettle` | 0.32 x 0.30 x 0.25 | 14838 | 2 baked | metal, nrm, rough | kettles |
+| `lamppost` | 0.66 x 2.85 x 1.37 | 20338 | 3 baked | metal, nrm, rough | street lamps |
 | `laptop` | 0.39 x 0.33 x 0.29 | 14450 | 2 baked | metal, nrm, rough | a laptop |
 | `lighter` | 0.01 x 0.06 x 0.05 | 3366 | 2 baked | metal, nrm, rough | a lighter |
 | `nightstand` | 0.50 x 0.62 x 0.51 | 470 | 1 baked | nrm, rough | bedside tables |
+| `oillamp` | 0.13 x 0.28 x 0.13 | 5856 | 1 baked | metal, nrm, rough | oil lamps |
 | `oven` | 0.50 x 0.86 x 0.65 | 13914 | 2 baked | metal, nrm, rough | ovens |
+| `plant` | 0.47 x 0.75 x 0.52 | 8929 | 1 baked | nrm, rough | house plants |
+| `shoes` | 0.19 x 0.26 x 0.62 | 56128 | 2 baked | nrm, rough | boots |
 | `sofa` | 0.85 x 1.07 x 0.77 | 5626 | 1 baked | nrm, rough | armchairs and sofas |
 | `table` | 0.83 x 0.78 x 0.83 | 4254 | 1 baked | metal, nrm, rough | tables |
+| `tape` | 0.04 x 0.07 x 0.17 | 2868 | 1 baked | metal, nrm, rough | a measuring tape |
 | `toolbox` | 0.40 x 0.30 x 0.27 | 14228 | 1 baked | metal, nrm, rough | toolboxes |
 | `torch` | 0.10 x 0.06 x 0.23 | 13252 | 2 baked | metal, nrm, rough | a torch |
 | `trashbag` | 0.53 x 0.57 x 0.46 | 4482 | 1 baked | nrm, rough | rubbish |
@@ -176,7 +186,8 @@ defaults match.
 - **The level editor** (`MythosEditor`, the `mythos::editor` library): a native editor in the manner of Unity, Unreal
   and Blender, for any game laid out as `assets/levels` + `assets/data/tiles.json`. A 3D viewport (orbit and fly
   camera, a cutaway that hides the ceiling, ghosted floors above and below, a move / rotate gizmo, tile painting,
-  placing models) with dockable panels around it: Levels, Outliner, Inspector (every key of a game's JSON object),
+  placing models; furniture is solid in the cell its centre is in but is placed freely inside it, by drag, nudge or
+  the Inspector's Offset and Lift, so a piece can touch a wall) with dockable panels around it: Levels, Outliner, Inspector (every key of a game's JSON object),
   Tiles, Assets, Problems (furniture in walls, missing models, stairwells without a hole), Console and a **Game
   Preview** that runs the game's own screenshot mode on a copy of its assets holding the *unsaved* edits. It has undo
   and redo, duplicate, delete, new level and resize, and saves only what changed (a level is stamped `map_editor` so a

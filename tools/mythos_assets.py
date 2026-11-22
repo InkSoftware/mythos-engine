@@ -316,17 +316,6 @@ def m_lamp_table():
     return m
 
 
-def m_boiler():
-    """The cellar's boiler: a drum, pipes and a gauge. The front faces +z."""
-    m = Mesh()
-    box(m, "metal", -0.3, 0, -0.3, 0.3, 1.35, 0.3)
-    box(m, "metal", -0.33, 1.3, -0.33, 0.33, 1.42, 0.33)
-    box(m, "metal", 0.1, 1.42, -0.05, 0.16, 2.2, 0.05)
-    box(m, "metal", -0.3, 0.2, 0.3, 0.3, 0.4, 0.36)
-    m.box("glow_dial", 0.0, 0.95, 0.305, 0.07, 0.07, 0.004)
-    return m
-
-
 def m_workbench():
     m = Mesh()
     box(m, "wood", -0.46, 0.85, -0.3, 0.46, 0.92, 0.3)
@@ -373,7 +362,7 @@ def m_coatrack():
 
 
 COMMON_MODELS = {
-    "curtain": m_curtain, "rug": m_rug, "lamp_floor": m_lamp_floor, "lamp_table": m_lamp_table, "boiler": m_boiler,
+    "curtain": m_curtain, "rug": m_rug, "lamp_floor": m_lamp_floor, "lamp_table": m_lamp_table,
     "workbench": m_workbench, "shelving": m_shelving, "bench": m_bench, "coatrack": m_coatrack,
 }
 

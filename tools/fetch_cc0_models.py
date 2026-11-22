@@ -58,6 +58,16 @@ MODELS = {
     "toolchest": Spec("metal_tool_chest", scale=1.0, size=256, what="tool chests"),
     "deskamp": Spec("desk_lamp_arm_01", scale=1.0, size=256, what="desk lamps"),
     "dustpan": Spec("dustpan", scale=1.0, size=256, what="a dustpan"),
+    "oillamp": Spec("vintage_oil_lamp", scale=0.6, size=256, glass=False, what="oil lamps on the tables of the old house"),
+    "handplane": Spec("hand_plane_no4", scale=1.0, size=256, what="the mason's plane"),
+    "hammer": Spec("wooden_hammer_01", scale=1.0, pitch=90, size=256, what="the mason's mallet"),
+    "tape": Spec("measuring_tape_01", scale=1.0, size=256, what="the mason's measuring tape"),
+    "duck": Spec("rubber_duck_toy", scale=0.5, size=256, what="the rubber duck in the bathroom"),
+    "cake": Spec("carrot_cake", scale=1.0, size=256, what="the name-day cake"),
+    "lamppost": Spec("street_lamp_02", scale=1.7, size=512, what="the lamp posts of the village lane"),
+    "plant": Spec("potted_plant_04", scale=2.8, size=256, what="the house plants in the corners of the rooms"),
+    "shoes": Spec("rubber_boots", scale=0.7, yaw=90, size=256, what="the boots by the front door"),
+    "hat": Spec("fishermans_hat", scale=1.0, size=256, what="the hat on the coat rack"),
 }
 
 if __name__ == "__main__":
