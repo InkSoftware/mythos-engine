@@ -10,6 +10,13 @@ uniform float uBloom;         // how much of it is added back (0 = none)
 uniform float uTape;     // 1: the camcorder look (a game turns it off where it does not fit)
 uniform float uTapeTime; // seconds on the tape: the timecode and the noise
 uniform float uAspect;   // window width / height
+uniform float uGradeOn;   // 1: apply the contrast / saturation / tint below
+uniform float uContrast;  // around mid grey
+uniform float uSaturation;
+uniform vec3 uTint;
+uniform sampler2D uLutTex;  // colour table strip (size * size by size), see gfx/grade.h
+uniform float uLutSize;     // its size; 0 = no table
+uniform float uLutAmount;   // how much of it is mixed in
 out vec4 outColor;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -175,6 +182,27 @@ vec3 tapeFinish(vec2 uv, vec3 col) {
     return clamp(tapeHud(uv, col), 0.0, 1.0);
 }
 
+// The colour table: `size` slices of size x size side by side, red across a
+// slice, green down, blue picks the slice (trilinear: two taps across blue).
+vec3 lutTap(vec3 c, float slice) {
+    float n = uLutSize;
+    float x = (slice * n + c.r * (n - 1.0) + 0.5) / (n * n);
+    float y = (c.g * (n - 1.0) + 0.5) / n;
+    return texture(uLutTex, vec2(x, y)).rgb;
+}
+vec3 grade(vec3 col) {
+    col = (col - 0.5) * uContrast + 0.5;
+    col = (vec3(luma(col)) + (col - vec3(luma(col))) * uSaturation) * uTint;
+    if (uLutSize > 1.5 && uLutAmount > 0.0) {
+        vec3 c = clamp(col, 0.0, 1.0);
+        float b = c.b * (uLutSize - 1.0);
+        float b0 = floor(b);
+        float b1 = min(b0 + 1.0, uLutSize - 1.0);
+        col = mix(col, mix(lutTap(c, b0), lutTap(c, b1), b - b0), uLutAmount);
+    }
+    return col;
+}
+
 vec3 sampleLens(vec2 uv) { return uTape > 0.5 ? tapeSample(uv) : sampleLensPlain(uv); }
 
 void main() {
@@ -190,6 +218,7 @@ void main() {
         vec3 glow = texture(uBloomTex, vUV).rgb;
         col = 1.0 - (1.0 - col) * (1.0 - glow * uBloom);  // screen blend: never past white
     }
+    if (uGradeOn > 0.5) col = grade(col);
     if (uTape > 0.5) col = tapeFinish(vUV, col);
     outColor = vec4(col, 1.0);
 }

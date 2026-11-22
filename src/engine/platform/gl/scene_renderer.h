@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "engine/core/mat4.h"
+#include "engine/gfx/grade.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
@@ -146,6 +147,11 @@ struct CameraState {
   // Outdoor scene: draws the night sky and uses outdoor fog.
   bool outdoor = false;
   bool grain = true;
+
+  // Tone mapping and colour grading (see gfx/grade.h). The default is the
+  // engine's original look; values are clamped to sane ranges. A colour table
+  // is set with `SceneRenderer::SetColorLut`, mixed in by `grade.lut_amount`.
+  ColorGrade grade;
   // Seconds, for animated lamp flicker, sky and grain.
   double time = 0;
   // Lightning flash intensity 0..1, added to ambient light and the sky.
@@ -196,6 +202,11 @@ class SceneRenderer {
   // Uploads a model and returns its id for `ModelInstance::model`.
   int UploadModel(const std::vector<Batch>& batches);
 
+  // Sets the colour lookup table of the grade (a strip, see `IdentityLutStrip`
+  // in gfx/grade.h), or clears it with an empty or invalid surface. Returns
+  // whether a table is now set.
+  bool SetColorLut(const Surface& strip);
+
   // Renders one frame to the default framebuffer of window_w x window_h pixels.
   // The overlay (a BGRA surface covering the window) and text layer are
   // optional and drawn last.
@@ -245,6 +256,7 @@ class SceneRenderer {
     float eye[3], dir[3], flash[3], moon[3], fog[3];
     float fog_density, fov_y, aspect, grain;
     int materials;
+    ColorGrade grade;
     float view[16], proj[16];
     Frustum planes;
     float clip[4] = {0, 0, 0, 1};
@@ -400,6 +412,8 @@ class SceneRenderer {
   RenderTarget target_;
   int render_scale_ = 1;
   GlTexture overlay_tex_;
+  GlTexture lut_tex_;
+  int lut_size_ = 0;
   int overlay_w_ = 0, overlay_h_ = 0;
   std::vector<uint32_t> overlay_pixels_;
   TextRenderer text_;
@@ -436,7 +450,8 @@ class SceneRenderer {
               light_radius = -1, light_halo = -1, shadow_count = -1,
               shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
               hand_faces = -1, res = -1, grain = -1, materials = -1, clip = -1,
-              mist = -1, mist_height = -1;
+              mist = -1, mist_height = -1, exposure = -1, tonemap = -1,
+              vignette = -1;
   } world_u_;
 };
 }

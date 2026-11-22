@@ -59,6 +59,7 @@ add_library(mythos_engine STATIC
     src/engine/editor/level_doc.cpp
     src/engine/editor/project.cpp
     src/engine/gfx/font.cpp
+    src/engine/gfx/grade.cpp
     src/engine/gfx/materials.cpp
     src/engine/gfx/mesh.cpp
     src/engine/gfx/model.cpp

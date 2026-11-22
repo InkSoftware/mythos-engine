@@ -247,6 +247,9 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.hand_faces = world_program_.Uniform("uHandFaces");
   u.res = world_program_.Uniform("uRes");
   u.grain = world_program_.Uniform("uGrain");
+  u.exposure = world_program_.Uniform("uExposure");
+  u.tonemap = world_program_.Uniform("uTonemap");
+  u.vignette = world_program_.Uniform("uVignette");
   u.materials = world_program_.Uniform("uMaterials");
   u.clip = world_program_.Uniform("uClip");
 
@@ -544,6 +547,9 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
   sky_program_.Set("uRes", static_cast<float>(target_.Width()),
                    static_cast<float>(target_.Height()));
   sky_program_.Set("uGrain", f.grain);
+  sky_program_.Set("uExposure", f.grade.exposure);
+  sky_program_.Set("uTonemap", static_cast<int>(f.grade.tonemap));
+  sky_program_.Set("uVignette", f.grade.vignette);
   DrawQuad();
 }
 
@@ -638,6 +644,9 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform2f(u.res, static_cast<float>(target_.Width()),
             static_cast<float>(target_.Height()));
   Uniform1f(u.grain, f.grain);
+  Uniform1f(u.exposure, f.grade.exposure);
+  Uniform1i(u.tonemap, static_cast<int>(f.grade.tonemap));
+  Uniform1f(u.vignette, f.grade.vignette);
   Uniform1i(u.materials, f.materials);
   Uniform4f(u.clip, f.clip[0], f.clip[1], f.clip[2], f.clip[3]);
   ActiveTexture(kTexture0);
@@ -915,6 +924,22 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
                          bloom ? static_cast<float>(cam.bloom) : 0.0f);
   composite_program_.Set("uBlur", bx, by);
   composite_program_.Set("uLens", cam.lens_effect ? 1.0f : 0.0f);
+  const ColorGrade& grade = f.grade;
+  const bool lut = lut_size_ > 0 && grade.lut_amount > 0.0f;
+  composite_program_.Set("uGradeOn",
+                         !grade.PostIsIdentity() || lut ? 1.0f : 0.0f);
+  composite_program_.Set("uContrast", grade.contrast);
+  composite_program_.Set("uSaturation", grade.saturation);
+  composite_program_.Set("uTint", grade.tint[0], grade.tint[1], grade.tint[2]);
+  composite_program_.Set("uLutSize",
+                         lut ? static_cast<float>(lut_size_) : 0.0f);
+  composite_program_.Set("uLutAmount", grade.lut_amount);
+  if (lut) {
+    ActiveTexture(kTexture0 + 2);
+    lut_tex_.Bind();
+    composite_program_.Set("uLutTex", 2);
+    ActiveTexture(kTexture0);
+  }
   composite_program_.Set("uTape", cam.tape ? 1.0f : 0.0f);
   composite_program_.Set("uTapeTime",
                          static_cast<float>(std::max(0.0, cam.tape_time)));
@@ -927,6 +952,20 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
   composite_program_.Set("uTexel", 1.0f / static_cast<float>(target_.Width()),
                          1.0f / static_cast<float>(target_.Height()));
   DrawQuad();
+}
+
+bool SceneRenderer::SetColorLut(const Surface& strip) {
+  const int size = LutStripSize(strip);
+  lut_size_ = 0;
+  if (size == 0) return false;
+  if (!lut_tex_.Id()) lut_tex_.Create();
+  lut_tex_.SetParams(kLinear, kLinear, kClampToEdge);
+  // The strip is 0xAARRGGBB, laid out as the overlay's is.
+  lut_tex_.Bind();
+  TexImage2D(kTexture2D, 0, kRgba8, strip.w, strip.h, 0, kBgra,
+             kUnsignedInt8888Rev, strip.px.data());
+  lut_size_ = size;
+  return true;
 }
 
 void SceneRenderer::UploadOverlay(const Surface& overlay) {
@@ -989,6 +1028,7 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   f.aspect = static_cast<float>(target_.Width()) /
              static_cast<float>(target_.Height());
   f.grain = cam.grain ? 1.0f : 0.0f;
+  f.grade = Sanitize(cam.grade);
   f.materials = std::clamp(cam.materials, 0, 2);
   const float center[3] = {f.eye[0] + f.dir[0], f.eye[1] + f.dir[1],
                            f.eye[2] + f.dir[2]};

@@ -38,6 +38,7 @@
 #include "engine/editor/project.h"
 #include "engine/gfx/flicker.h"
 #include "engine/gfx/font.h"
+#include "engine/gfx/grade.h"
 #include "engine/gfx/materials.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/model.h"
@@ -1929,6 +1930,137 @@ TEST(RadioFmGlitchesAndStaysFiniteAndRepeatsForASeed) {
   CHECK(differs);
   CHECK(energy > 1.0);
   for (int k = 1; k < 5; ++k) CHECK(saw[k]);
+}
+
+// ---- tone mapping and colour grading ----
+
+TEST(grade_default_is_the_engine_look) {
+  const mythos::ColorGrade g;
+  CHECK(g.PostIsIdentity());
+  CHECK(g.tonemap == mythos::Tonemap::kAces);
+  // ACES of 1.0 is (2.51 + 0.03) / (2.43 + 0.59 + 0.14), then gamma.
+  const float aces = std::pow(2.54f / 3.16f, 1.0f / 2.2f);
+  CHECK(std::fabs(mythos::TonemapChannel(mythos::Tonemap::kAces, 1.0f) - aces) <
+        1e-5f);
+  CHECK(mythos::TonemapChannel(mythos::Tonemap::kAces, 0.0f) < 0.1f);
+}
+
+TEST(grade_tonemaps_stay_in_range_and_rise) {
+  for (int t = 0; t < mythos::kTonemapCount; ++t) {
+    const auto mode = static_cast<mythos::Tonemap>(t);
+    float prev = -1.0f;
+    for (int step = 0; step <= 160; ++step) {
+      const float x = static_cast<float>(step) * 0.25f;
+      const float v = mythos::TonemapChannel(mode, x);
+      CHECK(v >= 0.0f && v <= 1.0f);
+      CHECK(v >= prev - 1e-6f);
+      prev = v;
+    }
+    CHECK(mythos::TonemapChannel(mode, -3.0f) <= 1e-3f);
+  }
+  CHECK(std::fabs(mythos::TonemapChannel(mythos::Tonemap::kNone, 0.5f) -
+                  std::pow(0.5f, 1.0f / 2.2f)) < 1e-5f);
+}
+
+TEST(grade_exposure_brightens) {
+  mythos::ColorGrade g;
+  const float lit[3] = {0.2f, 0.2f, 0.2f};
+  const float base = mythos::ToDisplay(g, lit)[0];
+  g.exposure = 2.0f;
+  CHECK(mythos::ToDisplay(g, lit)[0] > base);
+  g.exposure = 0.0f;
+  CHECK(mythos::ToDisplay(g, lit)[0] < 0.01f);
+}
+
+TEST(grade_contrast_saturation_tint) {
+  mythos::ColorGrade g;
+  const float c[3] = {0.8f, 0.4f, 0.2f};
+  const auto same = mythos::GradeDisplay(g, c);
+  CHECK(std::fabs(same[0] - 0.8f) < 1e-5f && std::fabs(same[2] - 0.2f) < 1e-5f);
+
+  g.saturation = 0.0f;
+  const auto grey = mythos::GradeDisplay(g, c);
+  CHECK(std::fabs(grey[0] - grey[1]) < 1e-5f &&
+        std::fabs(grey[1] - grey[2]) < 1e-5f);
+
+  g = mythos::ColorGrade();
+  g.contrast = 0.0f;
+  const auto flat = mythos::GradeDisplay(g, c);
+  CHECK(std::fabs(flat[0] - 0.5f) < 1e-5f);
+
+  g = mythos::ColorGrade();
+  g.tint[0] = 0.5f;
+  const auto tinted = mythos::GradeDisplay(g, c);
+  CHECK(std::fabs(tinted[0] - 0.4f) < 1e-5f &&
+        std::fabs(tinted[1] - 0.4f) < 1e-5f);
+  CHECK(!g.PostIsIdentity());
+}
+
+TEST(grade_sanitize_clamps_and_replaces_nan) {
+  mythos::ColorGrade g;
+  g.exposure = std::nanf("");
+  g.contrast = 100.0f;
+  g.saturation = -5.0f;
+  g.vignette = 9.0f;
+  g.lut_amount = 3.0f;
+  g.tint[1] = -1.0f;
+  // Invalid on purpose.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+  g.tonemap = static_cast<mythos::Tonemap>(77);
+  const mythos::ColorGrade s = mythos::Sanitize(g);
+  CHECK(s.exposure == 1.0f);
+  CHECK(s.contrast == 4.0f);
+  CHECK(s.saturation == 0.0f);
+  CHECK(s.vignette == 2.0f);
+  CHECK(s.lut_amount == 1.0f);
+  CHECK(s.tint[1] == 0.0f);
+  CHECK(s.tonemap == mythos::Tonemap::kAces);
+}
+
+TEST(grade_identity_lut_changes_nothing) {
+  const mythos::Surface strip = mythos::IdentityLutStrip(16);
+  CHECK_EQ(mythos::LutStripSize(strip), 16);
+  CHECK_EQ(strip.w, 256);
+  CHECK_EQ(strip.h, 16);
+  const float samples[][3] = {{0, 0, 0},
+                              {1, 1, 1},
+                              {0.5f, 0.25f, 0.75f},
+                              {0.1f, 0.9f, 0.33f},
+                              {0.7f, 0.0f, 1.0f}};
+  for (const auto& rgb : samples) {
+    const auto out = mythos::ApplyLut(strip, rgb);
+    for (int i = 0; i < 3; ++i) CHECK(std::fabs(out[i] - rgb[i]) < 0.01f);
+  }
+}
+
+TEST(grade_lut_maps_colours) {
+  // Swap red and blue in the table: input (1, 0, 0) must come out (0, 0, 1).
+  mythos::Surface strip = mythos::IdentityLutStrip(8);
+  for (uint32_t& px : strip.px) {
+    const int r = static_cast<int>((px >> 16) & 0xFF);
+    const int g = static_cast<int>((px >> 8) & 0xFF);
+    const int b = static_cast<int>(px & 0xFF);
+    px = mythos::Rgba(b, g, r);
+  }
+  const float red[3] = {1, 0, 0};
+  const auto out = mythos::ApplyLut(strip, red);
+  CHECK(out[0] < 0.01f && out[1] < 0.01f && out[2] > 0.99f);
+  // Out-of-range and NaN inputs are clamped, never read out of the strip.
+  const float wild[3] = {5.0f, -2.0f, std::nanf("")};
+  const auto clamped = mythos::ApplyLut(strip, wild);
+  CHECK(clamped[0] >= 0.0f && clamped[0] <= 1.0f);
+}
+
+TEST(grade_invalid_lut_strips) {
+  CHECK_EQ(mythos::LutStripSize(mythos::Surface()), 0);
+  CHECK_EQ(mythos::LutStripSize(mythos::Surface(10, 4)), 0);
+  CHECK_EQ(mythos::LutStripSize(mythos::Surface(1, 1)), 0);
+  CHECK_EQ(mythos::LutStripSize(mythos::Surface(65 * 65, 65)), 0);
+  CHECK(mythos::IdentityLutStrip(1).Empty());
+  CHECK(mythos::IdentityLutStrip(100).Empty());
+  const float c[3] = {0.3f, 0.6f, 0.9f};
+  const auto passthrough = mythos::ApplyLut(mythos::Surface(), c);
+  CHECK(passthrough[0] == 0.3f && passthrough[2] == 0.9f);
 }
 
 }

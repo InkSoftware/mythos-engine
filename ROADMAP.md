@@ -26,14 +26,15 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
 ## Phase 1: Look and feedback (the cheapest visible wins)
 
-### 1.1 Tonemapping and colour grading (S)
+### 1.1 Tonemapping and colour grading (S) - done
 - **Why:** like Unity/Unreal post-process volumes. Bloom exists but there is
   no tonemap, exposure or grade.
 - **Where:** `lens_and_fxaa.frag` (composite). New `CameraState::grade`
   (`exposure`, `contrast`, `saturation`, `vignette`, `grain`, a tonemap enum,
   optional 3D LUT). CPU side: `gfx/grade.h` (LUT build and parse from a
   strip PNG, headless and tested).
-- **Settings:** a Tonemapping row (off / filmic / ACES-fit).
+- **Settings:** none. It is the game's look per level, not a player option
+  (changed from the first plan).
 - **Tests:** LUT identity, clamping, parse errors.
 - **Done when:** off is pixel-identical, and a game can set a per-level grade.
 - **Risk:** 3D textures are fine on GL 4.1; keep the LUT 32^3.
