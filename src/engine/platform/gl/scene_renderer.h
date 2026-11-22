@@ -98,10 +98,11 @@ struct CameraState {
   // Ambient light color far from lamps and near them (linear RGB).
   float ambient_base[3] = {0.060f, 0.052f, 0.046f};
   float ambient_near[3] = {0.085f, 0.075f, 0.065f};
-  // Lamps; only the first `kMaxLights` are used, and the nearest lit ones cast
-  // shadows (see `shadow_level`).
+  // Lamps; only the first `kMaxLights` are used (the cost grows with how many
+  // are given), and the nearest lit ones (`kMaxShadowLights`) cast shadows (see
+  // `shadow_level`).
   std::vector<PointLight> lights;
-  static constexpr int kMaxLights = 8;
+  static constexpr int kMaxLights = 32;  // (the shader's arrays are this size)
   static constexpr int kMaxLightningZones = 40;
   static constexpr int kMaxShadowLights = 4;
   // Index into the shadow quality presets in settings.h (0 = no shadows).

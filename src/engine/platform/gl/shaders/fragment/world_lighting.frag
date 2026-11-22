@@ -28,10 +28,11 @@ uniform int uZoneCount;    // -1: the flash lights everything; else only the fir
 uniform vec4 uZoneXZ[40];  // x0 z0 x1 z1
 uniform vec2 uZoneY[40];   // y0 y1
 uniform int uLightCount;
-uniform vec3 uLightPos[8];
-uniform vec3 uLightColor[8];
-uniform float uLightRadius[8];
-uniform float uLightHalo[8];  // how much of a light the air scatters (the glow round a lamp)
+// (the size is CameraState::kMaxLights: keep them equal)
+uniform vec3 uLightPos[32];
+uniform vec3 uLightColor[32];
+uniform float uLightRadius[32];
+uniform float uLightHalo[32];  // how much of a light the air scatters (the glow round a lamp)
 uniform float uShadowTexel;     // angular size of one shadow-map texel (2 / face size)
 uniform int uShadowCount;       // the first uShadowCount lamps cast shadows
 uniform samplerCube uShadow0;
