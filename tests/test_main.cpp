@@ -70,6 +70,7 @@
 #include "engine/world/player.h"
 #include "engine/world/room_doors.h"
 #include "engine/world/tiles.h"
+#include "engine/world/trigger.h"
 
 namespace mythos {
 
@@ -715,8 +716,8 @@ TEST(EngineDecalsPersistAndEvictOldest) {
   for (const auto face :
        {DecalFace::kNorth, DecalFace::kSouth, DecalFace::kWest,
         DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling,
-        DecalFace::kThinNorth, DecalFace::kThinSouth,
-        DecalFace::kThinWest, DecalFace::kThinEast}) {
+        DecalFace::kThinNorth, DecalFace::kThinSouth, DecalFace::kThinWest,
+        DecalFace::kThinEast}) {
     Decal d;
     d.x = 1;
     d.face = face;
@@ -788,6 +789,63 @@ TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
   CHECK_EQ(geometry.decals.size(), size_t{12});
 }
 
+TEST(EngineTriggerTransitionsAndValidation) {
+  TriggerRuntime runtime;
+  Trigger t;
+  t.id = "enter";
+  t.min = {0, 0, 0};
+  t.max = {1, 2, 1};
+  CHECK(runtime.Add(t));
+  CHECK(!runtime.Add(t));
+  t.id = "exit";
+  t.event = TriggerEvent::kExit;
+  CHECK(runtime.Add(t));
+  t.id = "stay";
+  t.event = TriggerEvent::kStay;
+  t.once = true;
+  CHECK(runtime.Add(t));
+  t.id = "use";
+  t.event = TriggerEvent::kUse;
+  t.once = false;
+  CHECK(runtime.Add(t));
+  t.id = "cell";
+  t.shape = TriggerShape::kCell;
+  t.event = TriggerEvent::kEnter;
+  t.cell_x = 1;
+  t.floor = 2;
+  CHECK(runtime.Add(t));
+  t.id = "invalid";
+  t.shape = TriggerShape::kBox;
+  t.min.x = std::numeric_limits<double>::infinity();
+  CHECK(!runtime.Add(t));
+
+  std::vector<TriggerHit> hits;
+  CHECK(runtime.Update({0.5, 1, 0.5}, 0, true, hits));
+  CHECK_EQ(hits.size(), size_t{2});
+  CHECK(hits[0].id == "enter" && hits[1].id == "use");
+  CHECK(runtime.Update({0.5, 1, 0.5}, 0, false, hits));
+  CHECK_EQ(hits.size(), size_t{1});
+  CHECK(hits[0].id == "stay");
+  CHECK(runtime.Update({0.5, 1, 0.5}, 0, false, hits));
+  CHECK(hits.empty());
+  CHECK(runtime.Update({1.5, 1, 0.5}, 2, false, hits));
+  CHECK_EQ(hits.size(), size_t{2});
+  CHECK(hits[0].id == "cell" && hits[1].id == "exit");
+  CHECK(!runtime.Update({std::numeric_limits<double>::infinity(), 0, 0}, 0,
+                        false, hits));
+  CHECK_EQ(hits.size(), size_t{2});
+  CHECK(runtime.Update({1, 1, 0.5}, 2, false, hits));
+  CHECK_EQ(hits.size(), size_t{1});
+  CHECK(hits[0].id == "enter");
+  runtime.Reset();
+  CHECK(runtime.Update({0.5, 1, 0.5}, 0, false, hits));
+  CHECK(runtime.Update({0.5, 1, 0.5}, 0, false, hits));
+  CHECK_EQ(hits.size(), size_t{1});
+  CHECK(hits[0].id == "stay");
+  CHECK(runtime.Remove("stay"));
+  CHECK(!runtime.Remove("stay"));
+}
+
 TEST(EngineModelDecalTransformAndValidation) {
   Placement p;
   p.x = 2;
@@ -838,9 +896,9 @@ TEST(EngineModelDecalTransformAndValidation) {
 TEST(EngineCellDecalsClipToFaceBounds) {
   Level level;
   CHECK(level.Parse({"###", "#.#", "###"}));
-  for (const auto face : {DecalFace::kNorth, DecalFace::kSouth,
-                          DecalFace::kWest, DecalFace::kEast,
-                          DecalFace::kFloor, DecalFace::kCeiling}) {
+  for (const auto face :
+       {DecalFace::kNorth, DecalFace::kSouth, DecalFace::kWest,
+        DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling}) {
     Decal d;
     d.x = d.y = 1;
     d.face = face;
@@ -918,8 +976,10 @@ TEST(EngineWallDecalsRequireThickWallFaces) {
   ModelLibrary models;
   const auto geometry = BuildSceneGeometry(level, models, false);
   CHECK_EQ(geometry.decals.size(), size_t{2});
-  CHECK(geometry.decals[0].texture == std::to_string(static_cast<int>(DecalFace::kNorth)));
-  CHECK(geometry.decals[1].texture == std::to_string(static_cast<int>(DecalFace::kWest)));
+  CHECK(geometry.decals[0].texture ==
+        std::to_string(static_cast<int>(DecalFace::kNorth)));
+  CHECK(geometry.decals[1].texture ==
+        std::to_string(static_cast<int>(DecalFace::kWest)));
 }
 
 TEST(EngineThinCellHorizontalDecalsClipToExistingQuarters) {
@@ -1013,8 +1073,9 @@ TEST(EngineThinWallDecalsClipToVisibleFaces) {
 TEST(EngineWindowGlassDecalsClipAndPersist) {
   for (const bool along_x : {true, false}) {
     Level level;
-    CHECK(level.Parse(along_x ? std::vector<std::string>{".....", ".WwW.", "....."}
-                              : std::vector<std::string>{".W.", ".w.", ".W."}));
+    CHECK(level.Parse(along_x
+                          ? std::vector<std::string>{".....", ".WwW.", "....."}
+                          : std::vector<std::string>{".W.", ".w.", ".W."}));
     level.SetTiles(ThinLegend());
     for (const auto face : {DecalFace::kGlassNorth, DecalFace::kGlassSouth,
                             DecalFace::kGlassWest, DecalFace::kGlassEast}) {
@@ -1056,12 +1117,15 @@ TEST(EngineWindowGlassDecalsClipAndPersist) {
 TEST(EngineWindowWallDecalsClipAroundOpening) {
   for (const bool along_x : {true, false}) {
     Level level;
-    CHECK(level.Parse(along_x ? std::vector<std::string>{".....", ".WwW.", "....."}
-                              : std::vector<std::string>{".W.", ".w.", ".W."}));
+    CHECK(level.Parse(along_x
+                          ? std::vector<std::string>{".....", ".WwW.", "....."}
+                          : std::vector<std::string>{".W.", ".w.", ".W."}));
     level.SetTiles(ThinLegend());
     for (const auto face : along_x
-             ? std::vector<DecalFace>{DecalFace::kThinNorth, DecalFace::kThinSouth}
-             : std::vector<DecalFace>{DecalFace::kThinWest, DecalFace::kThinEast}) {
+                               ? std::vector<DecalFace>{DecalFace::kThinNorth,
+                                                        DecalFace::kThinSouth}
+                               : std::vector<DecalFace>{DecalFace::kThinWest,
+                                                        DecalFace::kThinEast}) {
       Decal d;
       d.x = along_x ? 2 : 1;
       d.y = 1;
@@ -1090,8 +1154,7 @@ TEST(EngineWindowWallDecalsClipAroundOpening) {
                                 : (a.pz + b.pz + c.pz) / 3 - 1;
         const float y = (a.py + b.py + c.py) / 3;
         CHECK(y <= 0.9401f || y >= 2.0499f || u <= 0.1001f || u >= 0.8999f ||
-              (u >= 0.4799f && u <= 0.5201f) ||
-              (y >= 1.4549f && y <= 1.4951f));
+              (u >= 0.4799f && u <= 0.5201f) || (y >= 1.4549f && y <= 1.4951f));
         for (const auto* v : {&a, &b, &c}) {
           CHECK(v->u >= -0.0001f && v->u <= 1.0001f);
           CHECK(v->v >= -0.0001f && v->v <= 1.0001f);

@@ -91,6 +91,9 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ## Phase 2: Game logic (makes the editor useful for designers)
 
 ### 2.1 Triggers and event graph (M to L)
+- **Progress:** `world/trigger.h` provides a headless, single-subject trigger
+  runtime with box/cell volumes, ordered enter/exit/stay/use events and once
+  flags. Event rules, level persistence and editor integration remain.
 - **Why:** UnityEvents and Blueprints. Today a game hand-writes every rule.
 - **Where:** `world/trigger.h` (box and cell trigger volumes: enter, exit,
   stay, use, with a once flag) and `data/events.h` (a data-driven rule: on
