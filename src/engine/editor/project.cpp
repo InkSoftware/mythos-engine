@@ -72,8 +72,12 @@ bool Project::Save(std::string* const error) {
   for (const auto& name : dirty_levels_) {
     const auto it = levels_.find(name);
     if (it == levels_.end()) continue;
-    if (!WriteFileAtomic(AssetDir() + "/levels/" + name + ".txt",
-                         SerializeLevelDoc(it->second))) {
+    const std::string text = SerializeLevelDoc(it->second);
+    if (text.empty()) {
+      if (error) *error = "invalid level: " + name;
+      return false;
+    }
+    if (!WriteFileAtomic(AssetDir() + "/levels/" + name + ".txt", text)) {
       if (error) *error = "cannot write levels/" + name + ".txt";
       return false;
     }

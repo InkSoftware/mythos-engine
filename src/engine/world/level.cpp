@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <set>
 #include <sstream>
 
 #include "engine/core/vfs.h"
@@ -36,18 +37,14 @@ bool ReadFile(const std::string& path, std::string& out) {
 }
 
 bool ValidDecal(const Decal& d) {
-  const bool face = d.face == DecalFace::kNorth ||
-                    d.face == DecalFace::kSouth || d.face == DecalFace::kWest ||
-                    d.face == DecalFace::kEast || d.face == DecalFace::kFloor ||
-                    d.face == DecalFace::kCeiling ||
-                    d.face == DecalFace::kThinNorth ||
-                    d.face == DecalFace::kThinSouth ||
-                    d.face == DecalFace::kThinWest ||
-                    d.face == DecalFace::kThinEast ||
-                    d.face == DecalFace::kGlassNorth ||
-                    d.face == DecalFace::kGlassSouth ||
-                    d.face == DecalFace::kGlassWest ||
-                    d.face == DecalFace::kGlassEast;
+  const bool face =
+      d.face == DecalFace::kNorth || d.face == DecalFace::kSouth ||
+      d.face == DecalFace::kWest || d.face == DecalFace::kEast ||
+      d.face == DecalFace::kFloor || d.face == DecalFace::kCeiling ||
+      d.face == DecalFace::kThinNorth || d.face == DecalFace::kThinSouth ||
+      d.face == DecalFace::kThinWest || d.face == DecalFace::kThinEast ||
+      d.face == DecalFace::kGlassNorth || d.face == DecalFace::kGlassSouth ||
+      d.face == DecalFace::kGlassWest || d.face == DecalFace::kGlassEast;
   return face && !d.texture.empty() &&
          std::none_of(d.texture.begin(), d.texture.end(),
                       [](unsigned char c) { return std::isspace(c) != 0; }) &&
@@ -157,6 +154,76 @@ std::string SerializeDecalLine(const Decal& d) {
   return out.str();
 }
 
+bool ParseTriggerLine(const std::string& line, Trigger* const out) {
+  if (!out) return false;
+  std::istringstream in(line);
+  in.imbue(std::locale::classic());
+  Trigger t;
+  std::string shape, event, once, extra;
+  if (!(in >> t.id >> shape >> event >> once)) return false;
+  if (shape == "box") {
+    t.shape = TriggerShape::kBox;
+    if (!(in >> t.min.x >> t.min.y >> t.min.z >> t.max.x >> t.max.y >> t.max.z))
+      return false;
+  } else if (shape == "cell") {
+    t.shape = TriggerShape::kCell;
+    if (!(in >> t.cell_x >> t.cell_z >> t.floor)) return false;
+  } else {
+    return false;
+  }
+  if (event == "enter")
+    t.event = TriggerEvent::kEnter;
+  else if (event == "exit")
+    t.event = TriggerEvent::kExit;
+  else if (event == "stay")
+    t.event = TriggerEvent::kStay;
+  else if (event == "use")
+    t.event = TriggerEvent::kUse;
+  else
+    return false;
+  if (once == "1")
+    t.once = true;
+  else if (once != "0")
+    return false;
+  if ((in >> extra) || SerializeTriggerLine(t).empty()) return false;
+  *out = std::move(t);
+  return true;
+}
+
+std::string SerializeTriggerLine(const Trigger& t) {
+  if (!ValidTrigger(t) || t.id.front() == '[' || t.id.front() == ';' ||
+      std::any_of(t.id.begin(), t.id.end(), [](unsigned char c) {
+        return std::isspace(c) != 0 || std::iscntrl(c) != 0;
+      }))
+    return {};
+  const char* event = "";
+  switch (t.event) {
+    case TriggerEvent::kEnter:
+      event = "enter";
+      break;
+    case TriggerEvent::kExit:
+      event = "exit";
+      break;
+    case TriggerEvent::kStay:
+      event = "stay";
+      break;
+    case TriggerEvent::kUse:
+      event = "use";
+      break;
+  }
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  out << std::setprecision(std::numeric_limits<double>::max_digits10) << t.id
+      << (t.shape == TriggerShape::kBox ? " box " : " cell ") << event << ' '
+      << (t.once ? 1 : 0);
+  if (t.shape == TriggerShape::kBox)
+    out << ' ' << t.min.x << ' ' << t.min.y << ' ' << t.min.z << ' ' << t.max.x
+        << ' ' << t.max.y << ' ' << t.max.z;
+  else
+    out << ' ' << t.cell_x << ' ' << t.cell_z << ' ' << t.floor;
+  return out.str();
+}
+
 bool Level::Parse(const std::vector<std::string>& rows,
                   std::string* const error) {
   if (rows.empty()) {
@@ -182,6 +249,7 @@ bool Level::Parse(const std::vector<std::string>& rows,
   solid_.assign(cells_.size(), 0);
   furniture_.clear();
   decals_.clear();
+  triggers_.clear();
   revision_ = NextRevision();
   return true;
 }
@@ -190,6 +258,8 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
   std::vector<std::string> rows;
   std::vector<Placement> furniture, decor;
   std::vector<Decal> decals;
+  std::vector<Trigger> triggers;
+  std::set<std::string> trigger_ids;
   std::string section;
   std::istringstream in(text);
   std::string raw;
@@ -232,6 +302,14 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
         return false;
       }
       decals.push_back(std::move(decal));
+    } else if (section == "[triggers]") {
+      Trigger trigger;
+      if (!ParseTriggerLine(line, &trigger) ||
+          !trigger_ids.insert(trigger.id).second) {
+        if (error) *error = "bad or duplicate trigger line: " + line;
+        return false;
+      }
+      triggers.push_back(std::move(trigger));
     }
   }
   if (!Parse(rows, error)) return false;
@@ -256,9 +334,17 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
       return false;
     }
   }
+  for (const auto& trigger : triggers) {
+    if (trigger.shape == TriggerShape::kCell &&
+        !InBounds(trigger.cell_x, trigger.cell_z)) {
+      if (error) *error = "trigger outside the map: " + trigger.id;
+      return false;
+    }
+  }
   furniture_ = std::move(furniture);
   furniture_.insert(furniture_.end(), decor.begin(), decor.end());
   for (const auto& decal : decals) AddDecal(decal);
+  triggers_ = std::move(triggers);
   return true;
 }
 
@@ -356,6 +442,27 @@ bool Level::AddDecal(const Decal& decal) {
   Decal copy = decal;
   if (decals_.size() == kMaxDecals) decals_.erase(decals_.begin());
   decals_.push_back(std::move(copy));
+  revision_ = NextRevision();
+  return true;
+}
+
+bool Level::AddTrigger(const Trigger& trigger) {
+  if (SerializeTriggerLine(trigger).empty() ||
+      (trigger.shape == TriggerShape::kCell &&
+       !InBounds(trigger.cell_x, trigger.cell_z)) ||
+      std::ranges::any_of(triggers_,
+                          [&](const Trigger& t) { return t.id == trigger.id; }))
+    return false;
+  triggers_.push_back(trigger);
+  revision_ = NextRevision();
+  return true;
+}
+
+bool Level::RemoveTrigger(const std::string& id) {
+  const auto it = std::ranges::find_if(
+      triggers_, [&](const Trigger& t) { return t.id == id; });
+  if (it == triggers_.end()) return false;
+  triggers_.erase(it);
   revision_ = NextRevision();
   return true;
 }

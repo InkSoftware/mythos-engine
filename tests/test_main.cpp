@@ -789,6 +789,54 @@ TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
   CHECK_EQ(geometry.decals.size(), size_t{12});
 }
 
+TEST(EngineTriggersPersistAndValidate) {
+  editor::LevelDoc doc;
+  doc.rows = {"...", "..."};
+  Trigger box;
+  box.id = "box";
+  box.event = TriggerEvent::kExit;
+  box.once = true;
+  box.min = {-0.125, 0.25, 1};
+  box.max = {2.5, 3, 4};
+  Trigger cell;
+  cell.id = "cell";
+  cell.shape = TriggerShape::kCell;
+  cell.event = TriggerEvent::kUse;
+  cell.cell_x = 2;
+  cell.cell_z = 1;
+  cell.floor = -1;
+  doc.triggers = {box, cell};
+  const std::string text = editor::SerializeLevelDoc(doc);
+  CHECK(!text.empty());
+  editor::LevelDoc loaded;
+  std::string error;
+  CHECK(editor::ParseLevelDoc(text, &loaded, &error));
+  CHECK_EQ(loaded.triggers.size(), size_t{2});
+  CHECK(editor::SerializeLevelDoc(loaded) == text);
+  Level level;
+  CHECK(level.ParseText(text, &error));
+  CHECK_EQ(level.Triggers().size(), size_t{2});
+  CHECK(level.Triggers()[0].min.x == box.min.x);
+  CHECK(level.Triggers()[0].once);
+  CHECK(level.Triggers()[1].floor == -1);
+  CHECK(!level.AddTrigger(box));
+  CHECK(level.RemoveTrigger("box"));
+  CHECK(!level.RemoveTrigger("box"));
+  loaded.Resize(2, 2, '.');
+  CHECK_EQ(loaded.triggers.size(), size_t{1});
+  CHECK(loaded.triggers[0].id == "box");
+  CHECK(
+      !level.ParseText("[map]\n.\n[triggers]\na cell enter 0 1 0 0\n", &error));
+  CHECK(
+      !level.ParseText("[map]\n.\n[triggers]\na cell enter 0 0 0 0\n"
+                       "a cell exit 0 0 0 0\n",
+                       &error));
+  CHECK(!level.ParseText("[map]\n.\n[triggers]\na box enter 1 1 0 0 0 1 1\n",
+                         &error));
+  CHECK(level.ParseText("[map]\n.\n", &error));
+  CHECK(level.Triggers().empty());
+}
+
 TEST(EngineTriggerTransitionsAndValidation) {
   TriggerRuntime runtime;
   Trigger t;
@@ -2274,6 +2322,21 @@ TEST(EditorEditsLevelsWithNoAdapter) {
         p.Level("cellar_2")->At(2, 2) == '.');
   CHECK(!p.CreateLevel("a/b", 6, 5));
   CHECK(!p.CreateLevel("ground", 6, 5));
+}
+
+TEST(EditorRejectsInvalidTriggersWithoutOverwritingLevel) {
+  EditorFixture f;
+  editor::Project p;
+  std::string err;
+  CHECK(p.Load(f.root.string(), &err));
+  const std::string before = f.Read("assets/levels/ground.txt");
+  Trigger invalid;
+  invalid.id = "bad trigger";
+  p.Level("ground")->triggers.push_back(invalid);
+  p.Touch("ground");
+  CHECK(!p.Save(&err));
+  CHECK(p.IsDirty("ground"));
+  CHECK(f.Read("assets/levels/ground.txt") == before);
 }
 
 TEST(EditorChecksFurnitureInWallsMissingModelsAndStairwells) {

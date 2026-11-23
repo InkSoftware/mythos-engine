@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <set>
 #include <sstream>
 
 namespace mythos::editor {
@@ -33,6 +34,9 @@ void LevelDoc::Resize(const int width, const int height, const char fill) {
   std::erase_if(furniture, outside);
   std::erase_if(decor, outside);
   std::erase_if(decals, [&](const Decal& d) { return !InBounds(d.x, d.y); });
+  std::erase_if(triggers, [&](const Trigger& t) {
+    return t.shape == TriggerShape::kCell && !InBounds(t.cell_x, t.cell_z);
+  });
 }
 
 std::string FormatNumber(const double v) {
@@ -53,6 +57,7 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
   std::istringstream in(text);
   std::string raw, section;
   bool seen_map = false;
+  std::set<std::string> trigger_ids;
   auto fail = [&](const std::string& what) {
     if (error) *error = what;
     return false;
@@ -94,6 +99,12 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
       Decal decal;
       if (!ParseDecalLine(line, &decal)) return fail("bad decal line: " + line);
       doc.decals.push_back(std::move(decal));
+    } else if (section == "[triggers]") {
+      Trigger trigger;
+      if (!ParseTriggerLine(line, &trigger) ||
+          !trigger_ids.insert(trigger.id).second)
+        return fail("bad or duplicate trigger line: " + line);
+      doc.triggers.push_back(std::move(trigger));
     } else {
       return fail("line outside a section: " + line);
     }
@@ -104,11 +115,23 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
   for (const auto& decal : doc.decals)
     if (!doc.InBounds(decal.x, decal.y))
       return fail("decal outside the map: " + decal.texture);
+  for (const auto& trigger : doc.triggers)
+    if (trigger.shape == TriggerShape::kCell &&
+        !doc.InBounds(trigger.cell_x, trigger.cell_z))
+      return fail("trigger outside the map: " + trigger.id);
   *out = std::move(doc);
   return true;
 }
 
 std::string SerializeLevelDoc(const LevelDoc& doc) {
+  std::set<std::string> trigger_ids;
+  for (const auto& trigger : doc.triggers) {
+    if (SerializeTriggerLine(trigger).empty() ||
+        !trigger_ids.insert(trigger.id).second ||
+        (trigger.shape == TriggerShape::kCell &&
+         !doc.InBounds(trigger.cell_x, trigger.cell_z)))
+      return {};
+  }
   std::string s;
   bool stamped = false;
   for (const auto& h : doc.header) {
@@ -135,6 +158,11 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
   if (!doc.decals.empty()) {
     s += "[decals]\n";
     for (const auto& decal : doc.decals) s += SerializeDecalLine(decal) + "\n";
+  }
+  if (!doc.triggers.empty()) {
+    s += "[triggers]\n";
+    for (const auto& trigger : doc.triggers)
+      s += SerializeTriggerLine(trigger) + "\n";
   }
   return s;
 }

@@ -9,6 +9,7 @@
 
 #include "engine/world/decal.h"
 #include "engine/world/tiles.h"
+#include "engine/world/trigger.h"
 
 // The grid world: glyph map, furniture placements and the collision tests built
 // on them. One cell is one world unit; world x is the column, z is the row.
@@ -36,16 +37,17 @@ class Level {
  public:
   static constexpr std::size_t kMaxDecals = 1024;
 
-  // Loads a map from equal-length rows, clearing furniture and decals. Returns
-  // false and sets *error for an empty map or ragged rows.
+  // Loads a map from equal-length rows, clearing furniture, decals and
+  // triggers. Returns false and sets *error for an empty map or ragged rows.
   bool Parse(const std::vector<std::string>& rows,
              std::string* error = nullptr);
 
   // Parses level text: a "[map]" section of rows, "[furniture]" lines ("x y
   // model yaw") and "[decor]" lines ("x y model yaw [offX offZ lift]").
-  // [decals] lines use the format documented in decal.h. Blank lines and lines
-  // starting with ';' are ignored. On placement or decal bounds failure, the
-  // map is already replaced but placements and decals are not kept.
+  // [decals] and [triggers] lines use the formats in decal.h and trigger.h.
+  // Cell triggers must be in bounds; IDs must be unique. Blank lines and lines
+  // starting with ';' are ignored. On placement, decal or trigger bounds
+  // failure, the map is already replaced but those objects are not kept.
   bool ParseText(const std::string& text, std::string* error = nullptr);
 
   // Reads path through the virtual file system and parses it with ParseText.
@@ -120,12 +122,18 @@ class Level {
   // Invalid decals are rejected; at capacity the oldest decal is evicted.
   bool AddDecal(const Decal& decal);
 
+  [[nodiscard]] const std::vector<Trigger>& Triggers() const {
+    return triggers_;
+  }
+  // Rejects invalid or duplicate triggers and cells outside the map.
+  bool AddTrigger(const Trigger& trigger);
+  bool RemoveTrigger(const std::string& id);
+
   // Removes the placement with the given id (empty ids never match); returns
   // whether one was found.
   bool RemovePlacement(const std::string& id);
 
-  // Process-unique stamp, renewed on every change to the map, placements or
-  // decals.
+  // Process-unique stamp, renewed on every change to map contents.
   [[nodiscard]] uint64_t Revision() const { return revision_; }
 
   // True if no point sampled along the segment (x0, y0)-(x1, y1) in the floor
@@ -142,6 +150,7 @@ class Level {
   std::vector<char> solid_;
   std::vector<Placement> furniture_;
   std::vector<Decal> decals_;
+  std::vector<Trigger> triggers_;
   TileSetPtr tiles_ = DefaultTileSet();
 };
 }

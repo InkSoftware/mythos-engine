@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "engine/world/decal.h"
+#include "engine/world/trigger.h"
 
 namespace mythos::editor {
 // One `[furniture]` or `[decor]` line of a level: the cell (x = column, y =
@@ -30,6 +31,7 @@ struct LevelDoc {
   std::vector<std::string> rows;
   std::vector<Item> furniture, decor;
   std::vector<Decal> decals;
+  std::vector<Trigger> triggers;
 
   [[nodiscard]] int Width() const {
     return rows.empty() ? 0 : static_cast<int>(rows[0].size());
@@ -50,7 +52,7 @@ struct LevelDoc {
   bool Set(int x, int y, char glyph);
 
   // Crops or grows the map, filling new cells with `fill` and dropping items
-  // and decals that end up outside. Ignores sizes below 1.
+  // decals and cell triggers that end up outside. Ignores sizes below 1.
   void Resize(int width, int height, char fill);
 
   bool operator==(const LevelDoc&) const = default;
@@ -62,7 +64,8 @@ struct LevelDoc {
 bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error);
 
 // Writes the level file text, stamping a header line when the file does not
-// already carry one from the map editor.
+// already carry one from the map editor. Returns empty for invalid, duplicate,
+// or out-of-bounds cell triggers.
 std::string SerializeLevelDoc(const LevelDoc& doc);
 
 // Formats a number with at most four decimals and no trailing zeros, so saved

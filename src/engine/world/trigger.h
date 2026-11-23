@@ -22,6 +22,15 @@ struct Trigger {
   bool once = false;
   Vec3 min, max;
   int cell_x = 0, cell_z = 0, floor = 0;
+
+  bool operator==(const Trigger& other) const {
+    return id == other.id && shape == other.shape && event == other.event &&
+           once == other.once && min.x == other.min.x && min.y == other.min.y &&
+           min.z == other.min.z && max.x == other.max.x &&
+           max.y == other.max.y && max.z == other.max.z &&
+           cell_x == other.cell_x && cell_z == other.cell_z &&
+           floor == other.floor;
+  }
 };
 
 struct TriggerHit {
@@ -55,6 +64,15 @@ inline bool ValidTrigger(const Trigger& trigger) {
       return false;
   }
 }
+
+// [triggers] lines: id box event once minX minY minZ maxX maxY maxZ,
+// or id cell event once cellX cellZ floor. Event is enter, exit, stay or use;
+// once is 0 or 1. IDs are nonempty single tokens without control characters,
+// not beginning with '[' or ';'.
+// Parsing leaves out untouched on failure; serialization returns empty if
+// invalid.
+bool ParseTriggerLine(const std::string& line, Trigger* out);
+std::string SerializeTriggerLine(const Trigger& trigger);
 
 // Tracks one point subject. Use a separate runtime per subject. Sampling is
 // discrete: crossing a volume entirely between updates is not detected.
