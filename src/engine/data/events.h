@@ -2,8 +2,12 @@
 #define MYTHOS_ENGINE_DATA_EVENTS_H_
 
 #include <functional>
+#include <limits>
+#include <locale>
 #include <map>
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace mythos {
@@ -18,11 +22,15 @@ struct Event {
   std::string id;
   std::string detail;
   bool value = false;
+
+  bool operator==(const Event&) const = default;
 };
 
 struct EventCondition {
   std::string flag;
   bool value = true;
+
+  bool operator==(const EventCondition&) const = default;
 };
 
 // Action types and arguments are interpreted by the game. For example, a
@@ -30,6 +38,8 @@ struct EventCondition {
 struct EventAction {
   std::string type;
   std::string argument;
+
+  bool operator==(const EventAction&) const = default;
 };
 
 struct EventRule {
@@ -37,6 +47,8 @@ struct EventRule {
   Event event;
   std::vector<EventCondition> conditions;
   std::vector<EventAction> actions;
+
+  bool operator==(const EventRule&) const = default;
 };
 
 inline bool ValidEvent(const Event& event) {
@@ -59,6 +71,145 @@ inline bool ValidEventRule(const EventRule& rule) {
   for (const auto& action : rule.actions)
     if (action.type.empty()) return false;
   return true;
+}
+
+namespace event_rule_detail {
+inline std::string Encode(const std::string& value) {
+  constexpr char kHex[] = "0123456789abcdef";
+  std::string encoded = "x";
+  for (const unsigned char c : value) {
+    encoded += kHex[c >> 4];
+    encoded += kHex[c & 15];
+  }
+  return encoded;
+}
+
+inline int HexDigit(const char c) {
+  if (c >= '0' && c <= '9') return c - '0';
+  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+  return -1;
+}
+
+inline bool ReadString(std::istream& in, std::string& value) {
+  std::string token;
+  if (!(in >> token) || token[0] != 'x' || token.size() % 2 != 1) return false;
+  value.clear();
+  for (size_t i = 1; i < token.size(); i += 2) {
+    const int high = HexDigit(token[i]);
+    const int low = HexDigit(token[i + 1]);
+    if (high < 0 || low < 0) return false;
+    value += static_cast<char>((high << 4) | low);
+  }
+  return true;
+}
+
+inline bool ReadBool(std::istream& in, bool& value) {
+  std::string token;
+  if (!(in >> token) || (token != "0" && token != "1")) return false;
+  value = token == "1";
+  return true;
+}
+
+inline bool ReadCount(std::istream& in, size_t& count) {
+  std::string token;
+  if (!(in >> token)) return false;
+  count = 0;
+  for (const char c : token) {
+    if (c < '0' || c > '9') return false;
+    const size_t digit = static_cast<size_t>(c - '0');
+    if (count > (std::numeric_limits<size_t>::max() - digit) / 10) return false;
+    count = count * 10 + digit;
+  }
+  return true;
+}
+}
+
+// [rules] lines contain whitespace-separated tokens:
+// rule1 id kind event_id detail event_value condition_count
+//   (flag value)* action_count (type argument)*
+// String tokens are 'x' followed by two hex digits per byte (just 'x' for an
+// empty string). Booleans are 0 or 1, counts are unsigned decimal, and kind
+// is trigger, flag or timer. All event fields are stored, even unused ones.
+// Hex is case-insensitive on input; output uses lowercase. No line terminators
+// or extra tokens are accepted. Rule IDs must be checked for duplicates by the
+// section owner. Parsing leaves out untouched on failure (including null out);
+// serialization returns empty if the rule fails ValidEventRule.
+inline bool ParseEventRuleLine(const std::string& line, EventRule* const out) {
+  if (!out || line.find_first_of("\r\n") != std::string::npos) return false;
+  std::istringstream in(line);
+  in.imbue(std::locale::classic());
+  EventRule rule;
+  std::string version, kind;
+  if (!(in >> version) || version != "rule1" ||
+      !event_rule_detail::ReadString(in, rule.id) || !(in >> kind))
+    return false;
+  if (kind == "trigger")
+    rule.event.kind = EventKind::kTrigger;
+  else if (kind == "flag")
+    rule.event.kind = EventKind::kFlag;
+  else if (kind == "timer")
+    rule.event.kind = EventKind::kTimer;
+  else
+    return false;
+  size_t count = 0;
+  if (!event_rule_detail::ReadString(in, rule.event.id) ||
+      !event_rule_detail::ReadString(in, rule.event.detail) ||
+      !event_rule_detail::ReadBool(in, rule.event.value) ||
+      !event_rule_detail::ReadCount(in, count) || count > line.size() / 2)
+    return false;
+  for (size_t i = 0; i < count; ++i) {
+    EventCondition condition;
+    if (!event_rule_detail::ReadString(in, condition.flag) ||
+        !event_rule_detail::ReadBool(in, condition.value))
+      return false;
+    rule.conditions.push_back(std::move(condition));
+  }
+  if (!event_rule_detail::ReadCount(in, count) || count > line.size() / 2)
+    return false;
+  for (size_t i = 0; i < count; ++i) {
+    EventAction action;
+    if (!event_rule_detail::ReadString(in, action.type) ||
+        !event_rule_detail::ReadString(in, action.argument))
+      return false;
+    rule.actions.push_back(std::move(action));
+  }
+  std::string extra;
+  if ((in >> extra) || !ValidEventRule(rule)) return false;
+  *out = std::move(rule);
+  return true;
+}
+
+inline std::string SerializeEventRuleLine(const EventRule& rule) {
+  if (!ValidEventRule(rule)) return {};
+  const char* kind = nullptr;
+  switch (rule.event.kind) {
+    case EventKind::kTrigger:
+      kind = "trigger";
+      break;
+    case EventKind::kFlag:
+      kind = "flag";
+      break;
+    case EventKind::kTimer:
+      kind = "timer";
+      break;
+    default:
+      return {};
+  }
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  out << "rule1 " << event_rule_detail::Encode(rule.id) << ' ' << kind << ' '
+      << event_rule_detail::Encode(rule.event.id) << ' '
+      << event_rule_detail::Encode(rule.event.detail) << ' '
+      << (rule.event.value ? 1 : 0) << ' ' << rule.conditions.size();
+  for (const auto& condition : rule.conditions)
+    out << ' ' << event_rule_detail::Encode(condition.flag) << ' '
+        << (condition.value ? 1 : 0);
+  out << ' ' << rule.actions.size();
+  for (const auto& action : rule.actions)
+    out << ' ' << event_rule_detail::Encode(action.type) << ' '
+        << event_rule_detail::Encode(action.argument);
+  return out.str();
 }
 
 // Rules are evaluated in ascending ID order, with actions in their listed

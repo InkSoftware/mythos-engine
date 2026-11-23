@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/data/events.h"
 #include "engine/world/decal.h"
 #include "engine/world/trigger.h"
 
@@ -32,6 +33,7 @@ struct LevelDoc {
   std::vector<Item> furniture, decor;
   std::vector<Decal> decals;
   std::vector<Trigger> triggers;
+  std::vector<EventRule> rules;
 
   [[nodiscard]] int Width() const {
     return rows.empty() ? 0 : static_cast<int>(rows[0].size());
@@ -65,7 +67,7 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error);
 
 // Writes the level file text, stamping a header line when the file does not
 // already carry one from the map editor. Returns empty for invalid, duplicate,
-// or out-of-bounds cell triggers.
+// or out-of-bounds cell triggers, or invalid or duplicate rules.
 std::string SerializeLevelDoc(const LevelDoc& doc);
 
 // Formats a number with at most four decimals and no trailing zeros, so saved

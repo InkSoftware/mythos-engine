@@ -838,6 +838,54 @@ TEST(EngineTriggersPersistAndValidate) {
   CHECK(level.Triggers().empty());
 }
 
+TEST(EngineEventRulesPersistAndValidate) {
+  editor::LevelDoc doc;
+  doc.rows = {".."};
+  EventRule trigger{
+      "open door",
+      {EventKind::kTrigger, "door", "enter", false},
+      {{"has key", true}, {"locked", false}},
+      {{"message", "A \"quoted\" message\nnext line"}, {"open", ""}}};
+  EventRule flag{
+      "alarm", {EventKind::kFlag, "alarm", "", true}, {}, {{"sound", "bell"}}};
+  EventRule timer{"timer", {EventKind::kTimer, "clock", "", false}, {}, {}};
+  doc.rules = {trigger, flag, timer};
+  const std::string text = editor::SerializeLevelDoc(doc);
+  CHECK(!text.empty());
+  editor::LevelDoc loaded;
+  std::string error;
+  CHECK(editor::ParseLevelDoc(text, &loaded, &error));
+  CHECK(loaded.rules == doc.rules);
+  CHECK(editor::SerializeLevelDoc(loaded) == text);
+  Level level;
+  CHECK(level.ParseText(text, &error));
+  CHECK(level.Rules() == doc.rules);
+  EventRuntime runtime;
+  for (const auto& rule : level.Rules()) CHECK(runtime.Add(rule));
+  std::vector<std::string> arguments;
+  CHECK(runtime.Dispatch(
+      trigger.event, {{"has key", true}},
+      [&](const EventAction& a) { arguments.push_back(a.argument); }));
+  CHECK(arguments ==
+        std::vector<std::string>({trigger.actions[0].argument, ""}));
+  const std::string line = SerializeEventRuleLine(trigger);
+  CHECK(!line.empty());
+  EventRule parsed = flag;
+  CHECK(!ParseEventRuleLine("not a rule", &parsed));
+  CHECK(parsed == flag);
+  CHECK(!level.ParseText("[map]\n.\n[rules]\n" + line + "\n" + line + "\n",
+                         &error));
+  CHECK(!editor::ParseLevelDoc(
+      "[map]\n.\n[rules]\n" + line + "\n" + line + "\n", &loaded, &error));
+  doc.rules.push_back(trigger);
+  CHECK(editor::SerializeLevelDoc(doc).empty());
+  doc.rules.pop_back();
+  doc.rules[0].actions[0].type.clear();
+  CHECK(editor::SerializeLevelDoc(doc).empty());
+  CHECK(level.ParseText("[map]\n.\n", &error));
+  CHECK(level.Rules().empty());
+}
+
 TEST(EngineEventRulesDispatchAndValidate) {
   EventRuntime runtime;
   EventRule rule;

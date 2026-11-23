@@ -57,7 +57,7 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
   std::istringstream in(text);
   std::string raw, section;
   bool seen_map = false;
-  std::set<std::string> trigger_ids;
+  std::set<std::string> trigger_ids, rule_ids;
   auto fail = [&](const std::string& what) {
     if (error) *error = what;
     return false;
@@ -105,6 +105,11 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
           !trigger_ids.insert(trigger.id).second)
         return fail("bad or duplicate trigger line: " + line);
       doc.triggers.push_back(std::move(trigger));
+    } else if (section == "[rules]") {
+      EventRule rule;
+      if (!ParseEventRuleLine(line, &rule) || !rule_ids.insert(rule.id).second)
+        return fail("bad or duplicate rule line: " + line);
+      doc.rules.push_back(std::move(rule));
     } else {
       return fail("line outside a section: " + line);
     }
@@ -132,6 +137,11 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
          !doc.InBounds(trigger.cell_x, trigger.cell_z)))
       return {};
   }
+  std::set<std::string> rule_ids;
+  for (const auto& rule : doc.rules)
+    if (SerializeEventRuleLine(rule).empty() ||
+        !rule_ids.insert(rule.id).second)
+      return {};
   std::string s;
   bool stamped = false;
   for (const auto& h : doc.header) {
@@ -163,6 +173,10 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
     s += "[triggers]\n";
     for (const auto& trigger : doc.triggers)
       s += SerializeTriggerLine(trigger) + "\n";
+  }
+  if (!doc.rules.empty()) {
+    s += "[rules]\n";
+    for (const auto& rule : doc.rules) s += SerializeEventRuleLine(rule) + "\n";
   }
   return s;
 }

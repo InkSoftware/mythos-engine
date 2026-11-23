@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "engine/data/events.h"
 #include "engine/world/decal.h"
 #include "engine/world/tiles.h"
 #include "engine/world/trigger.h"
@@ -37,17 +38,18 @@ class Level {
  public:
   static constexpr std::size_t kMaxDecals = 1024;
 
-  // Loads a map from equal-length rows, clearing furniture, decals and
-  // triggers. Returns false and sets *error for an empty map or ragged rows.
+  // Loads a map from equal-length rows, clearing furniture, decals, triggers
+  // and rules. Returns false and sets *error for an empty map or ragged rows.
   bool Parse(const std::vector<std::string>& rows,
              std::string* error = nullptr);
 
   // Parses level text: a "[map]" section of rows, "[furniture]" lines ("x y
   // model yaw") and "[decor]" lines ("x y model yaw [offX offZ lift]").
-  // [decals] and [triggers] lines use the formats in decal.h and trigger.h.
-  // Cell triggers must be in bounds; IDs must be unique. Blank lines and lines
-  // starting with ';' are ignored. On placement, decal or trigger bounds
-  // failure, the map is already replaced but those objects are not kept.
+  // [decals], [triggers] and [rules] use the formats in their respective
+  // headers. Cell triggers must be in bounds; trigger and rule IDs must be
+  // unique. Blank lines and lines starting with ';' are ignored. On placement,
+  // decal or trigger bounds failure, the map is already replaced but those
+  // objects are not kept.
   bool ParseText(const std::string& text, std::string* error = nullptr);
 
   // Reads path through the virtual file system and parses it with ParseText.
@@ -129,6 +131,8 @@ class Level {
   bool AddTrigger(const Trigger& trigger);
   bool RemoveTrigger(const std::string& id);
 
+  [[nodiscard]] const std::vector<EventRule>& Rules() const { return rules_; }
+
   // Removes the placement with the given id (empty ids never match); returns
   // whether one was found.
   bool RemovePlacement(const std::string& id);
@@ -151,6 +155,7 @@ class Level {
   std::vector<Placement> furniture_;
   std::vector<Decal> decals_;
   std::vector<Trigger> triggers_;
+  std::vector<EventRule> rules_;
   TileSetPtr tiles_ = DefaultTileSet();
 };
 }

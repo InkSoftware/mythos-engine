@@ -93,9 +93,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ### 2.1 Triggers and event graph (M to L)
 - **Progress:** `world/trigger.h` provides a headless, single-subject trigger
   runtime with box/cell volumes, ordered enter/exit/stay/use events and once
-  flags. Level files and editor documents persist `[triggers]`. A headless
-  event-rule runtime dispatches generic actions for trigger, flag and timer
-  events. Rule persistence, game integration and editor controls remain.
+  flags. A headless event-rule runtime dispatches generic actions for trigger,
+  flag and timer events. Level files and editor documents persist `[triggers]`
+  and `[rules]`; game integration and editor controls remain. Rule strings use
+  a hex-encoded line format (documented in `data/events.h`), not a visual graph.
 - **Why:** UnityEvents and Blueprints. Today a game hand-writes every rule.
 - **Where:** `world/trigger.h` (box and cell trigger volumes: enter, exit,
   stay, use, with a once flag) and `data/events.h` (a data-driven rule: on

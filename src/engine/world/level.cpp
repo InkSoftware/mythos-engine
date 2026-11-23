@@ -250,6 +250,7 @@ bool Level::Parse(const std::vector<std::string>& rows,
   furniture_.clear();
   decals_.clear();
   triggers_.clear();
+  rules_.clear();
   revision_ = NextRevision();
   return true;
 }
@@ -259,7 +260,8 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
   std::vector<Placement> furniture, decor;
   std::vector<Decal> decals;
   std::vector<Trigger> triggers;
-  std::set<std::string> trigger_ids;
+  std::vector<EventRule> rules;
+  std::set<std::string> trigger_ids, rule_ids;
   std::string section;
   std::istringstream in(text);
   std::string raw;
@@ -310,6 +312,14 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
         return false;
       }
       triggers.push_back(std::move(trigger));
+    } else if (section == "[rules]") {
+      EventRule rule;
+      if (!ParseEventRuleLine(line, &rule) ||
+          !rule_ids.insert(rule.id).second) {
+        if (error) *error = "bad or duplicate rule line: " + line;
+        return false;
+      }
+      rules.push_back(std::move(rule));
     }
   }
   if (!Parse(rows, error)) return false;
@@ -345,6 +355,7 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
   furniture_.insert(furniture_.end(), decor.begin(), decor.end());
   for (const auto& decal : decals) AddDecal(decal);
   triggers_ = std::move(triggers);
+  rules_ = std::move(rules);
   return true;
 }
 
