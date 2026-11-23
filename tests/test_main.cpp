@@ -875,6 +875,32 @@ TEST(EngineWallDecalsRequireThickWallFaces) {
   CHECK(geometry.decals[1].texture == std::to_string(static_cast<int>(DecalFace::kWest)));
 }
 
+TEST(EngineThinCellHorizontalDecalsClipToExistingQuarters) {
+  Level level;
+  CHECK(level.Parse({"###", "#W.", "###"}));
+  level.SetTiles(ThinLegend());
+  for (const auto face : {DecalFace::kFloor, DecalFace::kCeiling}) {
+    Decal d;
+    d.x = d.y = 1;
+    d.face = face;
+    d.width = d.height = 3;
+    d.rotation = 25;
+    d.texture = "decal";
+    CHECK(level.AddDecal(d));
+  }
+  ModelLibrary models;
+  const auto geometry = BuildSceneGeometry(level, models, false);
+  CHECK_EQ(geometry.decals.size(), size_t{2});
+  for (const auto& batch : geometry.decals) {
+    CHECK(!batch.verts.empty());
+    for (const auto& v : batch.verts) {
+      CHECK(v.px >= 1.4999f && v.px <= 2.0001f);
+      CHECK(v.pz >= 0.9999f && v.pz <= 2.0001f);
+      CHECK(v.u >= 0 && v.u <= 1 && v.v >= 0 && v.v <= 1);
+    }
+  }
+}
+
 TEST(EngineThinWallsAndWindowsBuildGeometry) {
   Level l;
   CHECK(l.Parse({"#######", "#.....#", "#WWwWW#", "#.....#", "#######"}));

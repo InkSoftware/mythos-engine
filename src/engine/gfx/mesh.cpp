@@ -434,6 +434,17 @@ class SceneBuilder {
     if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
   }
 
+  char ThinQuarterRoom(const int x, const int y, const int dx, const int dy) const {
+    const auto open = [&](const char c) {
+      return !tiles_.Solid(c) && !tiles_[c].empty;
+    };
+    for (const char c : {level_.At(x, y + dy), level_.At(x + dx, y),
+                         level_.At(x + dx, y + dy)}) {
+      if (open(c)) return c;
+    }
+    return '\0';
+  }
+
   void AddDecals() {
     for (const Decal& d : level_.Decals()) {
       if (d.face == DecalFace::kThinNorth || d.face == DecalFace::kThinSouth ||
@@ -533,14 +544,31 @@ class SceneBuilder {
                    normal.x, normal.y, normal.z, static_cast<float>(p.u),
                    static_cast<float>(p.v));
       };
-      for (size_t i = 1; i + 1 < poly.size(); ++i) {
-        const auto& a = poly[0];
-        const auto& b = poly[i];
-        const auto& c = poly[i + 1];
-        if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
-        push(a);
-        push(b);
-        push(c);
+      const auto emit = [&](const std::vector<DecalPoint>& p) {
+        for (size_t i = 1; i + 1 < p.size(); ++i) {
+          const auto& a = p[0];
+          const auto& b = p[i];
+          const auto& c = p[i + 1];
+          if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
+          push(a);
+          push(b);
+          push(c);
+        }
+      };
+      const char glyph = level_.At(d.x, d.y);
+      if ((d.face == DecalFace::kFloor || d.face == DecalFace::kCeiling) &&
+          tiles_.Solid(glyph) && tiles_.Thin(glyph) && !tiles_.IsDoor(glyph)) {
+        for (int dz : {-1, 1}) for (int dx : {-1, 1}) {
+          if (!ThinQuarterRoom(d.x, d.y, dx, dz)) continue;
+          auto quarter = poly;
+          ClipDecal(quarter, true, dx < 0 ? -0.5 : 0, true);
+          ClipDecal(quarter, true, dx < 0 ? 0 : 0.5, false);
+          ClipDecal(quarter, false, dz < 0 ? -0.5 : 0, true);
+          ClipDecal(quarter, false, dz < 0 ? 0 : 0.5, false);
+          emit(quarter);
+        }
+      } else {
+        emit(poly);
       }
       if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
     }
@@ -738,27 +766,16 @@ class SceneBuilder {
 
     // Floor and ceiling in the four quarters of the cell. Each takes the room
     // beside it, or in the pocket of a corner where both edge neighbors are
-    // wall, the room diagonally across. A quarter's neighbors: two on its
-    // edges (n1, n2) and the diagonal one (dx, dy).
+    // wall, the room diagonally across.
     struct Quarter {
       float qx, qz;
-      int n1x, n1y, n2x, n2y;
       int dx, dy;
     };
     const Quarter quarters[4] = {
-        {0, 0, x, y - 1, x - 1, y, x - 1, y - 1},
-        {0.5f, 0, x, y - 1, x + 1, y, x + 1, y - 1},
-        {0, 0.5f, x, y + 1, x - 1, y, x - 1, y + 1},
-        {0.5f, 0.5f, x, y + 1, x + 1, y, x + 1, y + 1}};
+        {0, 0, -1, -1}, {0.5f, 0, 1, -1},
+        {0, 0.5f, -1, 1}, {0.5f, 0.5f, 1, 1}};
     for (const Quarter& q : quarters) {
-      const char n1 = level_.At(q.n1x, q.n1y), n2 = level_.At(q.n2x, q.n2y);
-      const char nd = level_.At(q.dx, q.dy);
-      const auto open = [&](const char c) {
-        return !tiles_.Solid(c) && !tiles_[c].empty;
-      };
-
-      const char open_glyph =
-          open(n1) ? n1 : (open(n2) ? n2 : (open(nd) ? nd : '\0'));
+      const char open_glyph = ThinQuarterRoom(x, y, q.dx, q.dy);
       if (open_glyph == '\0') continue;
       const std::string floor =
           tiles_.IsDoor(open_glyph) ? "wood" : tiles_.FloorTexture(open_glyph);
