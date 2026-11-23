@@ -43,7 +43,11 @@ bool ValidDecal(const Decal& d) {
                     d.face == DecalFace::kThinNorth ||
                     d.face == DecalFace::kThinSouth ||
                     d.face == DecalFace::kThinWest ||
-                    d.face == DecalFace::kThinEast;
+                    d.face == DecalFace::kThinEast ||
+                    d.face == DecalFace::kGlassNorth ||
+                    d.face == DecalFace::kGlassSouth ||
+                    d.face == DecalFace::kGlassWest ||
+                    d.face == DecalFace::kGlassEast;
   return face && !d.texture.empty() &&
          std::none_of(d.texture.begin(), d.texture.end(),
                       [](unsigned char c) { return std::isspace(c) != 0; }) &&
@@ -82,6 +86,14 @@ bool ParseDecalLine(const std::string& line, Decal* const out) {
     d.face = DecalFace::kThinWest;
   else if (face == "thin_east")
     d.face = DecalFace::kThinEast;
+  else if (face == "glass_north")
+    d.face = DecalFace::kGlassNorth;
+  else if (face == "glass_south")
+    d.face = DecalFace::kGlassSouth;
+  else if (face == "glass_west")
+    d.face = DecalFace::kGlassWest;
+  else if (face == "glass_east")
+    d.face = DecalFace::kGlassEast;
   else
     return false;
   if (!ValidDecal(d)) return false;
@@ -122,6 +134,18 @@ std::string SerializeDecalLine(const Decal& d) {
       break;
     case DecalFace::kThinEast:
       face = "thin_east";
+      break;
+    case DecalFace::kGlassNorth:
+      face = "glass_north";
+      break;
+    case DecalFace::kGlassSouth:
+      face = "glass_south";
+      break;
+    case DecalFace::kGlassWest:
+      face = "glass_west";
+      break;
+    case DecalFace::kGlassEast:
+      face = "glass_east";
       break;
   }
   std::ostringstream out;

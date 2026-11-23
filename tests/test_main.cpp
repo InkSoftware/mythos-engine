@@ -963,6 +963,49 @@ TEST(EngineThinWallDecalsClipToVisibleFaces) {
   CHECK(south);
 }
 
+TEST(EngineWindowGlassDecalsClipAndPersist) {
+  for (const bool along_x : {true, false}) {
+    Level level;
+    CHECK(level.Parse(along_x ? std::vector<std::string>{".....", ".WwW.", "....."}
+                              : std::vector<std::string>{".W.", ".w.", ".W."}));
+    level.SetTiles(ThinLegend());
+    for (const auto face : {DecalFace::kGlassNorth, DecalFace::kGlassSouth,
+                            DecalFace::kGlassWest, DecalFace::kGlassEast}) {
+      Decal d;
+      d.x = along_x ? 2 : 1;
+      d.y = 1;
+      d.face = face;
+      d.width = 3;
+      d.height = 4;
+      d.rotation = 20;
+      d.texture = "glass_mark";
+      Decal parsed;
+      CHECK(ParseDecalLine(SerializeDecalLine(d), &parsed));
+      CHECK(parsed == d);
+      CHECK(level.AddDecal(d));
+    }
+    Decal missing;
+    missing.face = DecalFace::kGlassNorth;
+    missing.texture = "missing";
+    CHECK(level.AddDecal(missing));
+    ModelLibrary models;
+    const auto geometry = BuildSceneGeometry(level, models, false);
+    CHECK_EQ(geometry.decals.size(), size_t{2});
+    for (const auto& batch : geometry.decals) {
+      CHECK(batch.texture == "glass_mark");
+      CHECK(!batch.verts.empty());
+      for (const auto& v : batch.verts) {
+        const float along = along_x ? v.px - 2 : v.pz - 1;
+        CHECK(along >= 0.0999f && along <= 0.9001f);
+        CHECK(v.py >= 0.8999f && v.py <= 2.0501f);
+        CHECK(std::abs((along_x ? v.pz : v.px) - 1.5f) < 1e-4f);
+        CHECK(v.u >= -0.0001f && v.u <= 1.0001f);
+        CHECK(v.v >= -0.0001f && v.v <= 1.0001f);
+      }
+    }
+  }
+}
+
 TEST(EngineWindowWallDecalsClipAroundOpening) {
   for (const bool along_x : {true, false}) {
     Level level;

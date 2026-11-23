@@ -283,6 +283,58 @@ class SceneBuilder {
     return boxes;
   }
 
+  void AddGlassDecal(const Decal& d) {
+    if (!level_.InBounds(d.x, d.y)) return;
+    const char glyph = level_.At(d.x, d.y);
+    if (tiles_[glyph].empty || tiles_.IsDoor(glyph) || !tiles_.Solid(glyph) ||
+        !tiles_.Thin(glyph) || !tiles_[glyph].window) return;
+
+    const bool north = d.face == DecalFace::kGlassNorth;
+    const bool south = d.face == DecalFace::kGlassSouth;
+    const bool west = d.face == DecalFace::kGlassWest;
+    const bool horizontal = north || south;
+    if (horizontal != ((level_.ThinArms(d.x, d.y) & 12u) != 0)) return;
+    const double sign = (south || west) ? -1 : 1;
+    const P3 normal = north ? P3{0, 0, -1} : south ? P3{0, 0, 1} :
+                      west ? P3{-1, 0, 0} : P3{1, 0, 0};
+    const double angle = d.rotation * std::numbers::pi / 180.0;
+    const double c = std::cos(angle), s = std::sin(angle);
+    const auto corner = [&](const double a, const double b, const double u,
+                            const double v) {
+      return DecalPoint{d.offset_u + a * c - b * s,
+                        d.offset_v + a * s + b * c, u, v};
+    };
+    const double w = d.width / 2, h = d.height / 2;
+    std::vector<DecalPoint> poly = {
+        corner(-w, -h, 0, 0), corner(w, -h, 1, 0),
+        corner(w, h, 1, 1), corner(-w, h, 0, 1)};
+    ClipDecal(poly, true, kWindowJamb - 0.5, true);
+    ClipDecal(poly, true, 0.5 - kWindowJamb, false);
+    ClipDecal(poly, false, kWindowSill - kWallHeight / 2, true);
+    ClipDecal(poly, false, kWindowHead - kWallHeight / 2, false);
+
+    Batch batch;
+    batch.texture = d.texture;
+    const auto push = [&](const DecalPoint& p) {
+      const float along = static_cast<float>(0.5 + sign * p.x);
+      const float y = static_cast<float>(kWallHeight / 2 + p.y);
+      const P3 pos = horizontal ? P3{d.x + along, y, d.y + 0.5f}
+                                : P3{d.x + 0.5f, y, d.y + along};
+      PushVertex(batch, pos, normal.x, normal.y, normal.z,
+                 static_cast<float>(p.u), static_cast<float>(p.v));
+    };
+    for (size_t i = 1; i + 1 < poly.size(); ++i) {
+      const DecalPoint& a = poly[0];
+      const DecalPoint& b = poly[i];
+      const DecalPoint& c = poly[i + 1];
+      if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
+      push(a);
+      push(b);
+      push(c);
+    }
+    if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
+  }
+
   void AddThinDecal(const Decal& d) {
     if (!level_.InBounds(d.x, d.y)) return;
     const char glyph = level_.At(d.x, d.y);
@@ -447,6 +499,11 @@ class SceneBuilder {
 
   void AddDecals() {
     for (const Decal& d : level_.Decals()) {
+      if (d.face == DecalFace::kGlassNorth || d.face == DecalFace::kGlassSouth ||
+          d.face == DecalFace::kGlassWest || d.face == DecalFace::kGlassEast) {
+        AddGlassDecal(d);
+        continue;
+      }
       if (d.face == DecalFace::kThinNorth || d.face == DecalFace::kThinSouth ||
           d.face == DecalFace::kThinWest || d.face == DecalFace::kThinEast) {
         AddThinDecal(d);
@@ -515,6 +572,10 @@ class SceneBuilder {
         case DecalFace::kThinSouth:
         case DecalFace::kThinWest:
         case DecalFace::kThinEast:
+        case DecalFace::kGlassNorth:
+        case DecalFace::kGlassSouth:
+        case DecalFace::kGlassWest:
+        case DecalFace::kGlassEast:
           break;
       }
       const double angle = d.rotation * std::numbers::pi / 180.0;

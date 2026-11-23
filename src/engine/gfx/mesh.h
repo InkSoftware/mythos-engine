@@ -68,7 +68,9 @@ struct SceneGeometry {
 // Thin-wall decals use the
 // same axes and a cell-centered projection, clipped to vertical thin-wall and
 // window-frame faces (not glass); they can span multiple planes at junctions.
-// Other cells receive no thin decal.
+// Other cells receive no thin decal. Glass decals use the same cell-centered
+// axes and clip to the glass rectangle on the matching side of a window;
+// mismatched sides and non-window cells receive no glass decal.
 
 // Builds the geometry of a level: floors, ceilings, walls, sprites and the
 // furniture models, placed and turned as the level file says. Appearance of
