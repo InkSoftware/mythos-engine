@@ -62,6 +62,7 @@
 #include "engine/ui/ui.h"
 #include "engine/world/body.h"
 #include "engine/world/camera_fx.h"
+#include "engine/world/event_graph.h"
 #include "engine/world/free_cam.h"
 #include "engine/world/gamepad.h"
 #include "engine/world/interact.h"
@@ -884,6 +885,74 @@ TEST(EngineEventRulesPersistAndValidate) {
   CHECK(editor::SerializeLevelDoc(doc).empty());
   CHECK(level.ParseText("[map]\n.\n", &error));
   CHECK(level.Rules().empty());
+}
+
+TEST(EngineEventGraphIntegratesLevelTriggersAndRules) {
+  editor::LevelDoc doc;
+  doc.rows = {"."};
+  for (const auto& [id, event] :
+       std::vector<std::pair<std::string, TriggerEvent>>{
+           {"a", TriggerEvent::kEnter},
+           {"b", TriggerEvent::kStay},
+           {"c", TriggerEvent::kUse},
+           {"d", TriggerEvent::kExit}}) {
+    Trigger trigger;
+    trigger.id = id;
+    trigger.shape = TriggerShape::kCell;
+    trigger.event = event;
+    trigger.once = id == "a";
+    doc.triggers.push_back(trigger);
+  }
+  for (const auto& [id, detail] :
+       std::vector<std::pair<std::string, std::string>>{
+           {"a", "enter"}, {"b", "stay"}, {"c", "use"}, {"d", "exit"}})
+    doc.rules.push_back({id,
+                         {EventKind::kTrigger, id, detail, false},
+                         {{"enabled", true}},
+                         {{id, detail}}});
+  doc.rules.push_back(
+      {"timer", {EventKind::kTimer, "clock", "", false}, {}, {{"tick", ""}}});
+  Level level;
+  CHECK(level.ParseText(editor::SerializeLevelDoc(doc)));
+  EventGraphRuntime graph;
+  CHECK(graph.Load(level));
+  EventGraphRuntime::Flags flags{{"enabled", true}};
+  std::vector<std::string> actions;
+  auto record = [&](const EventAction& action) {
+    actions.push_back(action.type);
+  };
+  CHECK(!graph.Sample({0.5, 0, 0.5}, 0, true, flags, {}));
+  CHECK(!graph.Sample({std::numeric_limits<double>::quiet_NaN(), 0, 0}, 0,
+                      false, flags, record));
+  CHECK(graph.Sample({0.5, 0, 0.5}, 0, true, flags, [&](const EventAction& a) {
+    actions.push_back(a.type);
+    flags["enabled"] = false;
+    CHECK(!graph.Reset());
+    CHECK(!graph.Sample({2, 0, 0}, 0, false, flags, record));
+  }));
+  CHECK(actions == std::vector<std::string>({"a", "c"}));
+  flags["enabled"] = true;
+  actions.clear();
+  CHECK(graph.Sample({0.5, 0, 0.5}, 0, true, flags, record));
+  CHECK(actions == std::vector<std::string>({"b", "c"}));
+  actions.clear();
+  CHECK(graph.Sample({0.5, 0, 0.5}, 1, false, flags, record));
+  CHECK(actions == std::vector<std::string>({"d"}));
+  actions.clear();
+  CHECK(graph.Sample({0.5, 0, 0.5}, 0, false, flags, record));
+  CHECK(actions.empty());
+  CHECK(graph.Reset());
+  CHECK(graph.Sample({0.5, 0, 0.5}, 0, false, flags, record));
+  CHECK(actions == std::vector<std::string>({"a"}));
+  actions.clear();
+  CHECK(graph.Dispatch({EventKind::kTimer, "clock", "", false}, flags, record));
+  CHECK(actions == std::vector<std::string>({"tick"}));
+  CHECK(!graph.Dispatch({EventKind::kTrigger, "a", "enter", false}, flags,
+                        record));
+  CHECK(graph.Clear());
+  actions.clear();
+  CHECK(graph.Sample({0.5, 0, 0.5}, 0, true, flags, record));
+  CHECK(actions.empty());
 }
 
 TEST(EngineEventRulesDispatchAndValidate) {

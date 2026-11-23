@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "engine/data/events.h"
+#include "engine/core/events.h"
 #include "engine/world/decal.h"
 #include "engine/world/tiles.h"
 #include "engine/world/trigger.h"

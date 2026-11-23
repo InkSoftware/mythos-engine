@@ -106,6 +106,13 @@ The engine gives mechanisms; a game gives meaning.
 - **A front end**: build the camera and lights each frame (`CameraState`, then `ApplySettings(settings, camera)`),
   poll input with `PollInput`, play cues with `PlayCue`, upload geometry to `SceneRenderer` (and models for things that move, with `UploadModel`; `CameraState::instances` and `CameraState::mirror` draw them and one wall mirror).
 
+Levels may also contain `[triggers]` and `[rules]`. A game can load them with
+`EventGraphRuntime::Load(level)`, call `Sample(position, floor, use_pressed, flags, callback)`
+each update, and call `Dispatch(event, flags, callback)` for its own flag and timer events.
+The callback implements action types; the game owns flags, timers and use-press edges.
+The runtime tracks one point subject, samples discretely, and must be reloaded after level edits.
+The level-file rule encoding is documented in `engine/core/events.h`.
+
 ## Models and textures
 
 **Shipped in `assets/` (Poly Haven, CC0).** The basic models of houses and offices: furniture, household things,
