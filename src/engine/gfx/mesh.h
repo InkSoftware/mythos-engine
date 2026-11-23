@@ -1,6 +1,8 @@
 #ifndef MYTHOS_ENGINE_GFX_MESH_H_
 #define MYTHOS_ENGINE_GFX_MESH_H_
 
+#include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -48,6 +50,28 @@ struct Batch {
   // Three vertices per triangle; there is no index buffer.
   std::vector<Vertex> verts;
 };
+
+// A rectangle in model-local meters. Tangent gives the +U direction; its
+// component along normal is discarded. +V is normal cross +U. Rotation is
+// counterclockwise in the U/V plane, in degrees.
+struct ModelDecal {
+  std::array<float, 3> center{};
+  std::array<float, 3> normal{};
+  std::array<float, 3> tangent{};
+  float width = 0, height = 0;
+  double rotation_deg = 0;
+  std::string texture;
+};
+
+// Builds a six-vertex, full-UV rectangle in world coordinates using the same
+// yaw, cell center, offsets and lift as a placed model. Returns nullopt for an
+// empty texture, non-finite values, non-positive size, or a zero normal or
+// tangent. Also rejects a normalized tangent whose planar component is at most
+// 1e-6, and geometry that collapses or overflows at vertex precision. It uses
+// default draw flags. No surface clipping, offset, attachment or persistence is
+// performed; callers supply a suitable surface and handle rendering.
+[[nodiscard]] std::optional<Batch> BuildModelDecal(const Placement& placement,
+                                                   const ModelDecal& decal);
 
 // The static geometry of one scene.
 struct SceneGeometry {

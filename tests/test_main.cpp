@@ -788,6 +788,53 @@ TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
   CHECK_EQ(geometry.decals.size(), size_t{12});
 }
 
+TEST(EngineModelDecalTransformAndValidation) {
+  Placement p;
+  p.x = 2;
+  p.y = 3;
+  p.off_x = 0.25;
+  p.off_z = -0.25;
+  p.lift = 0.5;
+  p.yaw_deg = 90;
+  ModelDecal d;
+  d.center = {0, 1, 1};
+  d.normal = {0, 0, 1};
+  d.tangent = {1, 0, 0};
+  d.width = 2;
+  d.height = 1;
+  d.texture = "mark";
+  const auto batch = BuildModelDecal(p, d);
+  CHECK(batch.has_value());
+  if (batch) {
+    CHECK(batch->texture == "mark");
+    CHECK_EQ(batch->verts.size(), size_t{6});
+    for (const auto& v : batch->verts) {
+      CHECK(std::abs(v.px - 3.75f) < 1e-4f);
+      CHECK(v.py >= 0.9999f && v.py <= 2.0001f);
+      CHECK(v.pz >= 2.2499f && v.pz <= 4.2501f);
+      CHECK(std::abs(v.nx - 1) < 1e-4f && std::abs(v.nz) < 1e-4f);
+      CHECK(v.u >= 0 && v.u <= 1 && v.v >= 0 && v.v <= 1);
+    }
+  }
+  d.rotation_deg = 90;
+  const auto rotated = BuildModelDecal(p, d);
+  CHECK(rotated.has_value());
+  if (rotated) {
+    for (const auto& v : rotated->verts) {
+      CHECK(v.py >= 0.4999f && v.py <= 2.5001f);
+      CHECK(v.pz >= 2.7499f && v.pz <= 3.7501f);
+    }
+  }
+  d.tangent = d.normal;
+  CHECK(!BuildModelDecal(p, d));
+  d.tangent = {1, 0, 0};
+  d.width = 0;
+  CHECK(!BuildModelDecal(p, d));
+  d.width = 1;
+  d.center[0] = std::numeric_limits<float>::infinity();
+  CHECK(!BuildModelDecal(p, d));
+}
+
 TEST(EngineCellDecalsClipToFaceBounds) {
   Level level;
   CHECK(level.Parse({"###", "#.#", "###"}));

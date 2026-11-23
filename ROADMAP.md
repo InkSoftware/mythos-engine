@@ -60,6 +60,8 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   are clipped to the glass; prop decals remain. Glass decals render before
   blended glass and are not restricted to one viewing side. The editor viewport
   displays decals in a separate blended pass; visual verification remains.
+  A model-local quad builder is available for prop decals, but attachment,
+  persistence, clipping and automatic rendering are not yet implemented.
 - **Why:** bullet holes, stains, blood, footprints, drips.
 - **Where:** `world/decal.h` places a quad on a wall, floor or prop surface
   (cell, face, offset, size, rotation, texture) and bakes them into the scene

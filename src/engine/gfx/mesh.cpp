@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 #include "engine/gfx/model.h"
@@ -941,6 +942,91 @@ class SceneBuilder {
   bool outdoor_;
   SceneGeometry geometry_;
 };
+}
+
+std::optional<Batch> BuildModelDecal(const Placement& placement,
+                                     const ModelDecal& decal) {
+  const auto finite3 = [](const std::array<float, 3>& v) {
+    return std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]);
+  };
+  const double cx = placement.x + 0.5 + placement.off_x;
+  const double cz = placement.y + 0.5 + placement.off_z;
+  const double limit = std::numeric_limits<float>::max();
+  if (decal.texture.empty() || !finite3(decal.center) ||
+      !finite3(decal.normal) || !finite3(decal.tangent) ||
+      !std::isfinite(decal.width) || !std::isfinite(decal.height) ||
+      decal.width <= 0 || decal.height <= 0 ||
+      !std::isfinite(decal.rotation_deg) || !std::isfinite(placement.yaw_deg) ||
+      !std::isfinite(cx) || !std::isfinite(cz) ||
+      !std::isfinite(placement.lift) || std::abs(cx) > limit ||
+      std::abs(cz) > limit || std::abs(placement.lift) > limit ||
+      !std::isfinite(placement.yaw_deg * std::numbers::pi)) return std::nullopt;
+
+  using Vec = std::array<double, 3>;
+  const auto dot = [](const Vec& a, const Vec& b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  };
+  const auto cross = [](const Vec& a, const Vec& b) -> Vec {
+    return {a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0]};
+  };
+  Vec n{decal.normal[0], decal.normal[1], decal.normal[2]};
+  Vec t{decal.tangent[0], decal.tangent[1], decal.tangent[2]};
+  const double nl = std::sqrt(dot(n, n)), tl = std::sqrt(dot(t, t));
+  if (nl == 0 || tl == 0) return std::nullopt;
+  for (double& v : n) v /= nl;
+  for (double& v : t) v /= tl;
+  const double projection = dot(n, t);
+  for (int i = 0; i < 3; ++i) t[i] -= projection * n[i];
+  const double projected_length = std::sqrt(dot(t, t));
+  if (projected_length <= 1e-6) return std::nullopt;
+  for (double& v : t) v /= projected_length;
+  const Vec b = cross(n, t);
+  const double angle = std::remainder(decal.rotation_deg, 360.0) *
+                       std::numbers::pi / 180.0;
+  const double c = std::cos(angle), s = std::sin(angle);
+  Vec u{}, v{};
+  for (int i = 0; i < 3; ++i) {
+    u[i] = (c * t[i] + s * b[i]) * (decal.width * 0.5);
+    v[i] = (-s * t[i] + c * b[i]) * (decal.height * 0.5);
+  }
+  P3 corners[4];
+  constexpr int signs[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
+  for (int i = 0; i < 4; ++i) {
+    float p[3];
+    for (int j = 0; j < 3; ++j) {
+      const double value =
+          decal.center[j] + signs[i][0] * u[j] + signs[i][1] * v[j];
+      if (!std::isfinite(value) || std::abs(value) > limit) return std::nullopt;
+      p[j] = static_cast<float>(value);
+    }
+    corners[i] = {p[0], p[1], p[2]};
+  }
+  Model model;
+  model.batches.emplace_back();
+  Batch& local = model.batches.back();
+  local.texture = decal.texture;
+  AddQuad(local, corners[0], corners[1], corners[2], corners[3],
+          static_cast<float>(n[0]), static_cast<float>(n[1]),
+          static_cast<float>(n[2]), 1, 1);
+  std::vector<Batch> result;
+  AppendModel(result, model, cx, cz, placement.yaw_deg, placement.lift);
+  const auto& vertices = result[0].verts;
+  for (const auto& vertex : vertices) {
+    if (!std::isfinite(vertex.px) || !std::isfinite(vertex.py) ||
+        !std::isfinite(vertex.pz)) return std::nullopt;
+  }
+  // Both triangles must survive rounding to world-space vertex precision.
+  for (int i : {0, 3}) {
+    const auto& a = vertices[i];
+    const auto& q = vertices[i + 1];
+    const auto& r = vertices[i + 2];
+    const Vec ab{double(q.px) - a.px, double(q.py) - a.py, double(q.pz) - a.pz};
+    const Vec ac{double(r.px) - a.px, double(r.py) - a.py, double(r.pz) - a.pz};
+    const Vec area = cross(ab, ac);
+    if (dot(area, area) == 0) return std::nullopt;
+  }
+  return std::move(result[0]);
 }
 
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
