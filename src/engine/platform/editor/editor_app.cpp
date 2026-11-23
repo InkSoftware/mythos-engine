@@ -190,6 +190,7 @@ void EditorApp::OpenLevel(const std::string& name) {
       context_ = project_.Contexts().front();
   }
   Deselect();
+  trigger_sel_.clear();
   RebuildScene();
   FrameLevel();
   RefreshProblems();
@@ -198,6 +199,7 @@ void EditorApp::OpenLevel(const std::string& name) {
 void EditorApp::SetContext(const std::string& context) {
   context_ = context;
   Deselect();
+  trigger_sel_.clear();
   built_revision_ = 0;
   RefreshProblems();
 }
@@ -528,6 +530,7 @@ void EditorApp::Save() {
 // something gone; checks must be redone.
 void EditorApp::Undo() {
   if (history_.Undo(&project_)) {
+    trigger_sel_.clear();
     if (has_sel_) {
       Pose p;
       if (!project_.GetPose(Here(), sel_, &p)) Deselect();
@@ -538,6 +541,7 @@ void EditorApp::Undo() {
 
 void EditorApp::Redo() {
   if (history_.Redo(&project_)) {
+    trigger_sel_.clear();
     if (has_sel_) {
       Pose p;
       if (!project_.GetPose(Here(), sel_, &p)) Deselect();
@@ -994,6 +998,35 @@ void EditorApp::DrawOverlay(const ImVec2 size) {
           z == 0 || z == doc->Height() ? edge : (z % 5 == 0 ? major : minor));
     viewport_.Line({0, fy + 0.004f, 0}, {1.5f, fy + 0.004f, 0}, kRed);
     viewport_.Line({0, fy + 0.004f, 0}, {0, fy + 0.004f, 1.5f}, kBlue);
+  }
+
+  if (show_triggers_) {
+    const LevelInfo info = project_.Info(level_);
+    for (const Trigger& t : doc->triggers) {
+      Vec3 c, h;
+      if (t.shape == TriggerShape::kCell) {
+        const float y = info.stacked ? t.floor * mythos::kFloorPitch : fy;
+        c = {static_cast<float>(t.cell_x) + 0.5f, y + 1.25f,
+             static_cast<float>(t.cell_z) + 0.5f};
+        h = {0.5f, 1.25f, 0.5f};
+      } else {
+        c = {static_cast<float>(t.min.x * 0.5 + t.max.x * 0.5),
+             static_cast<float>(t.min.y * 0.5 + t.max.y * 0.5),
+             static_cast<float>(t.min.z * 0.5 + t.max.z * 0.5)};
+        h = {static_cast<float>(t.max.x * 0.5 - t.min.x * 0.5),
+             static_cast<float>(t.max.y * 0.5 - t.min.y * 0.5),
+             static_cast<float>(t.max.z * 0.5 - t.min.z * 0.5)};
+      }
+      if (!std::isfinite(c.x) || !std::isfinite(c.y) || !std::isfinite(c.z) ||
+          !std::isfinite(h.x) || !std::isfinite(h.y) || !std::isfinite(h.z) ||
+          !std::isfinite(c.x + h.x) || !std::isfinite(c.x - h.x) ||
+          !std::isfinite(c.y + h.y) || !std::isfinite(c.y - h.y) ||
+          !std::isfinite(c.z + h.z) || !std::isfinite(c.z - h.z))
+        continue;
+      const bool selected = t.id == trigger_sel_;
+      viewport_.WireBox(
+          c, h, 0, selected ? kYellow : Rgba{0.25f, 0.85f, 1, 0.7f}, selected);
+    }
   }
 
   for (const EntityRef& r : project_.Entities(Here())) {

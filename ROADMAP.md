@@ -97,8 +97,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   flag and timer events. Level files and editor documents persist `[triggers]`
   and `[rules]`. `world/event_graph.h` connects level triggers and rules for a
   single sampled subject; games must supply the update, flags, timers and action
-  callbacks. Editor controls remain. Rule strings use a hex-encoded line format
-  (documented in `core/events.h`), not a visual graph.
+  callbacks. The editor can add, edit, delete and display trigger volumes;
+  it does not rewrite rule references on trigger rename or deletion. Rule
+  editing and a visual graph remain. Rule strings use a hex-encoded line
+  format (documented in `core/events.h`).
 - **Why:** UnityEvents and Blueprints. Today a game hand-writes every rule.
 - **Where:** `world/trigger.h` (box and cell trigger volumes: enter, exit,
   stay, use, with a once flag) and `data/events.h` (a data-driven rule: on

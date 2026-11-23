@@ -2573,6 +2573,41 @@ TEST(EditorRejectsInvalidTriggersWithoutOverwritingLevel) {
   CHECK(f.Read("assets/levels/ground.txt") == before);
 }
 
+TEST(EditorTriggerChangesSaveAndUndoRedo) {
+  EditorFixture f;
+  editor::Project p;
+  std::string err;
+  CHECK(p.Load(f.root.string(), &err));
+  editor::History history;
+  history.Reset(p);
+  Trigger trigger;
+  trigger.id = "entry";
+  trigger.shape = TriggerShape::kCell;
+  trigger.cell_x = 1;
+  trigger.cell_z = 1;
+  p.Level("ground")->triggers.push_back(trigger);
+  p.Touch("ground");
+  CHECK(history.Commit(p));
+  p.Level("ground")->triggers[0].event = TriggerEvent::kUse;
+  p.Touch("ground");
+  CHECK(history.Commit(p));
+  CHECK(history.Undo(&p));
+  CHECK(p.Level("ground")->triggers[0].event == TriggerEvent::kEnter);
+  CHECK(history.Redo(&p));
+  CHECK(p.Level("ground")->triggers[0].event == TriggerEvent::kUse);
+  CHECK(p.Save(&err));
+  editor::Project loaded;
+  CHECK(loaded.Load(f.root.string(), &err));
+  CHECK(loaded.Level("ground")->triggers == p.Level("ground")->triggers);
+  p.Level("ground")->triggers.clear();
+  p.Touch("ground");
+  CHECK(history.Commit(p));
+  CHECK(history.Undo(&p));
+  CHECK_EQ(p.Level("ground")->triggers.size(), size_t{1});
+  CHECK(history.Redo(&p));
+  CHECK(p.Level("ground")->triggers.empty());
+}
+
 TEST(EditorChecksFurnitureInWallsMissingModelsAndStairwells) {
   EditorFixture f;
   const FakeAdapter adapter;

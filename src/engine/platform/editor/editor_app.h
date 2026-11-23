@@ -216,6 +216,8 @@ class EditorApp {
 
   void DrawInspector();
 
+  void DrawTriggers(LevelDoc& doc);
+
   void DrawPalette();
 
   void DrawAssets();
@@ -252,6 +254,9 @@ class EditorApp {
   std::string level_, context_;
   EntityRef sel_;
   bool has_sel_ = false;
+  std::string trigger_sel_;
+  Trigger trigger_draft_;
+  bool show_triggers_ = true;
   Tool tool_ = Tool::kSelect;
   char glyph_ = '#';
   int brush_ = 1;

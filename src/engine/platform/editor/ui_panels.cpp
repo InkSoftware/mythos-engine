@@ -518,6 +518,125 @@ void EditorApp::DrawTileInfo(const char glyph) {
                      TileDescription(project_.Tiles()[glyph], glyph).c_str());
 }
 
+void EditorApp::DrawTriggers(LevelDoc& doc) {
+  if (!ImGui::CollapsingHeader("Triggers", ImGuiTreeNodeFlags_DefaultOpen))
+    return;
+  if (ImGui::SmallButton("Add trigger")) {
+    Trigger t;
+    size_t suffix = 1;
+    do {
+      t.id = "trigger_" + std::to_string(suffix++);
+    } while (std::ranges::any_of(
+        doc.triggers, [&](const Trigger& other) { return other.id == t.id; }));
+    t.shape = TriggerShape::kBox;
+    t.min = {0, FloorY(), 0};
+    t.max = {1, FloorY() + 2.5, 1};
+    t.floor = project_.Info(level_).floor;
+    doc.triggers.push_back(t);
+    project_.Touch(level_);
+    trigger_sel_ = t.id;
+    trigger_draft_ = t;
+  }
+  ImGui::SameLine();
+  ImGui::Checkbox("Show volumes", &show_triggers_);
+
+  if (ImGui::BeginCombo("Trigger", trigger_sel_.empty()
+                                       ? "(select a trigger)"
+                                       : trigger_sel_.c_str())) {
+    for (size_t i = 0; i < doc.triggers.size(); ++i) {
+      const Trigger& t = doc.triggers[i];
+      ImGui::PushID(static_cast<int>(i));
+      const bool clicked = ImGui::Selectable("##trigger", t.id == trigger_sel_);
+      const ImVec2 min = ImGui::GetItemRectMin(), max = ImGui::GetItemRectMax();
+      const ImVec4 clip{min.x, min.y, max.x, max.y};
+      ImGui::GetWindowDrawList()->AddText(
+          ImGui::GetFont(), ImGui::GetFontSize(),
+          {min.x + ImGui::GetStyle().FramePadding.x,
+           min.y + (max.y - min.y - ImGui::GetFontSize()) * 0.5f},
+          ImGui::GetColorU32(ImGuiCol_Text), t.id.c_str(), nullptr, 0, &clip);
+      if (clicked) {
+        trigger_sel_ = t.id;
+        trigger_draft_ = t;
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndCombo();
+  }
+  auto selected = std::ranges::find_if(
+      doc.triggers, [&](const Trigger& t) { return t.id == trigger_sel_; });
+  if (selected == doc.triggers.end()) {
+    trigger_sel_.clear();
+    return;
+  }
+
+  InputStr("ID", &trigger_draft_.id);
+  int shape = trigger_draft_.shape == TriggerShape::kBox ? 0 : 1;
+  if (ImGui::Combo("Shape", &shape, "Box\0Cell\0")) {
+    trigger_draft_.shape =
+        shape == 0 ? TriggerShape::kBox : TriggerShape::kCell;
+    if (trigger_draft_.shape == TriggerShape::kCell)
+      trigger_draft_.floor = project_.Info(level_).floor;
+  }
+  int event = static_cast<int>(trigger_draft_.event);
+  if (ImGui::Combo("Event", &event, "Enter\0Exit\0Stay\0Use\0"))
+    trigger_draft_.event = static_cast<TriggerEvent>(event);
+  ImGui::Checkbox("Once", &trigger_draft_.once);
+  if (trigger_draft_.shape == TriggerShape::kCell) {
+    int cell[2] = {trigger_draft_.cell_x, trigger_draft_.cell_z};
+    if (ImGui::DragInt2("Cell X / Z", cell, 0.1f)) {
+      trigger_draft_.cell_x = cell[0];
+      trigger_draft_.cell_z = cell[1];
+    }
+    ImGui::InputInt("Floor", &trigger_draft_.floor);
+    ImGui::TextDisabled("Cell volume has no height limit.");
+  } else {
+    double lo[3] = {trigger_draft_.min.x, trigger_draft_.min.y,
+                    trigger_draft_.min.z};
+    double hi[3] = {trigger_draft_.max.x, trigger_draft_.max.y,
+                    trigger_draft_.max.z};
+    if (ImGui::DragScalarN("Min XYZ (world)", ImGuiDataType_Double, lo, 3,
+                           0.05f, nullptr, nullptr, "%.3f"))
+      trigger_draft_.min = {lo[0], lo[1], lo[2]};
+    if (ImGui::DragScalarN("Max XYZ (world)", ImGuiDataType_Double, hi, 3,
+                           0.05f, nullptr, nullptr, "%.3f"))
+      trigger_draft_.max = {hi[0], hi[1], hi[2]};
+  }
+
+  const bool valid_line = !SerializeTriggerLine(trigger_draft_).empty();
+  const bool unique = std::ranges::none_of(doc.triggers, [&](const Trigger& t) {
+    return t.id != trigger_sel_ && t.id == trigger_draft_.id;
+  });
+  const bool in_bounds =
+      trigger_draft_.shape != TriggerShape::kCell ||
+      doc.InBounds(trigger_draft_.cell_x, trigger_draft_.cell_z);
+  if (!valid_line)
+    ImGui::TextWrapped(
+        "ID must be one token; box bounds must be finite and ordered.");
+  else if (!unique)
+    ImGui::TextWrapped("Trigger ID is already in use.");
+  else if (!in_bounds)
+    ImGui::TextWrapped("Cell must be inside the level map.");
+  ImGui::TextWrapped(
+      "Apply saves the draft to the level. Switching triggers discards it. "
+      "Renaming or deleting does not update rules that reference this ID.");
+  ImGui::BeginDisabled(!valid_line || !unique || !in_bounds ||
+                       trigger_draft_ == *selected);
+  if (ImGui::Button("Apply trigger")) {
+    *selected = trigger_draft_;
+    trigger_sel_ = trigger_draft_.id;
+    project_.Touch(level_);
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("Revert draft")) trigger_draft_ = *selected;
+  ImGui::SameLine();
+  if (ImGui::Button("Delete trigger")) {
+    doc.triggers.erase(selected);
+    trigger_sel_.clear();
+    project_.Touch(level_);
+  }
+}
+
 // Level summary and the properties of the selection: furniture and decor
 // are edited in place, anything else through its adapter data (EditJson).
 void EditorApp::DrawInspector() {
@@ -537,6 +656,8 @@ void EditorApp::DrawInspector() {
                         doc->decor.size());
     if (ImGui::SmallButton("Resize...")) open_resize_ = true;
   }
+
+  if (doc) DrawTriggers(*doc);
 
   Pose pose;
   if (has_sel_ && SelectedPose(&pose)) {
@@ -892,6 +1013,7 @@ void EditorApp::DrawViewportWindow(const float dt) {
     ImGui::Checkbox("Lights", &show_lights_);
     ImGui::Checkbox("Dark rooms", &show_rooms_);
     ImGui::Checkbox("Collision boxes", &show_colliders_);
+    ImGui::Checkbox("Trigger volumes", &show_triggers_);
     ImGui::Separator();
     int sm = static_cast<int>(shade_);
     ImGui::SetNextItemWidth(110);
@@ -1021,7 +1143,8 @@ void EditorApp::DrawModals() {
     ImGui::InputInt("Height", &resize_h_);
     ImGui::TextDisabled(
         "Rows and columns are added or removed at the right and bottom "
-        "edges.\nFurniture and decor beyond the new edge are dropped.");
+        "edges.\nFurniture, decor and cell triggers beyond the new edge are "
+        "dropped.");
     if (ImGui::Button("Resize", {100, 0})) {
       if (LevelDoc* d = project_.Level(level_)) {
         if (resize_w_ >= 3 && resize_h_ >= 3 && resize_w_ <= 200 &&
@@ -1029,6 +1152,7 @@ void EditorApp::DrawModals() {
           d->Resize(resize_w_, resize_h_, '.');
           project_.Touch(level_);
           Deselect();
+          trigger_sel_.clear();
           FrameLevel();
         }
       }
