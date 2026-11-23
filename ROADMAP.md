@@ -55,8 +55,8 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ### 1.3 Decals (S to M)
 - **Progress:** cell-bounded decals, clipped thin-wall and window-frame decals,
   a separate blended render pass and `[decals]` persistence are implemented.
-  Prop and window glass decals remain; cell-wall and thin-wall floor/ceiling
-  decals do not yet check for actual surfaces.
+  Cell-wall decals require a visible neighboring thick wall. Prop and window
+  glass decals remain; thin-wall floor/ceiling decals can cover gaps.
 - **Why:** bullet holes, stains, blood, footprints, drips.
 - **Where:** `world/decal.h` places a quad on a wall, floor or prop surface
   (cell, face, offset, size, rotation, texture) and bakes them into the scene

@@ -758,7 +758,7 @@ TEST(EngineDecalsPersistAndEvictOldest) {
 
 TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
   Level level;
-  CHECK(level.Parse({"...", "...", "..."}));
+  CHECK(level.Parse({"###", "#.#", "###"}));
   for (const auto face :
        {DecalFace::kNorth, DecalFace::kSouth, DecalFace::kWest,
         DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling}) {
@@ -790,11 +790,12 @@ TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
 
 TEST(EngineCellDecalsClipToFaceBounds) {
   Level level;
-  CHECK(level.Parse({"."}));
+  CHECK(level.Parse({"###", "#.#", "###"}));
   for (const auto face : {DecalFace::kNorth, DecalFace::kSouth,
                           DecalFace::kWest, DecalFace::kEast,
                           DecalFace::kFloor, DecalFace::kCeiling}) {
     Decal d;
+    d.x = d.y = 1;
     d.face = face;
     d.width = 3;
     d.height = 4;
@@ -803,6 +804,7 @@ TEST(EngineCellDecalsClipToFaceBounds) {
     CHECK(level.AddDecal(d));
   }
   Decal outside;
+  outside.x = outside.y = 1;
   outside.face = DecalFace::kFloor;
   outside.offset_u = 10;
   outside.texture = "outside";
@@ -813,8 +815,8 @@ TEST(EngineCellDecalsClipToFaceBounds) {
   for (const auto& batch : geometry.decals) {
     CHECK(!batch.verts.empty());
     for (const auto& v : batch.verts) {
-      CHECK(v.px >= -0.0001f && v.px <= 1.0001f);
-      CHECK(v.pz >= -0.0001f && v.pz <= 1.0001f);
+      CHECK(v.px >= 0.9999f && v.px <= 2.0001f);
+      CHECK(v.pz >= 0.9999f && v.pz <= 2.0001f);
       CHECK(v.py >= -0.0001f && v.py <= kWallHeight + 0.0001f);
       CHECK(v.u >= 0 && v.u <= 1 && v.v >= 0 && v.v <= 1);
     }
@@ -851,6 +853,26 @@ TEST(EngineHorizontalDecalsRequireSurfaces) {
   CHECK_EQ(outdoor.decals.size(), size_t{2});
   CHECK(outdoor.decals[0].texture == "0f");
   CHECK(outdoor.decals[1].texture == "3f");
+}
+
+TEST(EngineWallDecalsRequireThickWallFaces) {
+  Level level;
+  CHECK(level.Parse({".....", ".###.", ".#...", ".#W..", "....."}));
+  level.SetTiles(ThinLegend());
+  for (const auto face : {DecalFace::kNorth, DecalFace::kSouth,
+                          DecalFace::kWest, DecalFace::kEast}) {
+    Decal d;
+    d.x = 2;
+    d.y = 2;
+    d.face = face;
+    d.texture = std::to_string(static_cast<int>(face));
+    CHECK(level.AddDecal(d));
+  }
+  ModelLibrary models;
+  const auto geometry = BuildSceneGeometry(level, models, false);
+  CHECK_EQ(geometry.decals.size(), size_t{2});
+  CHECK(geometry.decals[0].texture == std::to_string(static_cast<int>(DecalFace::kNorth)));
+  CHECK(geometry.decals[1].texture == std::to_string(static_cast<int>(DecalFace::kWest)));
 }
 
 TEST(EngineThinWallsAndWindowsBuildGeometry) {

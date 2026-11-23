@@ -450,6 +450,16 @@ class SceneBuilder {
         if (!tiles_.Solid(glyph) && !tiles_.IsDoor(glyph) &&
             ((d.face == DecalFace::kFloor && tile.open_floor) ||
              (d.face == DecalFace::kCeiling && tile.open_ceiling))) continue;
+      } else {
+        int nx = d.x, ny = d.y;
+        if (d.face == DecalFace::kNorth) --ny;
+        if (d.face == DecalFace::kSouth) ++ny;
+        if (d.face == DecalFace::kWest) --nx;
+        if (d.face == DecalFace::kEast) ++nx;
+        const char receiver = level_.At(nx, ny);
+        if (!level_.InBounds(nx, ny) || tiles_[receiver].empty ||
+            !tiles_.Solid(receiver) || tiles_.Thin(receiver) ||
+            tiles_.IsDoor(receiver) || !WallFaceOpen(nx, ny, d.x, d.y)) continue;
       }
       const float x = static_cast<float>(d.x), z = static_cast<float>(d.y);
       P3 center{}, u{}, v{}, normal{};
