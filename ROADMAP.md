@@ -141,6 +141,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Risk:** the biggest item; split into loader, sampler, GPU skinning.
 
 ### 3.2 AI and pathfinding (M)
+- **Progress:** `world/nav.h` provides deterministic cardinal A* and a
+  reachability flood, with optional conservative body-clearance checks and
+  door avoidance. It treats thin-wall cells as blocked; sub-cell routing,
+  smoothing, behaviour trees and perception remain.
 - **Where:** `world/nav.h` is A\* on the grid with door and thin-wall awareness
   (`Level::ThinArms`, `BoxBlocked`), path smoothing and a reachability flood.
   `world/ai.h` is a minimal behaviour-tree runtime (sequence, selector,

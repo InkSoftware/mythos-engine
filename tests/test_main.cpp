@@ -69,6 +69,7 @@
 #include "engine/world/level.h"
 #include "engine/world/mirror.h"
 #include "engine/world/movement.h"
+#include "engine/world/nav.h"
 #include "engine/world/player.h"
 #include "engine/world/room_doors.h"
 #include "engine/world/tiles.h"
@@ -698,6 +699,57 @@ TEST(EngineThinWallsJoinUpAndBlockSight) {
   CHECK(l.LineOfSight(1.5, 2.5, 3.5, 2.5));
   CHECK(!l.LineOfSight(2.5, 2.5, 2.5, 0.5));
   CHECK(l.LineOfSight(2.5, 2.5, 2.5, 1.7));
+}
+
+TEST(EngineNavigationShortestPathsAndReachability) {
+  Level level;
+  CHECK(level.Parse({"#######", "#.....#", "#.###.#", "#.....#", "#######"}));
+  const std::vector<NavCell> expected{{1, 1}, {2, 1}, {3, 1}, {4, 1},
+                                      {5, 1}, {5, 2}, {5, 3}};
+  CHECK(FindPath(level, {1, 1}, {5, 3}) == expected);
+  CHECK(FindPath(level, {1, 1}, {5, 3}) == expected);
+  CHECK_EQ(ReachableCells(level, {1, 1}).size(), size_t{12});
+  CHECK_EQ(FindPath(level, {1, 1}, {1, 1}).size(), size_t{1});
+  CHECK(FindPath(level, {-1, 1}, {1, 1}).empty());
+  CHECK(FindPath(level, {1, 1}, {3, 2}).empty());
+  CHECK(ReachableCells(level, {3, 2}).empty());
+  level.Set(5, 2, '#');
+  level.Set(1, 2, '#');
+  CHECK(FindPath(level, {1, 1}, {5, 3}).empty());
+  CHECK_EQ(ReachableCells(level, {1, 1}).size(), size_t{5});
+}
+
+TEST(EngineNavigationDoorsAndBodyClearance) {
+  Level level;
+  CHECK(level.Parse({"#####", "#.N.#", "#####"}));
+  auto tiles = std::make_shared<TileSet>();
+  (*tiles)['N'].solid = true;
+  (*tiles)['N'].door = DoorKind::kClosed;
+  (*tiles)['n'].door = DoorKind::kOpen;
+  level.SetTiles(tiles);
+  CHECK(FindPath(level, {1, 1}, {3, 1}).empty());
+  level.Set(2, 1, 'n');
+  CHECK_EQ(FindPath(level, {1, 1}, {3, 1}).size(), size_t{3});
+  NavOptions options;
+  options.avoid_doors = true;
+  CHECK(FindPath(level, {1, 1}, {3, 1}, options).empty());
+  options.avoid_doors = false;
+  options.check_occupancy = true;
+  options.radius = 0.2;
+  CHECK_EQ(FindPath(level, {1, 1}, {3, 1}, options).size(), size_t{3});
+  options.radius = 0.5;
+  CHECK(FindPath(level, {1, 1}, {3, 1}, options).empty());
+  options.radius = std::numeric_limits<double>::quiet_NaN();
+  CHECK(ReachableCells(level, {1, 1}, options).empty());
+
+  CHECK(level.Parse({".......", ".......", "..W....", ".......", "......."}));
+  level.SetTiles(ThinLegend());
+  options.radius = 0.3;
+  CHECK_EQ(FindPath(level, {1, 3}, {3, 3}, options).size(), size_t{3});
+  options.radius = 0.91;
+  CHECK(FindPath(level, {1, 3}, {3, 3}, options).empty());
+  options.check_occupancy = false;
+  CHECK_EQ(FindPath(level, {1, 3}, {3, 3}, options).size(), size_t{3});
 }
 
 TEST(EngineLegendReadsThinAndWindow) {
