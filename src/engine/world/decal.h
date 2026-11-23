@@ -4,7 +4,10 @@
 #include <string>
 
 namespace mythos {
-enum class DecalFace { kNorth, kSouth, kWest, kEast, kFloor, kCeiling };
+enum class DecalFace {
+  kNorth, kSouth, kWest, kEast, kFloor, kCeiling,
+  kThinNorth, kThinSouth, kThinWest, kThinEast
+};
 
 struct Decal {
   int x = 0, y = 0;
@@ -17,7 +20,8 @@ struct Decal {
 };
 
 // Lines use: x y face offset_u offset_v width height rotation texture.
-// Face names are lowercase; texture is a single nonempty token.
+// Face names are lowercase; thin-wall faces use the thin_ prefix. Texture is
+// a single nonempty token.
 bool ValidDecal(const Decal& decal);
 bool ParseDecalLine(const std::string& line, Decal* out);
 std::string SerializeDecalLine(const Decal& decal);

@@ -62,7 +62,12 @@ struct SceneGeometry {
 // Decal offsets locate the center relative to the face center in meters.
 // U runs +x on north/floor/ceiling, -x on south, -z on west, +z on
 // east; V runs +y on walls and +z on horizontal faces. Rotation is degrees
-// counterclockwise in this U/V plane. Quads are not clipped to their cell.
+// counterclockwise in this U/V plane. Ordinary decals are clipped to cell-face
+// bounds. Horizontal decals skip absent ordinary floors and ceilings; wall and
+// thin-cell horizontal decals do not check for a receiver. Thin-wall decals use the
+// same axes and a cell-centered projection, clipped to vertical thin-wall and
+// window-frame faces (not glass); they can span multiple planes at junctions.
+// Other cells receive no thin decal.
 
 // Builds the geometry of a level: floors, ceilings, walls, sprites and the
 // furniture models, placed and turned as the level file says. Appearance of

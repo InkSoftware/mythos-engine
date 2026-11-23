@@ -1,5 +1,6 @@
 #include "engine/gfx/mesh.h"
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 
@@ -105,6 +106,7 @@ constexpr float kDoorOpeningHeight = 2.02f;
 constexpr float kLintelTop = 2.14f;
 constexpr float kPostThickness = 0.10f;
 constexpr float kPostAboveOpening = 0.06f;
+constexpr float kWindowSill = 0.90f, kWindowHead = 2.05f, kWindowJamb = 0.10f;
 
 // Wooden posts and a header around an opening in the cell at (fx, fz). The
 // passage runs along x when `along_x` (you walk through in the x direction).
@@ -222,8 +224,233 @@ class SceneBuilder {
   }
 
  private:
+  struct DecalPoint {
+    double x, y, u, v;
+  };
+
+  static void ClipDecal(std::vector<DecalPoint>& poly, const bool x_axis,
+                        const double bound, const bool lower) {
+    std::vector<DecalPoint> out;
+    if (poly.empty()) return;
+    const auto coord = [&](const DecalPoint& p) { return x_axis ? p.x : p.y; };
+    DecalPoint prev = poly.back();
+    bool prev_in = lower ? coord(prev) >= bound : coord(prev) <= bound;
+    for (const DecalPoint& cur : poly) {
+      const bool cur_in = lower ? coord(cur) >= bound : coord(cur) <= bound;
+      if (cur_in != prev_in) {
+        const double t = (bound - coord(prev)) / (coord(cur) - coord(prev));
+        out.push_back({prev.x + t * (cur.x - prev.x),
+                       prev.y + t * (cur.y - prev.y),
+                       prev.u + t * (cur.u - prev.u),
+                       prev.v + t * (cur.v - prev.v)});
+      }
+      if (cur_in) out.push_back(cur);
+      prev = cur;
+      prev_in = cur_in;
+    }
+    poly = std::move(out);
+  }
+
+  struct ThinBox {
+    float x0, z0, x1, z1;
+    unsigned skip;
+  };
+
+  struct DecalBox {
+    float x0, y0, z0, x1, y1, z1;
+    unsigned skip;
+  };
+
+  std::vector<ThinBox> ThinBoxes(const int x, const int y) const {
+    const float a = 0.5f - kThinWallThickness / 2;
+    const float b = 0.5f + kThinWallThickness / 2;
+    const unsigned arms = level_.ThinArms(x, y);
+    const auto cap = [&](const unsigned face, const int nx, const int ny) {
+      return tiles_.Solid(level_.At(nx, ny)) ? face : 0u;
+    };
+    std::vector<ThinBox> boxes = {
+        {a, a, b, b,
+         ((arms & 1u) ? kFaceNegZ : 0u) | ((arms & 2u) ? kFacePosZ : 0u) |
+             ((arms & 4u) ? kFaceNegX : 0u) | ((arms & 8u) ? kFacePosX : 0u)}};
+    if (arms & 1u)
+      boxes.push_back({a, 0, b, a, kFacePosZ | cap(kFaceNegZ, x, y - 1)});
+    if (arms & 2u)
+      boxes.push_back({a, b, b, 1, kFaceNegZ | cap(kFacePosZ, x, y + 1)});
+    if (arms & 4u)
+      boxes.push_back({0, a, a, b, kFacePosX | cap(kFaceNegX, x - 1, y)});
+    if (arms & 8u)
+      boxes.push_back({b, a, 1, b, kFaceNegX | cap(kFacePosX, x + 1, y)});
+    return boxes;
+  }
+
+  void AddThinDecal(const Decal& d) {
+    if (!level_.InBounds(d.x, d.y)) return;
+    const char glyph = level_.At(d.x, d.y);
+    if (tiles_[glyph].empty || tiles_.IsDoor(glyph) || !tiles_.Solid(glyph) ||
+        !tiles_.Thin(glyph)) return;
+
+    const bool north = d.face == DecalFace::kThinNorth;
+    const bool south = d.face == DecalFace::kThinSouth;
+    const bool west = d.face == DecalFace::kThinWest;
+    const bool horizontal = north || south;
+    const unsigned face = north ? kFaceNegZ : south ? kFacePosZ :
+                          west ? kFaceNegX : kFacePosX;
+    const P3 normal = north ? P3{0, 0, -1} : south ? P3{0, 0, 1} :
+                      west ? P3{-1, 0, 0} : P3{1, 0, 0};
+    const double sign = (south || west) ? -1 : 1;
+    using Point = DecalPoint;
+    const double angle = d.rotation * std::numbers::pi / 180.0;
+    const double c = std::cos(angle), s = std::sin(angle);
+    const auto corner = [&](const double a, const double b, const double u,
+                            const double v) {
+      return Point{d.offset_u + a * c - b * s,
+                   d.offset_v + a * s + b * c, u, v};
+    };
+    const double w = d.width / 2, h = d.height / 2;
+    const std::vector<Point> quad = {corner(-w, -h, 0, 0), corner(w, -h, 1, 0),
+                                     corner(w, h, 1, 1), corner(-w, h, 0, 1)};
+    Batch batch;
+    batch.texture = d.texture;
+    const bool window = tiles_[glyph].window;
+    const std::vector<ThinBox> thin_boxes = ThinBoxes(d.x, d.y);
+    std::vector<DecalBox> boxes;
+    for (const ThinBox& box : thin_boxes) {
+      if (window) {
+        boxes.push_back(
+            {box.x0, 0, box.z0, box.x1, kWindowSill, box.z1, box.skip});
+        boxes.push_back({box.x0, kWindowHead, box.z0, box.x1, kWallHeight,
+                         box.z1, box.skip});
+      } else {
+        boxes.push_back(
+            {box.x0, 0, box.z0, box.x1, kWallHeight, box.z1, box.skip});
+      }
+    }
+    if (window) {
+      const float a = 0.5f - kThinWallThickness / 2;
+      const float b = 0.5f + kThinWallThickness / 2;
+      const float lo = kWindowJamb, hi = 1.0f - kWindowJamb;
+      const float mid = 0.5f * (kWindowSill + kWindowHead);
+      if (level_.ThinArms(d.x, d.y) & 12u) {
+        boxes.push_back({0, kWindowSill, a, lo, kWindowHead, b, 0});
+        boxes.push_back({hi, kWindowSill, a, 1, kWindowHead, b, 0});
+        boxes.push_back({lo, kWindowSill, a - 0.03f, hi, kWindowSill + 0.04f,
+                         b + 0.03f, 0});
+        boxes.push_back({0.5f - 0.02f, kWindowSill, 0.5f - 0.03f, 0.5f + 0.02f,
+                         kWindowHead, 0.5f + 0.03f, 0});
+        boxes.push_back(
+            {lo, mid - 0.02f, 0.5f - 0.03f, hi, mid + 0.02f, 0.5f + 0.03f, 0});
+      } else {
+        boxes.push_back({a, kWindowSill, 0, b, kWindowHead, lo, 0});
+        boxes.push_back({a, kWindowSill, hi, b, kWindowHead, 1, 0});
+        boxes.push_back({a - 0.03f, kWindowSill, lo, b + 0.03f,
+                         kWindowSill + 0.04f, hi, 0});
+        boxes.push_back({0.5f - 0.03f, kWindowSill, 0.5f - 0.02f, 0.5f + 0.03f,
+                         kWindowHead, 0.5f + 0.02f, 0});
+        boxes.push_back(
+            {0.5f - 0.03f, mid - 0.02f, lo, 0.5f + 0.03f, mid + 0.02f, hi, 0});
+      }
+    }
+    struct Rect {
+      double x0, y0, x1, y1;
+    };
+    for (size_t bi = 0; bi < boxes.size(); ++bi) {
+      const DecalBox& box = boxes[bi];
+      if (box.skip & face) continue;
+      const double lo = horizontal ? box.x0 : box.z0;
+      const double hi = horizontal ? box.x1 : box.z1;
+      const double u0 = sign > 0 ? lo - 0.5 : 0.5 - hi;
+      const double u1 = sign > 0 ? hi - 0.5 : 0.5 - lo;
+      const float plane = north   ? box.z0
+                          : south ? box.z1
+                          : west  ? box.x0
+                                  : box.x1;
+      std::vector<Rect> regions = {
+          {u0, box.y0 - kWallHeight / 2, u1, box.y1 - kWallHeight / 2}};
+      if (window)
+        for (size_t j = 0; j < boxes.size(); ++j) {
+          if (j == bi) continue;
+          const DecalBox& other = boxes[j];
+          const float near = north   ? other.z0
+                             : south ? other.z1
+                             : west  ? other.x0
+                                     : other.x1;
+          const float far = north   ? other.z1
+                            : south ? other.z0
+                            : west  ? other.x1
+                                    : other.x0;
+          const bool negative = north || west;
+          const bool covers = negative ? (near < plane && far >= plane)
+                                       : (near > plane && far <= plane);
+          const bool duplicate =
+              near == plane && j < bi && !(other.skip & face);
+          if (!covers && !duplicate) continue;
+          const double o_lo = horizontal ? other.x0 : other.z0;
+          const double o_hi = horizontal ? other.x1 : other.z1;
+          const Rect cut = {
+              sign > 0 ? o_lo - 0.5 : 0.5 - o_hi, other.y0 - kWallHeight / 2,
+              sign > 0 ? o_hi - 0.5 : 0.5 - o_lo, other.y1 - kWallHeight / 2};
+          std::vector<Rect> remaining;
+          for (const Rect& r : regions) {
+            const double x0 = std::max(r.x0, cut.x0),
+                         x1 = std::min(r.x1, cut.x1);
+            const double y0 = std::max(r.y0, cut.y0),
+                         y1 = std::min(r.y1, cut.y1);
+            if (x0 >= x1 || y0 >= y1) {
+              remaining.push_back(r);
+              continue;
+            }
+            if (r.x0 < x0) remaining.push_back({r.x0, r.y0, x0, r.y1});
+            if (x1 < r.x1) remaining.push_back({x1, r.y0, r.x1, r.y1});
+            if (r.y0 < y0) remaining.push_back({x0, r.y0, x1, y0});
+            if (y1 < r.y1) remaining.push_back({x0, y1, x1, r.y1});
+          }
+          regions = std::move(remaining);
+        }
+      const auto push = [&](const Point& p) {
+        const float along = static_cast<float>(0.5 + sign * p.x);
+        const float y = static_cast<float>(kWallHeight / 2 + p.y);
+        const P3 pos = horizontal ? P3{d.x + along, y, d.y + plane}
+                                  : P3{d.x + plane, y, d.y + along};
+        PushVertex(batch, pos, normal.x, normal.y, normal.z,
+                   static_cast<float>(p.u), static_cast<float>(p.v));
+      };
+      for (const Rect& r : regions) {
+        std::vector<Point> poly = quad;
+        ClipDecal(poly, true, r.x0, true);
+        ClipDecal(poly, true, r.x1, false);
+        ClipDecal(poly, false, r.y0, true);
+        ClipDecal(poly, false, r.y1, false);
+        for (size_t i = 1; i + 1 < poly.size(); ++i) {
+          const Point& a = poly[0];
+          const Point& b = poly[i];
+          const Point& c = poly[i + 1];
+          if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
+          push(a);
+          push(b);
+          push(c);
+        }
+      }
+    }
+    if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
+  }
+
   void AddDecals() {
     for (const Decal& d : level_.Decals()) {
+      if (d.face == DecalFace::kThinNorth || d.face == DecalFace::kThinSouth ||
+          d.face == DecalFace::kThinWest || d.face == DecalFace::kThinEast) {
+        AddThinDecal(d);
+        continue;
+      }
+      if (d.face == DecalFace::kFloor || d.face == DecalFace::kCeiling) {
+        const char glyph = level_.At(d.x, d.y);
+        const TileInfo& tile = tiles_[glyph];
+        if (tile.empty || (tiles_.Solid(glyph) && !tiles_.Thin(glyph) &&
+                           !tiles_.IsDoor(glyph))) continue;
+        if (d.face == DecalFace::kCeiling && outdoor_) continue;
+        if (!tiles_.Solid(glyph) && !tiles_.IsDoor(glyph) &&
+            ((d.face == DecalFace::kFloor && tile.open_floor) ||
+             (d.face == DecalFace::kCeiling && tile.open_ceiling))) continue;
+      }
       const float x = static_cast<float>(d.x), z = static_cast<float>(d.y);
       P3 center{}, u{}, v{}, normal{};
       switch (d.face) {
@@ -263,22 +490,49 @@ class SceneBuilder {
           v = {0, 0, 1};
           normal = {0, -1, 0};
           break;
+        case DecalFace::kThinNorth:
+        case DecalFace::kThinSouth:
+        case DecalFace::kThinWest:
+        case DecalFace::kThinEast:
+          break;
       }
       const double angle = d.rotation * std::numbers::pi / 180.0;
       const double c = std::cos(angle), s = std::sin(angle);
-      const auto point = [&](const double a, const double b) {
-        const float du = static_cast<float>(d.offset_u + a * c - b * s);
-        const float dv = static_cast<float>(d.offset_v + a * s + b * c);
-        return P3{center.x + u.x * du + v.x * dv,
-                  center.y + u.y * du + v.y * dv,
-                  center.z + u.z * du + v.z * dv};
+      const auto point = [&](const double a, const double b, const double tu,
+                             const double tv) {
+        return DecalPoint{d.offset_u + a * c - b * s,
+                          d.offset_v + a * s + b * c, tu, tv};
       };
-      geometry_.decals.push_back(Batch{});
-      Batch& batch = geometry_.decals.back();
-      batch.texture = d.texture;
       const double w = d.width / 2, h = d.height / 2;
-      AddQuad(batch, point(-w, -h), point(w, -h), point(w, h), point(-w, h),
-              normal.x, normal.y, normal.z, 1, 1);
+      std::vector<DecalPoint> poly = {point(-w, -h, 0, 0), point(w, -h, 1, 0),
+                                      point(w, h, 1, 1), point(-w, h, 0, 1)};
+      const double vertical = d.face == DecalFace::kFloor ||
+                                      d.face == DecalFace::kCeiling
+                                  ? 0.5 : kWallHeight / 2;
+      ClipDecal(poly, true, -0.5, true);
+      ClipDecal(poly, true, 0.5, false);
+      ClipDecal(poly, false, -vertical, true);
+      ClipDecal(poly, false, vertical, false);
+      Batch batch;
+      batch.texture = d.texture;
+      const auto push = [&](const DecalPoint& p) {
+        const float du = static_cast<float>(p.x), dv = static_cast<float>(p.y);
+        PushVertex(batch, {center.x + u.x * du + v.x * dv,
+                           center.y + u.y * du + v.y * dv,
+                           center.z + u.z * du + v.z * dv},
+                   normal.x, normal.y, normal.z, static_cast<float>(p.u),
+                   static_cast<float>(p.v));
+      };
+      for (size_t i = 1; i + 1 < poly.size(); ++i) {
+        const auto& a = poly[0];
+        const auto& b = poly[i];
+        const auto& c = poly[i + 1];
+        if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
+        push(a);
+        push(b);
+        push(c);
+      }
+      if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
     }
   }
   // Short for the wall quads below. The jamb constants are the wall left either
@@ -421,39 +675,17 @@ class SceneBuilder {
     // where an arm reaches the next wall cell, are skipped: they would show as
     // hollow boxes wherever the wall is cut open. Boxes are in cell-local x and
     // z.
-    struct Box {
-      float x0, z0, x1, z1;
-      unsigned skip;
-    };
-    const auto cap = [&](const unsigned face, const int nx, const int ny) {
-      return tiles_.Solid(level_.At(nx, ny)) ? face : 0u;
-    };
-    std::vector<Box> boxes = {
-        {a, a, b, b,
-         ((arms & 1u) ? kFaceNegZ : 0u) | ((arms & 2u) ? kFacePosZ : 0u) |
-             ((arms & 4u) ? kFaceNegX : 0u) | ((arms & 8u) ? kFacePosX : 0u)}};
-    if (arms & 1u) {
-      boxes.push_back({a, 0, b, a, kFacePosZ | cap(kFaceNegZ, x, y - 1)});
-    }
-    if (arms & 2u) {
-      boxes.push_back({a, b, b, 1, kFaceNegZ | cap(kFacePosZ, x, y + 1)});
-    }
-    if (arms & 4u) {
-      boxes.push_back({0, a, a, b, kFacePosX | cap(kFaceNegX, x - 1, y)});
-    }
-    if (arms & 8u) {
-      boxes.push_back({b, a, 1, b, kFaceNegX | cap(kFacePosX, x + 1, y)});
-    }
+    const std::vector<ThinBox> boxes = ThinBoxes(x, y);
     // A plain wall is whole; a window is whole below the sill and above the
     // head, and between them only the ends of the cell stand (the jambs) and
     // the opening is glazed.
     if (!window) {
-      for (const Box& bx : boxes)
+      for (const ThinBox& bx : boxes)
         AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1,
                bx.skip);
     } else {
-      constexpr float kSill = 0.90f, kHead = 2.05f, kJamb = 0.10f;
-      for (const Box& bx : boxes) {
+      constexpr float kSill = kWindowSill, kHead = kWindowHead, kJamb = kWindowJamb;
+      for (const ThinBox& bx : boxes) {
         AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kSill, fz + bx.z1,
                bx.skip);
         AddBox(wall, fx + bx.x0, kHead, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1,

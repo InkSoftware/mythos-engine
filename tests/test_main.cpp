@@ -714,7 +714,9 @@ TEST(EngineDecalsPersistAndEvictOldest) {
   doc.rows = {"...", "..."};
   for (const auto face :
        {DecalFace::kNorth, DecalFace::kSouth, DecalFace::kWest,
-        DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling}) {
+        DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling,
+        DecalFace::kThinNorth, DecalFace::kThinSouth,
+        DecalFace::kThinWest, DecalFace::kThinEast}) {
     Decal d;
     d.x = 1;
     d.face = face;
@@ -786,6 +788,71 @@ TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
   CHECK_EQ(geometry.decals.size(), size_t{12});
 }
 
+TEST(EngineCellDecalsClipToFaceBounds) {
+  Level level;
+  CHECK(level.Parse({"."}));
+  for (const auto face : {DecalFace::kNorth, DecalFace::kSouth,
+                          DecalFace::kWest, DecalFace::kEast,
+                          DecalFace::kFloor, DecalFace::kCeiling}) {
+    Decal d;
+    d.face = face;
+    d.width = 3;
+    d.height = 4;
+    d.rotation = 23;
+    d.texture = "stain";
+    CHECK(level.AddDecal(d));
+  }
+  Decal outside;
+  outside.face = DecalFace::kFloor;
+  outside.offset_u = 10;
+  outside.texture = "outside";
+  CHECK(level.AddDecal(outside));
+  ModelLibrary models;
+  const auto geometry = BuildSceneGeometry(level, models, false);
+  CHECK_EQ(geometry.decals.size(), size_t{6});
+  for (const auto& batch : geometry.decals) {
+    CHECK(!batch.verts.empty());
+    for (const auto& v : batch.verts) {
+      CHECK(v.px >= -0.0001f && v.px <= 1.0001f);
+      CHECK(v.pz >= -0.0001f && v.pz <= 1.0001f);
+      CHECK(v.py >= -0.0001f && v.py <= kWallHeight + 0.0001f);
+      CHECK(v.u >= 0 && v.u <= 1 && v.v >= 0 && v.v <= 1);
+    }
+  }
+}
+
+TEST(EngineHorizontalDecalsRequireSurfaces) {
+  Level level;
+  CHECK(level.Parse({".efcs#"}));
+  auto tiles = std::make_shared<TileSet>();
+  (*tiles)['e'].empty = true;
+  (*tiles)['f'].open_floor = true;
+  (*tiles)['c'].open_ceiling = true;
+  (*tiles)['s'].open_floor = true;
+  (*tiles)['s'].open_ceiling = true;
+  level.SetTiles(tiles);
+  for (int x = 0; x < 6; ++x) {
+    for (const auto face : {DecalFace::kFloor, DecalFace::kCeiling}) {
+      Decal d;
+      d.x = x;
+      d.face = face;
+      d.texture = std::to_string(x) + (face == DecalFace::kFloor ? "f" : "c");
+      CHECK(level.AddDecal(d));
+    }
+  }
+  ModelLibrary models;
+  const auto indoor = BuildSceneGeometry(level, models, false);
+  CHECK_EQ(indoor.decals.size(), size_t{4});
+  CHECK(indoor.decals[0].texture == "0f");
+  CHECK(indoor.decals[1].texture == "0c");
+  CHECK(indoor.decals[2].texture == "2c");
+  CHECK(indoor.decals[3].texture == "3f");
+  const auto outdoor = BuildSceneGeometry(level, models, true);
+  CHECK_EQ(outdoor.decals.size(), size_t{2});
+  CHECK(outdoor.decals[0].texture == "0f");
+  CHECK(outdoor.decals[1].texture == "3f");
+}
+
 TEST(EngineThinWallsAndWindowsBuildGeometry) {
   Level l;
   CHECK(l.Parse({"#######", "#.....#", "#WWwWW#", "#.....#", "#######"}));
@@ -803,6 +870,97 @@ TEST(EngineThinWallsAndWindowsBuildGeometry) {
       if (std::abs(v.pz - 2.4f) < 1e-4f || std::abs(v.pz - 2.6f) < 1e-4f)
         slab_face = true;
   CHECK(slab_face);
+}
+
+TEST(EngineThinWallDecalsClipToVisibleFaces) {
+  Level level;
+  CHECK(level.Parse({".....", ".WWW.", "..w..", "....."}));
+  level.SetTiles(ThinLegend());
+  for (const auto face : {DecalFace::kThinNorth, DecalFace::kThinSouth}) {
+    Decal d;
+    d.x = 2;
+    d.y = 1;
+    d.face = face;
+    d.width = 3;
+    d.height = 5;
+    d.texture = "stain";
+    CHECK(level.AddDecal(d));
+  }
+  Decal unsupported;
+  unsupported.x = 0;
+  unsupported.y = 0;
+  unsupported.face = DecalFace::kThinNorth;
+  unsupported.texture = "empty";
+  CHECK(level.AddDecal(unsupported));
+  ModelLibrary models;
+  const auto geometry = BuildSceneGeometry(level, models, false);
+  bool north = false, south = false;
+  for (const auto& batch : geometry.decals) {
+    CHECK(batch.texture == "stain");
+    for (const auto& v : batch.verts) {
+      CHECK(v.px >= 1.9999f && v.px <= 3.0001f);
+      CHECK(v.py >= -0.0001f && v.py <= kWallHeight + 0.0001f);
+      CHECK(v.u >= -0.0001f && v.u <= 1.0001f);
+      CHECK(v.v >= -0.0001f && v.v <= 1.0001f);
+      if (v.nz < -0.5f) {
+        north = true;
+        CHECK(std::abs(v.pz - 1.4f) < 1e-4f);
+      } else if (v.nz > 0.5f) {
+        south = true;
+        CHECK(std::abs(v.pz - 1.6f) < 1e-4f);
+      }
+    }
+  }
+  CHECK(north);
+  CHECK(south);
+}
+
+TEST(EngineWindowWallDecalsClipAroundOpening) {
+  for (const bool along_x : {true, false}) {
+    Level level;
+    CHECK(level.Parse(along_x ? std::vector<std::string>{".....", ".WwW.", "....."}
+                              : std::vector<std::string>{".W.", ".w.", ".W."}));
+    level.SetTiles(ThinLegend());
+    for (const auto face : along_x
+             ? std::vector<DecalFace>{DecalFace::kThinNorth, DecalFace::kThinSouth}
+             : std::vector<DecalFace>{DecalFace::kThinWest, DecalFace::kThinEast}) {
+      Decal d;
+      d.x = along_x ? 2 : 1;
+      d.y = 1;
+      d.face = face;
+      d.width = 3;
+      d.height = 4;
+      d.texture = "frame";
+      CHECK(level.AddDecal(d));
+      d.width = d.height = 0.1;
+      d.offset_u = 0.25;
+      d.offset_v = 0.12;
+      d.texture = "opening";
+      CHECK(level.AddDecal(d));
+    }
+    ModelLibrary models;
+    const auto geometry = BuildSceneGeometry(level, models, false);
+    CHECK_EQ(geometry.decals.size(), size_t{2});
+    for (const auto& batch : geometry.decals) {
+      CHECK(batch.texture == "frame");
+      CHECK(!batch.verts.empty());
+      for (size_t i = 0; i + 2 < batch.verts.size(); i += 3) {
+        const auto& a = batch.verts[i];
+        const auto& b = batch.verts[i + 1];
+        const auto& c = batch.verts[i + 2];
+        const float u = along_x ? (a.px + b.px + c.px) / 3 - 2
+                                : (a.pz + b.pz + c.pz) / 3 - 1;
+        const float y = (a.py + b.py + c.py) / 3;
+        CHECK(y <= 0.9401f || y >= 2.0499f || u <= 0.1001f || u >= 0.8999f ||
+              (u >= 0.4799f && u <= 0.5201f) ||
+              (y >= 1.4549f && y <= 1.4951f));
+        for (const auto* v : {&a, &b, &c}) {
+          CHECK(v->u >= -0.0001f && v->u <= 1.0001f);
+          CHECK(v->v >= -0.0001f && v->v <= 1.0001f);
+        }
+      }
+    }
+  }
 }
 
 // Floors stacked in one scene and stairwell tiles (openCeiling /
