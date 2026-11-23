@@ -33,6 +33,7 @@
 #include "engine/core/vfs.h"
 #include "engine/data/achievements.h"
 #include "engine/data/credits.h"
+#include "engine/data/events.h"
 #include "engine/data/i18n.h"
 #include "engine/data/translation.h"
 #include "engine/editor/adapter.h"
@@ -835,6 +836,70 @@ TEST(EngineTriggersPersistAndValidate) {
                          &error));
   CHECK(level.ParseText("[map]\n.\n", &error));
   CHECK(level.Triggers().empty());
+}
+
+TEST(EngineEventRulesDispatchAndValidate) {
+  EventRuntime runtime;
+  EventRule rule;
+  rule.id = "z";
+  rule.event = {EventKind::kTrigger, "door", "enter", false};
+  rule.conditions = {{"key", true}, {"locked", false}};
+  rule.actions = {{"sound", "open"}, {"game", "door"}};
+  CHECK(runtime.Add(rule));
+  CHECK(!runtime.Add(rule));
+  rule.id = "a";
+  rule.conditions.clear();
+  rule.actions = {{"first", ""}};
+  CHECK(runtime.Add(rule));
+  EventRule invalid = rule;
+  invalid.id = "bad";
+  invalid.actions = {{"", ""}};
+  CHECK(!runtime.Add(invalid));
+  invalid.actions.clear();
+  invalid.conditions = {{"", true}};
+  CHECK(!runtime.Add(invalid));
+  invalid.conditions.clear();
+  invalid.event.kind = static_cast<EventKind>(99);
+  CHECK(!runtime.Add(invalid));
+
+  std::vector<std::string> actions;
+  auto record = [&](const EventAction& action) {
+    actions.push_back(action.type);
+  };
+  Event event{EventKind::kTrigger, "door", "enter", false};
+  CHECK(runtime.Dispatch(event, {{"key", true}}, record));
+  CHECK(actions == std::vector<std::string>({"first", "sound", "game"}));
+  actions.clear();
+  CHECK(runtime.Dispatch(event, {{"key", true}, {"locked", true}}, record));
+  CHECK(actions == std::vector<std::string>({"first"}));
+  actions.clear();
+  event.detail = "exit";
+  CHECK(runtime.Dispatch(event, {}, record));
+  CHECK(actions.empty());
+  event.detail.clear();
+  CHECK(!runtime.Dispatch(event, {}, record));
+  CHECK(!runtime.Dispatch(rule.event, {}, {}));
+
+  EventRule flag{
+      "flag", {EventKind::kFlag, "alarm", "", true}, {}, {{"alarm", ""}}};
+  EventRule timer{
+      "timer", {EventKind::kTimer, "clock", "", false}, {}, {{"tick", ""}}};
+  CHECK(runtime.Add(flag));
+  CHECK(runtime.Add(timer));
+  CHECK(runtime.Dispatch({EventKind::kFlag, "alarm", "", false}, {}, record));
+  CHECK(actions.empty());
+  CHECK(runtime.Dispatch(flag.event, {}, record));
+  CHECK(runtime.Dispatch(timer.event, {}, record));
+  CHECK(actions == std::vector<std::string>({"alarm", "tick"}));
+
+  actions.clear();
+  CHECK(
+      runtime.Dispatch(rule.event, {{"key", true}}, [&](const EventAction& a) {
+        actions.push_back(a.type);
+        runtime.Clear();
+      }));
+  CHECK(actions == std::vector<std::string>({"first", "sound", "game"}));
+  CHECK(!runtime.Remove("a"));
 }
 
 TEST(EngineTriggerTransitionsAndValidation) {
