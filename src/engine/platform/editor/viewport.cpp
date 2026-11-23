@@ -54,17 +54,19 @@ uniform float u_clip_y;
 uniform int u_flat;
 uniform int u_emissive;
 uniform int u_alpha_test;
+uniform int u_decal;
 out vec4 o_color;
 void main() {
   if (v_pos.y > u_clip_y) discard;
-  vec4 t = u_flat == 1 ? vec4(0.72, 0.72, 0.74, 1.0) : texture(u_tex, v_uv);
+  vec4 texel = texture(u_tex, v_uv);
+  vec4 t = u_flat == 1 ? vec4(0.72, 0.72, 0.74, 1.0) : texel;
   if (u_alpha_test == 1 && t.a < 0.5) discard;
   vec3 n = normalize(v_normal);
   float sun = max(dot(n, normalize(vec3(0.35, 0.85, 0.4))), 0.0);
   float fill = max(dot(n, normalize(vec3(-0.6, 0.3, -0.5))), 0.0);
   float hemi = 0.5 + 0.5 * n.y;
   float light = u_emissive == 1 ? 1.0 : 0.30 + 0.20 * hemi + 0.55 * sun + 0.18 * fill;
-  o_color = vec4(t.rgb * light * u_tint.rgb, u_tint.a);
+  o_color = vec4(t.rgb * light * u_tint.rgb, u_tint.a * (u_decal == 1 ? texel.a : 1.0));
 }
 )";
 
@@ -315,8 +317,17 @@ unsigned Viewport::TextureFor(const std::string& name) {
 // which the attribute pointers below mirror.
 void Viewport::SetLayer(const int slot,
                         const std::vector<mythos::Batch>& batches) {
-  Layer& layer = layers_[slot];
-  layer.batches.clear();
+  UploadBatches(layers_[slot].batches, batches);
+}
+
+void Viewport::SetDecals(const int slot,
+                         const std::vector<mythos::Batch>& batches) {
+  UploadBatches(layers_[slot].decals, batches);
+}
+
+void Viewport::UploadBatches(std::vector<GpuBatch>& into,
+                             const std::vector<mythos::Batch>& batches) {
+  into.clear();
   for (const auto& b : batches) {
     if (b.verts.empty()) continue;
     GpuBatch g;
@@ -338,7 +349,7 @@ void Viewport::SetLayer(const int slot,
     g.texture = b.texture;
     g.emissive = b.emissive;
     g.alpha_test = b.alpha_test;
-    layer.batches.push_back(std::move(g));
+    into.push_back(std::move(g));
   }
   gl::BindVertexArray(0);
 }
@@ -425,29 +436,31 @@ void Viewport::SolidBox(const Vec3 centre, const Vec3 half, const float yaw,
 // Translucent layers (alpha < 1) are blended; Render draws them after the
 // opaque ones.
 void Viewport::DrawLayer(const Layer& layer, const Mat4& mvp,
-                         const ShadeMode mode) {
-  if (!layer.style.visible || layer.batches.empty()) return;
+                         const ShadeMode mode, const bool decals) {
+  const auto& batches = decals ? layer.decals : layer.batches;
+  if (!layer.style.visible || batches.empty()) return;
   world_.Use();
   world_.SetMat4("u_mvp", mvp.m);
   gl::Uniform4f(world_.Uniform("u_tint"), layer.style.tint, layer.style.tint,
                 layer.style.tint, layer.style.alpha);
   world_.Set("u_clip_y", layer.style.clip_y);
   world_.Set("u_flat", mode == ShadeMode::kTextured ? 0 : 1);
+  world_.Set("u_decal", decals ? 1 : 0);
   world_.Set("u_tex", 0);
   gl::ActiveTexture(gl::kTexture0);
   const bool ghost = layer.style.alpha < 0.999f;
-  if (ghost) {
+  if (ghost && !decals) {
     gl::Enable(gl::kBlend);
     gl::BlendFunc(gl::kSrcAlpha, gl::kOneMinusSrcAlpha);
   }
-  for (const auto& b : layer.batches) {
+  for (const auto& b : batches) {
     world_.Set("u_emissive", b.emissive ? 1 : 0);
     world_.Set("u_alpha_test", b.alpha_test ? 1 : 0);
     gl::BindTexture(gl::kTexture2D, TextureFor(b.texture));
     b.vao.Bind();
     gl::DrawArrays(gl::kTriangles, 0, b.count);
   }
-  if (ghost) gl::Disable(gl::kBlend);
+  if (ghost && !decals) gl::Disable(gl::kBlend);
 }
 
 void Viewport::DrawColor(const std::vector<ColorVertex>& v, const unsigned mode,
@@ -470,9 +483,9 @@ void Viewport::DrawColor(const std::vector<ColorVertex>& v, const unsigned mode,
   gl::DrawArrays(mode, 0, static_cast<int>(v.size()));
 }
 
-// Order: opaque layers, ghost layers, depth-tested lines, blended triangles
-// without depth writes, then the on-top lines. Wireframe mode applies to the
-// world layers only, never to the overlay.
+// Order: opaque layers and decals, ghost layers and decals, depth-tested lines,
+// blended triangles without depth writes, then the on-top lines. Wireframe
+// mode applies to the world layers only, never to decals or the overlay.
 unsigned Viewport::Render(const OrbitCamera& cam, int w, int h,
                           const ShadeMode mode, const Rgba background) {
   w = std::max(w, 16);
@@ -489,11 +502,55 @@ unsigned Viewport::Render(const OrbitCamera& cam, int w, int h,
 
   if (mode == ShadeMode::kWireframe && g_polygon_mode)
     g_polygon_mode(kFrontAndBack, kLineMode);
-  for (int pass = 0; pass < 2; ++pass)
+  for (int pass = 0; pass < 2; ++pass) {
     for (int i = 0; i < kSlots; ++i) {
       const bool ghost = layers_[i].style.alpha < 0.999f;
       if (ghost == (pass == 1)) DrawLayer(layers_[i], mvp, mode);
     }
+    if (mode == ShadeMode::kWireframe && g_polygon_mode)
+      g_polygon_mode(kFrontAndBack, kFillMode);
+    // Save the state touched by the decal pass, including the offset values.
+    constexpr gl::GLenum kDepthWriteMask = 0x0B72;
+    constexpr gl::GLenum kPolygonOffsetFactor = 0x8038;
+    constexpr gl::GLenum kPolygonOffsetUnits = 0x2A00;
+    constexpr gl::GLenum kBlendSrcRgb = 0x80C9, kBlendDstRgb = 0x80C8;
+    constexpr gl::GLenum kBlendSrcAlpha = 0x80CB, kBlendDstAlpha = 0x80CA;
+    const auto is_enabled = reinterpret_cast<gl::GLboolean(MYTHOS_GL_CALL*)(gl::GLenum)>(
+        SDL_GL_GetProcAddress("glIsEnabled"));
+    const auto get_float = reinterpret_cast<void(MYTHOS_GL_CALL*)(gl::GLenum, gl::GLfloat*)>(
+        SDL_GL_GetProcAddress("glGetFloatv"));
+    const auto blend_separate = reinterpret_cast<void(MYTHOS_GL_CALL*)(gl::GLenum, gl::GLenum, gl::GLenum, gl::GLenum)>(
+        SDL_GL_GetProcAddress("glBlendFuncSeparate"));
+    if (is_enabled && get_float && blend_separate) {
+      const bool blend = is_enabled(gl::kBlend);
+      const bool offset = is_enabled(gl::kPolygonOffsetFill);
+      gl::GLint depth_mask, src_rgb, dst_rgb, src_alpha, dst_alpha;
+      gl::GLfloat factor, units;
+      gl::GetIntegerv(kDepthWriteMask, &depth_mask);
+      gl::GetIntegerv(kBlendSrcRgb, &src_rgb);
+      gl::GetIntegerv(kBlendDstRgb, &dst_rgb);
+      gl::GetIntegerv(kBlendSrcAlpha, &src_alpha);
+      gl::GetIntegerv(kBlendDstAlpha, &dst_alpha);
+      get_float(kPolygonOffsetFactor, &factor);
+      get_float(kPolygonOffsetUnits, &units);
+      gl::Enable(gl::kBlend);
+      gl::BlendFunc(gl::kSrcAlpha, gl::kOneMinusSrcAlpha);
+      gl::DepthMask(gl::kFalse);
+      gl::Enable(gl::kPolygonOffsetFill);
+      gl::PolygonOffset(-1.0f, -1.0f);
+      for (int i = 0; i < kSlots; ++i) {
+        const bool ghost = layers_[i].style.alpha < 0.999f;
+        if (ghost == (pass == 1)) DrawLayer(layers_[i], mvp, mode, true);
+      }
+      gl::PolygonOffset(factor, units);
+      if (!offset) gl::Disable(gl::kPolygonOffsetFill);
+      gl::DepthMask(static_cast<gl::GLboolean>(depth_mask));
+      blend_separate(src_rgb, dst_rgb, src_alpha, dst_alpha);
+      if (!blend) gl::Disable(gl::kBlend);
+    }
+    if (mode == ShadeMode::kWireframe && g_polygon_mode && pass == 0)
+      g_polygon_mode(kFrontAndBack, kLineMode);
+  }
   if (mode == ShadeMode::kWireframe && g_polygon_mode)
     g_polygon_mode(kFrontAndBack, kFillMode);
 

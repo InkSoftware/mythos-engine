@@ -264,12 +264,21 @@ void EditorApp::RebuildScene() {
   built_level_ = level_;
   built_context_ = context_;
   int slot = 0;
+  bool active_seen = false;
   for (const auto& [floor, name] : floors) {
     const bool active = name == level_;
+    if (active) active_seen = true;
     const int s = active ? 0 : ++slot;
     if (s >= Viewport::kEntitySlot) break;
     const LevelDoc* doc = project_.Level(name);
-    if (!doc) continue;
+    if (!doc) {
+      if (slot_valid_[s]) {
+        viewport_.SetLayer(s, {});
+        viewport_.SetDecals(s, {});
+        slot_valid_[s] = false;
+      }
+      continue;
+    }
     if (!slot_valid_[s] || slot_name_[s] != name || !(slot_doc_[s] == *doc) ||
         level_changed) {
       mythos::Level level;
@@ -281,6 +290,7 @@ void EditorApp::RebuildScene() {
       mythos::SceneGeometry g =
           mythos::BuildSceneGeometry(level, models_, outdoor, y);
       viewport_.SetLayer(s, g.world);
+      viewport_.SetDecals(s, g.decals);
       slot_name_[s] = name;
       slot_doc_[s] = *doc;
       slot_valid_[s] = true;
@@ -296,8 +306,16 @@ void EditorApp::RebuildScene() {
     }
     viewport_.SetStyle(s, st);
   }
+  if (!active_seen && slot_valid_[0]) {
+    viewport_.SetLayer(0, {});
+    viewport_.SetDecals(0, {});
+    slot_valid_[0] = false;
+  }
   for (int s = slot + 1; s < Viewport::kEntitySlot; ++s) {
-    if (slot_valid_[s]) viewport_.SetLayer(s, {});
+    if (slot_valid_[s]) {
+      viewport_.SetLayer(s, {});
+      viewport_.SetDecals(s, {});
+    }
     slot_valid_[s] = false;
   }
 

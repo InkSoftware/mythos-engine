@@ -58,7 +58,8 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   Cell-wall decals require a visible neighboring thick wall; thin-cell floor
   and ceiling decals are clipped to available quarters. Window-glass decals
   are clipped to the glass; prop decals remain. Glass decals render before
-  blended glass and are not restricted to one viewing side.
+  blended glass and are not restricted to one viewing side. The editor viewport
+  displays decals in a separate blended pass; visual verification remains.
 - **Why:** bullet holes, stains, blood, footprints, drips.
 - **Where:** `world/decal.h` places a quad on a wall, floor or prop surface
   (cell, face, offset, size, rotation, texture) and bakes them into the scene

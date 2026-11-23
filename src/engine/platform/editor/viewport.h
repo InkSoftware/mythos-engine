@@ -166,6 +166,9 @@ class Viewport {
   // Replaces the geometry of a layer (uploads one GPU buffer per batch).
   void SetLayer(int slot, const std::vector<mythos::Batch>& batches);
 
+  // Replaces the decals belonging to a layer.
+  void SetDecals(int slot, const std::vector<mythos::Batch>& batches);
+
   // Sets how a layer is drawn.
   void SetStyle(int slot, const LayerStyle& style);
 
@@ -216,6 +219,7 @@ class Viewport {
 
   struct Layer {
     std::vector<GpuBatch> batches;
+    std::vector<GpuBatch> decals;
     LayerStyle style;
   };
 
@@ -226,7 +230,10 @@ class Viewport {
   // Uploads (or finds) a texture; same as TextureId.
   unsigned TextureFor(const std::string& name);
 
-  void DrawLayer(const Layer& layer, const Mat4& mvp, ShadeMode mode);
+  void UploadBatches(std::vector<GpuBatch>& into,
+                     const std::vector<mythos::Batch>& batches);
+  void DrawLayer(const Layer& layer, const Mat4& mvp, ShadeMode mode,
+                 bool decals = false);
 
   void DrawColor(const std::vector<ColorVertex>& v, unsigned mode,
                  const Mat4& mvp, bool depth_test);
