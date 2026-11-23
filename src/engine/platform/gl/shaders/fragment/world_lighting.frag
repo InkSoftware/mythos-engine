@@ -17,6 +17,7 @@ uniform int uEmissive;
 uniform int uMaterials;         // 0 flat look, 1 specular + metal + occlusion, 2 also reflections
 uniform int uAlphaTest;
 uniform float uOpacity;   // 1 solid; below 1 the pixel is blended (the renderer draws those last)
+uniform int uDecal;       // decals use the texture's alpha
 uniform float uMist;      // ground mist, 0 off .. 1 thick
 uniform float uMistHeight;
 uniform int uOutdoor;
@@ -277,5 +278,5 @@ void main() {
         vec3 mistColor = vec3(0.035, 0.042, 0.06) * (uOutdoor == 1 ? 1.0 : 0.5) + uFogColor * 1.5;
         col = mix(col, mistColor, clamp(m, 0.0, 0.92));
     }
-    outColor = vec4(finishPixel(col, uTime), uOpacity);
+    outColor = vec4(finishPixel(col, uTime), uOpacity * (uDecal == 1 ? tex.a : 1.0));
 }

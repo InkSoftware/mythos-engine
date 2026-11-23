@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <queue>
 #include <set>
@@ -706,6 +707,83 @@ TEST(EngineLegendReadsThinAndWindow) {
   CHECK(ParseTileSet(v, t, &err));
   CHECK(t.Thin('W') && t['w'].window && t.Thin('w'));
   CHECK(!t.Thin('#'));
+}
+
+TEST(EngineDecalsPersistAndEvictOldest) {
+  editor::LevelDoc doc;
+  doc.rows = {"...", "..."};
+  for (const auto face :
+       {DecalFace::kNorth, DecalFace::kSouth, DecalFace::kWest,
+        DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling}) {
+    Decal d;
+    d.x = 1;
+    d.face = face;
+    d.offset_u = 0.123456789012345;
+    d.width = 0.000001;
+    d.rotation = 37.25;
+    d.texture = "stain";
+    doc.decals.push_back(d);
+  }
+  const std::string text = editor::SerializeLevelDoc(doc);
+  editor::LevelDoc loaded;
+  std::string error;
+  CHECK(editor::ParseLevelDoc(text, &loaded, &error));
+  CHECK(loaded.decals == doc.decals);
+  Level level;
+  CHECK(level.ParseText(text, &error));
+  CHECK(level.Decals() == doc.decals);
+  loaded.Resize(1, 1, '.');
+  CHECK(loaded.decals.empty());
+  Decal d = doc.decals.front();
+  const auto revision = level.Revision();
+  d.width = std::numeric_limits<double>::infinity();
+  CHECK(!level.AddDecal(d));
+  CHECK(level.Revision() == revision);
+  CHECK(
+      !level.ParseText("[map]\n.\n[decals]\n0 0 up 0 0 1 1 0 stain\n", &error));
+  CHECK(level.Parse({"."}));
+  d = doc.decals.front();
+  d.x = 0;
+  for (size_t i = 0; i < Level::kMaxDecals; ++i) {
+    d.rotation = static_cast<double>(i);
+    CHECK(level.AddDecal(d));
+  }
+  CHECK(level.AddDecal(level.Decals().front()));
+  CHECK_EQ(level.Decals().size(), Level::kMaxDecals);
+  CHECK(level.Decals().front().rotation == 1);
+  CHECK(level.Decals().back().rotation == 0);
+}
+
+TEST(EngineDecalsBuildOnEachCellFaceAndStack) {
+  Level level;
+  CHECK(level.Parse({"...", "...", "..."}));
+  for (const auto face :
+       {DecalFace::kNorth, DecalFace::kSouth, DecalFace::kWest,
+        DecalFace::kEast, DecalFace::kFloor, DecalFace::kCeiling}) {
+    Decal d;
+    d.x = 1;
+    d.y = 1;
+    d.face = face;
+    d.texture = "stain";
+    CHECK(level.AddDecal(d));
+  }
+  ModelLibrary models;
+  SceneGeometry geometry = BuildSceneGeometry(level, models, false);
+  CHECK_EQ(geometry.decals.size(), size_t{6});
+  const float normals[6][3] = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0},
+                               {1, 0, 0},  {0, 1, 0}, {0, -1, 0}};
+  for (size_t i = 0; i < geometry.decals.size(); ++i) {
+    CHECK_EQ(geometry.decals[i].verts.size(), size_t{6});
+    for (const auto& v : geometry.decals[i].verts) {
+      CHECK(v.nx == normals[i][0] && v.ny == normals[i][1] &&
+            v.nz == normals[i][2]);
+    }
+  }
+  SceneGeometry upper = BuildSceneGeometry(level, models, false, kFloorPitch);
+  CHECK(std::abs(upper.decals[0].verts[0].py - geometry.decals[0].verts[0].py -
+                 kFloorPitch) < 1e-4f);
+  AppendSceneGeometry(geometry, std::move(upper));
+  CHECK_EQ(geometry.decals.size(), size_t{12});
 }
 
 TEST(EngineThinWallsAndWindowsBuildGeometry) {

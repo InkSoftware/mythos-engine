@@ -246,6 +246,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u_emissive_ = world_program_.Uniform("uEmissive");
   u_alpha_test_ = world_program_.Uniform("uAlphaTest");
   u_opacity_ = world_program_.Uniform("uOpacity");
+  u_decal_ = world_program_.Uniform("uDecal");
   WorldUniforms& u = world_u_;
   u.mist = world_program_.Uniform("uMist");
   u.mist_height = world_program_.Uniform("uMistHeight");
@@ -470,15 +471,19 @@ void SceneRenderer::UploadWorld(const SceneGeometry& geometry) {
   ++scene_revision_;
   world_.clear();
   props_.clear();
+  decals_.clear();
   UploadBatches(world_, geometry.world);
   UploadBatches(props_, geometry.props);
+  UploadBatches(decals_, geometry.decals);
 }
 
 void SceneRenderer::UploadCab(const SceneGeometry& geometry) {
   ++scene_revision_;
   cab_.clear();
+  cab_decals_.clear();
   UploadBatches(cab_, geometry.world);
   UploadBatches(cab_, geometry.props);
+  UploadBatches(cab_decals_, geometry.decals);
 }
 
 void SceneRenderer::UploadDoorPanel(const std::vector<Batch>& batches) {
@@ -713,6 +718,23 @@ void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
   };
   blend_pass_ = false;
   draw_all();
+  if (bind_normals_ && (!decals_.empty() || !cab_decals_.empty())) {
+    Enable(kBlend);
+    BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
+    DepthMask(kFalse);
+    Enable(gl::kPolygonOffsetFill);
+    gl::PolygonOffset(-1.0f, -1.0f);
+    Uniform1i(u_decal_, 1);
+    float model[16];
+    Mat4Identity(model);
+    DrawBatches(cab_decals_, model, &cull);
+    model[14] = static_cast<float>(cam.scroll_z);
+    DrawBatches(decals_, model, &cull, static_cast<float>(cam.scroll_z));
+    Uniform1i(u_decal_, 0);
+    Disable(gl::kPolygonOffsetFill);
+    DepthMask(kTrue);
+    Disable(kBlend);
+  }
   // Then everything blended (glass, dust, mist cards), over the solid scene.
   // Shadow passes (no normal maps bound) draw solids only.
   if (bind_normals_) {

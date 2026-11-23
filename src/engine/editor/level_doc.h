@@ -4,6 +4,8 @@
 #include <string>
 #include <vector>
 
+#include "engine/world/decal.h"
+
 namespace mythos::editor {
 // One `[furniture]` or `[decor]` line of a level: the cell (x = column, y =
 // row), model name and yaw in degrees. The offsets (world units from the cell
@@ -20,13 +22,14 @@ struct Item {
 };
 
 // An editable level file: the `[map]` glyph rows (all the same width) and the
-// two item lists. `header` keeps the leading `;` comment lines so that saving
+// item and decal lists. `header` keeps the leading `;` comment lines so saving
 // does not lose them.
 struct LevelDoc {
   std::string name;
   std::vector<std::string> header;
   std::vector<std::string> rows;
   std::vector<Item> furniture, decor;
+  std::vector<Decal> decals;
 
   [[nodiscard]] int Width() const {
     return rows.empty() ? 0 : static_cast<int>(rows[0].size());
@@ -47,7 +50,7 @@ struct LevelDoc {
   bool Set(int x, int y, char glyph);
 
   // Crops or grows the map, filling new cells with `fill` and dropping items
-  // that end up outside. Ignores sizes below 1.
+  // and decals that end up outside. Ignores sizes below 1.
   void Resize(int width, int height, char fill);
 
   bool operator==(const LevelDoc&) const = default;

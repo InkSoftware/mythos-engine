@@ -41,6 +41,7 @@ constexpr GLbitfield kColorBufferBit = 0x00004000;
 constexpr GLbitfield kDepthBufferBit = 0x00000100;
 constexpr GLenum kDepthTest = 0x0B71;
 constexpr GLenum kBlend = 0x0BE2;
+constexpr GLenum kPolygonOffsetFill = 0x8037;
 constexpr GLenum kLequal = 0x0203;
 constexpr GLenum kOne = 0x0001;
 constexpr GLenum kSrcAlpha = 0x0302;
@@ -89,6 +90,7 @@ constexpr GLenum kNearestFilter = 0x2600;
   X(void, BlendFunc, GLenum src, GLenum dst)                                 \
   X(void, DepthFunc, GLenum func)                                            \
   X(void, DepthMask, GLboolean flag)                                         \
+  X(void, PolygonOffset, GLfloat factor, GLfloat units)                      \
   X(void, DrawArrays, GLenum mode, GLint first, GLsizei count)               \
   X(void, GenTextures, GLsizei n, GLuint* textures)                          \
   X(void, DeleteTextures, GLsizei n, const GLuint* textures)                 \

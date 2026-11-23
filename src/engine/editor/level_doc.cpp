@@ -32,6 +32,7 @@ void LevelDoc::Resize(const int width, const int height, const char fill) {
   auto outside = [&](const Item& i) { return i.x >= width || i.y >= height; };
   std::erase_if(furniture, outside);
   std::erase_if(decor, outside);
+  std::erase_if(decals, [&](const Decal& d) { return !InBounds(d.x, d.y); });
 }
 
 std::string FormatNumber(const double v) {
@@ -89,6 +90,10 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
         ls >> it.off_x >> it.off_z >> it.lift;  // optional on furniture
         doc.furniture.push_back(it);
       }
+    } else if (section == "[decals]") {
+      Decal decal;
+      if (!ParseDecalLine(line, &decal)) return fail("bad decal line: " + line);
+      doc.decals.push_back(std::move(decal));
     } else {
       return fail("line outside a section: " + line);
     }
@@ -96,6 +101,9 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
   if (doc.rows.empty()) return fail("no [map]");
   for (const auto& r : doc.rows)
     if (r.size() != doc.rows[0].size()) return fail("rows differ in length");
+  for (const auto& decal : doc.decals)
+    if (!doc.InBounds(decal.x, decal.y))
+      return fail("decal outside the map: " + decal.texture);
   *out = std::move(doc);
   return true;
 }
@@ -124,6 +132,10 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
     s += std::to_string(i.x) + " " + std::to_string(i.y) + " " + i.model + " " +
          FormatNumber(i.yaw) + " " + FormatNumber(i.off_x) + " " +
          FormatNumber(i.off_z) + " " + FormatNumber(i.lift) + "\n";
+  if (!doc.decals.empty()) {
+    s += "[decals]\n";
+    for (const auto& decal : doc.decals) s += SerializeDecalLine(decal) + "\n";
+  }
   return s;
 }
 }

@@ -1,8 +1,12 @@
 #include "engine/world/level.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <iomanip>
+#include <limits>
+#include <locale>
 #include <sstream>
 
 #include "engine/core/vfs.h"
@@ -31,6 +35,80 @@ bool ReadFile(const std::string& path, std::string& out) {
 }
 }
 
+bool ValidDecal(const Decal& d) {
+  const bool face = d.face == DecalFace::kNorth ||
+                    d.face == DecalFace::kSouth || d.face == DecalFace::kWest ||
+                    d.face == DecalFace::kEast || d.face == DecalFace::kFloor ||
+                    d.face == DecalFace::kCeiling;
+  return face && !d.texture.empty() &&
+         std::none_of(d.texture.begin(), d.texture.end(),
+                      [](unsigned char c) { return std::isspace(c) != 0; }) &&
+         std::isfinite(d.offset_u) && std::isfinite(d.offset_v) &&
+         std::isfinite(d.width) && d.width > 0 && std::isfinite(d.height) &&
+         d.height > 0 && std::isfinite(d.rotation);
+}
+
+bool ParseDecalLine(const std::string& line, Decal* const out) {
+  if (!out) return false;
+  std::istringstream in(line);
+  in.imbue(std::locale::classic());
+  Decal d;
+  std::string face, extra;
+  if (!(in >> d.x >> d.y >> face >> d.offset_u >> d.offset_v >> d.width >>
+        d.height >> d.rotation >> d.texture) ||
+      (in >> extra))
+    return false;
+  if (face == "north")
+    d.face = DecalFace::kNorth;
+  else if (face == "south")
+    d.face = DecalFace::kSouth;
+  else if (face == "west")
+    d.face = DecalFace::kWest;
+  else if (face == "east")
+    d.face = DecalFace::kEast;
+  else if (face == "floor")
+    d.face = DecalFace::kFloor;
+  else if (face == "ceiling")
+    d.face = DecalFace::kCeiling;
+  else
+    return false;
+  if (!ValidDecal(d)) return false;
+  *out = std::move(d);
+  return true;
+}
+
+std::string SerializeDecalLine(const Decal& d) {
+  if (!ValidDecal(d)) return {};
+  const char* face = "";
+  switch (d.face) {
+    case DecalFace::kNorth:
+      face = "north";
+      break;
+    case DecalFace::kSouth:
+      face = "south";
+      break;
+    case DecalFace::kWest:
+      face = "west";
+      break;
+    case DecalFace::kEast:
+      face = "east";
+      break;
+    case DecalFace::kFloor:
+      face = "floor";
+      break;
+    case DecalFace::kCeiling:
+      face = "ceiling";
+      break;
+  }
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  out << std::setprecision(std::numeric_limits<double>::max_digits10) << d.x
+      << ' ' << d.y << ' ' << face << ' ' << d.offset_u << ' ' << d.offset_v
+      << ' ' << d.width << ' ' << d.height << ' ' << d.rotation << ' '
+      << d.texture;
+  return out.str();
+}
+
 bool Level::Parse(const std::vector<std::string>& rows,
                   std::string* const error) {
   if (rows.empty()) {
@@ -55,6 +133,7 @@ bool Level::Parse(const std::vector<std::string>& rows,
   }
   solid_.assign(cells_.size(), 0);
   furniture_.clear();
+  decals_.clear();
   revision_ = NextRevision();
   return true;
 }
@@ -62,6 +141,7 @@ bool Level::Parse(const std::vector<std::string>& rows,
 bool Level::ParseText(const std::string& text, std::string* const error) {
   std::vector<std::string> rows;
   std::vector<Placement> furniture, decor;
+  std::vector<Decal> decals;
   std::string section;
   std::istringstream in(text);
   std::string raw;
@@ -97,6 +177,13 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
       }
       fields >> placement.off_x >> placement.off_z >> placement.lift;
       decor.push_back(placement);
+    } else if (section == "[decals]") {
+      Decal decal;
+      if (!ParseDecalLine(line, &decal)) {
+        if (error) *error = "bad decal line: " + line;
+        return false;
+      }
+      decals.push_back(std::move(decal));
     }
   }
   if (!Parse(rows, error)) return false;
@@ -115,8 +202,15 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
       return false;
     }
   }
+  for (const auto& decal : decals) {
+    if (!InBounds(decal.x, decal.y)) {
+      if (error) *error = "decal outside the map: " + decal.texture;
+      return false;
+    }
+  }
   furniture_ = std::move(furniture);
   furniture_.insert(furniture_.end(), decor.begin(), decor.end());
+  for (const auto& decal : decals) AddDecal(decal);
   return true;
 }
 
@@ -204,6 +298,16 @@ bool Level::AddFurniture(const Placement& placement) {
   if (placement.solid) {
     solid_[static_cast<size_t>(placement.y) * w_ + placement.x] = 1;
   }
+  revision_ = NextRevision();
+  return true;
+}
+
+bool Level::AddDecal(const Decal& decal) {
+  if (!InBounds(decal.x, decal.y) || !ValidDecal(decal)) return false;
+  // Copy first because decal may refer to an element evicted below.
+  Decal copy = decal;
+  if (decals_.size() == kMaxDecals) decals_.erase(decals_.begin());
+  decals_.push_back(std::move(copy));
   revision_ = NextRevision();
   return true;
 }

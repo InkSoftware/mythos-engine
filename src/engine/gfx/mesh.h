@@ -55,7 +55,14 @@ struct SceneGeometry {
   std::vector<Batch> world;
   // Sprites placed by tiles, as crossed billboards.
   std::vector<Batch> props;
+  // Decals in placement order, drawn separately without casting shadows.
+  std::vector<Batch> decals;
 };
+
+// Decal offsets locate the center relative to the face center in meters.
+// U runs +x on north/floor/ceiling, -x on south, -z on west, +z on
+// east; V runs +y on walls and +z on horizontal faces. Rotation is degrees
+// counterclockwise in this U/V plane. Quads are not clipped to their cell.
 
 // Builds the geometry of a level: floors, ceilings, walls, sprites and the
 // furniture models, placed and turned as the level file says. Appearance of

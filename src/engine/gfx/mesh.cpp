@@ -217,10 +217,70 @@ class SceneBuilder {
       for (int x = 0; x < level_.Width(); ++x) AddCell(x, y);
     }
     AddFurniture(models);
+    AddDecals();
     return std::move(geometry_);
   }
 
  private:
+  void AddDecals() {
+    for (const Decal& d : level_.Decals()) {
+      const float x = static_cast<float>(d.x), z = static_cast<float>(d.y);
+      P3 center{}, u{}, v{}, normal{};
+      switch (d.face) {
+        case DecalFace::kNorth:
+          center = {x + 0.5f, kWallHeight / 2, z};
+          u = {1, 0, 0};
+          v = {0, 1, 0};
+          normal = {0, 0, -1};
+          break;
+        case DecalFace::kSouth:
+          center = {x + 0.5f, kWallHeight / 2, z + 1};
+          u = {-1, 0, 0};
+          v = {0, 1, 0};
+          normal = {0, 0, 1};
+          break;
+        case DecalFace::kWest:
+          center = {x, kWallHeight / 2, z + 0.5f};
+          u = {0, 0, -1};
+          v = {0, 1, 0};
+          normal = {-1, 0, 0};
+          break;
+        case DecalFace::kEast:
+          center = {x + 1, kWallHeight / 2, z + 0.5f};
+          u = {0, 0, 1};
+          v = {0, 1, 0};
+          normal = {1, 0, 0};
+          break;
+        case DecalFace::kFloor:
+          center = {x + 0.5f, 0, z + 0.5f};
+          u = {1, 0, 0};
+          v = {0, 0, 1};
+          normal = {0, 1, 0};
+          break;
+        case DecalFace::kCeiling:
+          center = {x + 0.5f, kWallHeight, z + 0.5f};
+          u = {1, 0, 0};
+          v = {0, 0, 1};
+          normal = {0, -1, 0};
+          break;
+      }
+      const double angle = d.rotation * std::numbers::pi / 180.0;
+      const double c = std::cos(angle), s = std::sin(angle);
+      const auto point = [&](const double a, const double b) {
+        const float du = static_cast<float>(d.offset_u + a * c - b * s);
+        const float dv = static_cast<float>(d.offset_v + a * s + b * c);
+        return P3{center.x + u.x * du + v.x * dv,
+                  center.y + u.y * du + v.y * dv,
+                  center.z + u.z * du + v.z * dv};
+      };
+      geometry_.decals.push_back(Batch{});
+      Batch& batch = geometry_.decals.back();
+      batch.texture = d.texture;
+      const double w = d.width / 2, h = d.height / 2;
+      AddQuad(batch, point(-w, -h), point(w, -h), point(w, h), point(-w, h),
+              normal.x, normal.y, normal.z, 1, 1);
+    }
+  }
   // Short for the wall quads below. The jamb constants are the wall left either
   // side of a door's hole, where the far jamb starts (1 - kDoorJamb), and how
   // far the posts of a room entrance sit from the cell sides.
@@ -572,7 +632,7 @@ SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
                                  const bool outdoor, const float y) {
   SceneGeometry g = BuildSceneGeometry(level, models, outdoor);
   if (y == 0.0f) return g;
-  for (auto* part : {&g.world, &g.props})
+  for (auto* part : {&g.world, &g.props, &g.decals})
     for (Batch& b : *part)
       for (Vertex& v : b.verts) v.py += y;
   return g;
@@ -581,6 +641,7 @@ SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
 void AppendSceneGeometry(SceneGeometry& into, SceneGeometry&& from) {
   for (Batch& b : from.world) into.world.push_back(std::move(b));
   for (Batch& b : from.props) into.props.push_back(std::move(b));
+  for (Batch& b : from.decals) into.decals.push_back(std::move(b));
 }
 
 std::vector<Batch> BuildDoorPanel() {

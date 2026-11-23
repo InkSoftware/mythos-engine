@@ -461,7 +461,7 @@ class SceneRenderer {
   std::vector<std::pair<std::string, GlTexture>> normal_maps_;
   std::vector<std::pair<std::string, GlTexture>> material_maps_;
   GlTexture default_material_;
-  BatchList world_, props_, cab_, door_;
+  BatchList world_, props_, cab_, door_, decals_, cab_decals_;
 
   // The texture and flag state currently bound, to skip redundant GL calls;
   // reset when the program changes.
@@ -474,6 +474,7 @@ class SceneRenderer {
   } draw_state_;
   // The solid pass draws batches with opacity 1, the blended pass the others.
   bool blend_pass_ = false;
+  gl::GLint u_decal_ = -1;
 
   gl::GLint u_model_ = -1, u_emissive_ = -1, u_alpha_test_ = -1,
             u_opacity_ = -1;

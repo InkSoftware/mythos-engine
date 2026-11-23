@@ -53,6 +53,9 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Risk:** lighting. Start unlit or ambient-lit, with an optional glow.
 
 ### 1.3 Decals (S to M)
+- **Progress:** cell-face quads, a separate blended render pass and `[decals]`
+  persistence are implemented. Prop surfaces and thin-wall placement remain;
+  quads are not clipped to their receiving surface.
 - **Why:** bullet holes, stains, blood, footprints, drips.
 - **Where:** `world/decal.h` places a quad on a wall, floor or prop surface
   (cell, face, offset, size, rotation, texture) and bakes them into the scene

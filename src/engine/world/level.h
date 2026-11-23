@@ -1,11 +1,13 @@
 #ifndef MYTHOS_ENGINE_WORLD_LEVEL_H_
 #define MYTHOS_ENGINE_WORLD_LEVEL_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "engine/world/decal.h"
 #include "engine/world/tiles.h"
 
 // The grid world: glyph map, furniture placements and the collision tests built
@@ -28,19 +30,22 @@ struct Placement {
   std::string id;
 };
 
-// A rectangular map of glyphs plus placements. Revision() changes whenever the
-// map or placements change, so caches can detect edits. Not thread-safe.
+// A rectangular map of glyphs plus placements and decals. Revision() changes
+// on edits so caches can detect them. Not thread-safe.
 class Level {
  public:
-  // Loads a map from equal-length rows, clearing any furniture. Returns false
-  // and sets *error for an empty map or ragged rows.
+  static constexpr std::size_t kMaxDecals = 1024;
+
+  // Loads a map from equal-length rows, clearing furniture and decals. Returns
+  // false and sets *error for an empty map or ragged rows.
   bool Parse(const std::vector<std::string>& rows,
              std::string* error = nullptr);
 
   // Parses level text: a "[map]" section of rows, "[furniture]" lines ("x y
-  // model yaw") and "[decor]" lines ("x y model yaw [offX offZ lift]"). Blank
-  // lines and lines starting with ';' are ignored. Nothing is kept on failure
-  // of the placement checks, but the map itself is already replaced.
+  // model yaw") and "[decor]" lines ("x y model yaw [offX offZ lift]").
+  // [decals] lines use the format documented in decal.h. Blank lines and lines
+  // starting with ';' are ignored. On placement or decal bounds failure, the
+  // map is already replaced but placements and decals are not kept.
   bool ParseText(const std::string& text, std::string* error = nullptr);
 
   // Reads path through the virtual file system and parses it with ParseText.
@@ -110,11 +115,17 @@ class Level {
   // impassable cell.
   bool AddFurniture(const Placement& p);
 
+  [[nodiscard]] const std::vector<Decal>& Decals() const { return decals_; }
+
+  // Invalid decals are rejected; at capacity the oldest decal is evicted.
+  bool AddDecal(const Decal& decal);
+
   // Removes the placement with the given id (empty ids never match); returns
   // whether one was found.
   bool RemovePlacement(const std::string& id);
 
-  // Process-unique stamp, renewed on every change to the map or placements.
+  // Process-unique stamp, renewed on every change to the map, placements or
+  // decals.
   [[nodiscard]] uint64_t Revision() const { return revision_; }
 
   // True if no point sampled along the segment (x0, y0)-(x1, y1) in the floor
@@ -130,6 +141,7 @@ class Level {
   // Per-cell flag: 1 if solid furniture stands there.
   std::vector<char> solid_;
   std::vector<Placement> furniture_;
+  std::vector<Decal> decals_;
   TileSetPtr tiles_ = DefaultTileSet();
 };
 }
