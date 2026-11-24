@@ -1481,7 +1481,8 @@ void EditorApp::DrawViewportWindow(const float dt) {
   ToolButton("Place", Tool::kPlace, "Place a model (N). R turns it.");
   ImGui::SameLine();
   ToolButton("Prefab", Tool::kPrefab,
-             "Place the prefab chosen in the Inspector (P). R turns it.");
+             "Place the prefab chosen in the Inspector (P). R turns it. "
+             "Shift+drag picks the area to save as a prefab.");
   ImGui::SameLine();
   ImGui::TextDisabled("|");
   ImGui::SameLine();

@@ -936,7 +936,7 @@ void EditorApp::ViewportInput(const ImVec2 size, const bool hovered,
       hover_entity_valid_ = PickEntity(ray, &hover_entity_, nullptr);
       break;
     case Tool::kPrefab:
-      PrefabInput(pressed);
+      PrefabInput(pressed, down && !alt, released);
       break;
   }
 
@@ -1002,7 +1002,31 @@ bool EditorApp::EnsurePrefab() {
   return true;
 }
 
-void EditorApp::PrefabInput(const bool pressed) {
+void EditorApp::PrefabInput(const bool pressed, const bool down,
+                            const bool released) {
+  // Shift + drag: the area to save as a prefab.
+  if (ImGui::GetIO().KeyShift || drag_ == Drag::kRect) {
+    if (pressed && hover_cell_valid_) {
+      drag_ = Drag::kRect;
+      rect_x0_ = hover_x_;
+      rect_z0_ = hover_z_;
+    }
+    if (drag_ == Drag::kRect && (down || released) && hover_cell_valid_) {
+      prefab_rect_[0] = std::min(rect_x0_, hover_x_);
+      prefab_rect_[1] = std::min(rect_z0_, hover_z_);
+      prefab_rect_[2] = std::max(rect_x0_, hover_x_);
+      prefab_rect_[3] = std::max(rect_z0_, hover_z_);
+    }
+    if (released && drag_ == Drag::kRect) {
+      drag_ = Drag::kNone;
+      prefab_status_ = "Area " + std::to_string(prefab_rect_[0]) + ", " +
+                       std::to_string(prefab_rect_[1]) + " to " +
+                       std::to_string(prefab_rect_[2]) + ", " +
+                       std::to_string(prefab_rect_[3]) +
+                       ": save it in the Inspector's Prefabs section.";
+    }
+    return;
+  }
   if (!pressed || !hover_cell_valid_) return;
   LevelDoc* doc = project_.Level(level_);
   if (doc == nullptr) return;
@@ -1145,7 +1169,20 @@ void EditorApp::DrawOverlay(const ImVec2 size) {
     viewport_.Line({x1, y, z1}, {rx0, y, z1}, kGreen, true);
     viewport_.Line({rx0, y, z1}, {rx0, y, rz0}, kGreen, true);
   }
-  if (tool_ == Tool::kPrefab && hover_cell_valid_ && EnsurePrefab()) {
+  if (tool_ == Tool::kPrefab && drag_ == Drag::kRect) {
+    // The area being picked.
+    const auto x0 = static_cast<float>(prefab_rect_[0]),
+               z0 = static_cast<float>(prefab_rect_[1]),
+               x1 = static_cast<float>(prefab_rect_[2] + 1),
+               z1 = static_cast<float>(prefab_rect_[3] + 1);
+    const float y = fy + 0.012f;
+    viewport_.Quad({x0, y, z0}, {x1, y, z0}, {x1, y, z1}, {x0, y, z1},
+                   {1.0f, 0.8f, 0.3f, 0.25f});
+    viewport_.Line({x0, y, z0}, {x1, y, z0}, kYellow, true);
+    viewport_.Line({x1, y, z0}, {x1, y, z1}, kYellow, true);
+    viewport_.Line({x1, y, z1}, {x0, y, z1}, kYellow, true);
+    viewport_.Line({x0, y, z1}, {x0, y, z0}, kYellow, true);
+  } else if (tool_ == Tool::kPrefab && hover_cell_valid_ && EnsurePrefab()) {
     // The footprint of the prefab, turned, with its top-left at the cell.
     const Prefab turned = Rotated(prefab_cache_, prefab_turns_);
     const auto x0 = static_cast<float>(hover_x_),

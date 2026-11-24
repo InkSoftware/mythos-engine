@@ -279,7 +279,7 @@ more than was built.
 ### 5.4 Editor prefabs (M) - first version
 - **Progress:** `editor/prefab.h` (a `.prefab` file in the level's own line format, capture, quarter turns and placement with
   checks, tested) and a Prefabs section in the Inspector (save an area, place at a cell with a turn). The viewport's Prefab tool (P) places the chosen prefab at the clicked cell with a
-  footprint ghost. Not done: picking the area to capture with the mouse, prefabs that keep a link to their file (an
+  footprint ghost. Shift+drag in that tool picks the area to capture. Not done: prefabs that keep a link to their file (an
   update that reaches the placed copies), and prefabs holding triggers or decals.
 - Reusable groups of furniture and decor, saved as a file, placed and
   overridden in the editor. Mirrors the level format so games need no code.
@@ -325,7 +325,7 @@ Gaps named in the Progress lines, by area:
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   steering around moving obstacles and group behaviour for the AI.
 - **Audio:** tempo changes and phrase-synchronised music transitions.
-- **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), picking the prefab area to capture with the mouse, linked prefabs
+- **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
 - **Tools and data:** furniture changes in a save.
 

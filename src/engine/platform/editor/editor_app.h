@@ -228,7 +228,9 @@ class EditorApp {
 
   // The Prefab tool: click a cell to place the prefab chosen in the
   // Inspector's Prefabs section there (R turns it).
-  void PrefabInput(bool pressed);
+  // With Shift held it picks the area to capture instead: drag a rectangle
+  // (it fills the Inspector's "From / To cell" fields).
+  void PrefabInput(bool pressed, bool down, bool released);
   bool EnsurePrefab();
 
   void DrawPalette();
