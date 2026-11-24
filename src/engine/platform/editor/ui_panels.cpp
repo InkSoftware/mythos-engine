@@ -1140,6 +1140,76 @@ void EditorApp::DrawCutscenes() {
                     nullptr, nullptr, "%.2f");
   ImGui::Text("Length %.2f s", CutsceneLength(cut_));
 
+  // The timeline: one row each of camera keys, cues, animation keys and value
+  // keys over the length of the scene, and a playhead to drag. With the preview
+  // on the viewport looks through the cutscene's camera at the playhead.
+  ImGui::SeparatorText("Timeline");
+  {
+    const double length = std::max(0.1, CutsceneLength(cut_));
+    cut_scrub_ = std::clamp(cut_scrub_, 0.0f, static_cast<float>(length));
+    ImGui::SetNextItemWidth(200);
+    ImGui::SliderFloat("Playhead (s)", &cut_scrub_, 0.0f,
+                       static_cast<float>(length), "%.2f");
+    ImGui::SameLine();
+    ImGui::Checkbox("Camera preview", &cut_preview_);
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const float width = std::max(100.0f, ImGui::GetContentRegionAvail().x - 8);
+    constexpr float kRow = 14.0f;
+    const ImVec2 size{width, kRow * 4 + 4};
+    ImGui::InvisibleButton("##timeline", size);
+    if (ImGui::IsItemActive()) {
+      const float t = (ImGui::GetIO().MousePos.x - origin.x) / width;
+      cut_scrub_ = std::clamp(t, 0.0f, 1.0f) * static_cast<float>(length);
+    }
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    dl->AddRectFilled(origin, {origin.x + size.x, origin.y + size.y},
+                      IM_COL32(30, 30, 36, 255));
+    const auto x_of = [&](const double t) {
+      return origin.x + static_cast<float>(t / length) * width;
+    };
+    const auto mark = [&](const double t, const int row, const ImU32 color) {
+      const float x = x_of(t),
+                  y = origin.y + 2 + kRow * static_cast<float>(row) + kRow / 2;
+      dl->AddCircleFilled({x, y}, 4.0f, color);
+    };
+    for (const CameraKey& k : cut_.camera)
+      mark(k.time, 0, IM_COL32(90, 170, 255, 255));
+    for (const CueKey& k : cut_.cues)
+      mark(k.time, 1, IM_COL32(255, 200, 80, 255));
+    for (const AnimKey& k : cut_.anims)
+      mark(k.time, 2, IM_COL32(120, 220, 130, 255));
+    for (const ValueTrack& t : cut_.values) {
+      for (const ValueKey& k : t.keys)
+        mark(k.time, 3, IM_COL32(230, 120, 200, 255));
+    }
+    const float px = x_of(cut_scrub_);
+    dl->AddLine({px, origin.y}, {px, origin.y + size.y},
+                IM_COL32(255, 255, 255, 255), 2.0f);
+    ImGui::TextDisabled("rows: camera, cues, animations, values");
+    // Where the camera is at the playhead.
+    CameraSample film;
+    if (SampleCutsceneCamera(cut_, cut_scrub_, &film)) {
+      ImGui::Text(
+          "Camera at %.2f s: x %.2f  eye %.2f  z %.2f  yaw %.2f  pitch %.2f",
+          cut_scrub_, film.pos.x, film.pos.y, film.pos.z, film.yaw, film.pitch);
+      if (cut_preview_) {
+        if (!cut_preview_was_) cut_saved_cam_ = cam_;
+        const auto cp = static_cast<float>(std::cos(film.pitch));
+        const float fx = cp * static_cast<float>(std::cos(film.yaw)),
+                    fy = static_cast<float>(std::sin(film.pitch)),
+                    fz = cp * static_cast<float>(std::sin(film.yaw));
+        cam_.distance = 0.5f;
+        cam_.heading = static_cast<float>(film.yaw);
+        cam_.pitch = -static_cast<float>(film.pitch);
+        cam_.target = {static_cast<float>(film.pos.x) + fx * 0.5f,
+                       static_cast<float>(film.pos.y) + fy * 0.5f,
+                       static_cast<float>(film.pos.z) + fz * 0.5f};
+      }
+    }
+    if (!cut_preview_ && cut_preview_was_) cam_ = cut_saved_cam_;
+    cut_preview_was_ = cut_preview_;
+  }
+
   ImGui::SeparatorText("Camera keys");
   if (ImGui::SmallButton("Add key from the viewport camera")) {
     const OrbitCamera& oc = cam_;

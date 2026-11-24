@@ -266,6 +266,26 @@ std::string SerializeCutscene(const Cutscene& scene) {
   return s;
 }
 
+bool SampleCutsceneCamera(const Cutscene& scene, const double t,
+                          CameraSample* const out) {
+  Cutscene sorted = scene;
+  SortCutscene(sorted);
+  CutscenePlayer player;
+  player.Start(&sorted);
+  player.Update(std::max(0.0, t), {}, {});
+  return player.Camera(out);
+}
+
+double SampleCutsceneValue(const Cutscene& scene, const std::string& name,
+                           const double t, const double fallback) {
+  Cutscene sorted = scene;
+  SortCutscene(sorted);
+  CutscenePlayer player;
+  player.Start(&sorted);
+  player.Update(std::max(0.0, t), {}, {});
+  return player.Value(name, fallback);
+}
+
 void CutscenePlayer::Start(const Cutscene* const scene) {
   scene_ = scene;
   time_ = 0;

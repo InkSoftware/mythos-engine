@@ -109,6 +109,14 @@ void SortCutscene(Cutscene& scene);
 // reported too (it ends at once and shows nothing).
 std::vector<std::string> ValidateCutscene(const Cutscene& scene);
 
+// The camera at time `t` of a cutscene without playing it (an editor scrubbing
+// the timeline); false when it has no camera keys. Cues and animation keys
+// are not fired.
+bool SampleCutsceneCamera(const Cutscene& scene, double t, CameraSample* out);
+// A value track at time `t`, or `fallback` when there is none by that name.
+double SampleCutsceneValue(const Cutscene& scene, const std::string& name,
+                           double t, double fallback = 0);
+
 using CueCallback = std::function<void(const EventAction&)>;
 using AnimCallback = std::function<void(const AnimKey&)>;
 

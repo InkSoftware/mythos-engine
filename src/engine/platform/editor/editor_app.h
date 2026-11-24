@@ -276,6 +276,11 @@ class EditorApp {
   Cutscene cut_;
   std::string cut_file_, cut_new_name_ = "intro", cut_status_;
   bool cut_loaded_ = false;
+  // The timeline: where the playhead is, whether the viewport shows the
+  // cutscene's camera there, and the camera to go back to.
+  float cut_scrub_ = 0.0f;
+  bool cut_preview_ = false, cut_preview_was_ = false;
+  OrbitCamera cut_saved_cam_;
   Prefab prefab_cache_;
   std::string prefab_cache_name_;
   std::string prefab_name_ = "group";

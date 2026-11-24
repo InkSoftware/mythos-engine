@@ -5654,6 +5654,23 @@ TEST(music_fades_wait_for_the_bar_line) {
   CHECK_EQ(f.Time(), 0.0);
 }
 
+TEST(cutscene_samples_without_playing) {
+  mythos::Cutscene s;
+  s.camera = {{2, {4, 2, 0}, 1.0, 0.2, 1.2, mythos::Ease::kLinear},
+              {0, {0, 2, 0}, 0, 0, 1, mythos::Ease::kLinear}};  // out of order
+  s.values = {
+      {"fade", {{0, 1, mythos::Ease::kLinear}, {1, 0, mythos::Ease::kLinear}}}};
+  mythos::CameraSample c;
+  CHECK(mythos::SampleCutsceneCamera(s, 1.0, &c));
+  CHECK(std::fabs(c.pos.x - 2.0) < 1e-9 && std::fabs(c.yaw - 0.5) < 1e-9);
+  CHECK(mythos::SampleCutsceneCamera(s, -5.0, &c) && c.pos.x == 0.0);
+  CHECK(mythos::SampleCutsceneCamera(s, 99.0, &c) && c.pos.x == 4.0);
+  CHECK_EQ(mythos::SampleCutsceneValue(s, "fade", 0.25), 0.75);
+  CHECK_EQ(mythos::SampleCutsceneValue(s, "nope", 0.25, 7.0), 7.0);
+  mythos::Cutscene empty;
+  CHECK(!mythos::SampleCutsceneCamera(empty, 1.0, &c));
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

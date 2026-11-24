@@ -287,8 +287,8 @@ more than was built.
 ### 5.5 Cutscene sequencer (L) - first version
 - **Progress:** `world/cutscene.h` (a text file of camera keys, cues, value tracks and animation keys, a `CutscenePlayer` with
   `Skip`, tested); the template plays `assets/cutscenes/intro.cutscene` (camera glide, a fade, text, the guide's wave).
-  The editor has a Cutscene panel (tables of keys, a key from the viewport camera, problems, save). Not done: a
-  graphical timeline (scrubbing, dragging keys, a camera preview), sound and tween-callback tracks beyond cues and
+  The editor has a Cutscene panel (a timeline with a playhead and a camera preview, tables of keys, a key from the
+  viewport camera, problems, save). Not done: dragging keys on the timeline, sound and tween-callback tracks beyond cues and
   values, and a cutscene runner that other systems (the cvar console) can drive.
 - Timeline of camera, tween, sound, event and animation tracks, built on 1.4,
   2.1 and 3.1. Editor timeline panel.
@@ -325,7 +325,7 @@ Gaps named in the Progress lines, by area:
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   steering around moving obstacles and group behaviour for the AI.
 - **Audio:** tempo changes and phrase-synchronised music transitions.
-- **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
+- **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
 - **Tools and data:** furniture changes in a save.
 
