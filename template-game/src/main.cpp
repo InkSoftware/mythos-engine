@@ -96,14 +96,17 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
+  // `--ssao` turns on ambient occlusion (the Ambient occlusion setting).
   // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
   bool outdoor = false;
+  bool ssao = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--outdoor") outdoor = true;
+    if (arg == "--ssao") ssao = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
       hour = std::strtod(argv[i + 1], nullptr);
@@ -148,7 +151,8 @@ int main(const int argc, char** const argv) {
   const mythos::UserFiles files("mythos", "template-game");
   const std::string save_dir = files.Path("saves");
 
-  const mythos::GameSettings settings;
+  mythos::GameSettings settings;
+  settings.ambient_occlusion = ssao;
 
   // Sound: the engine's common clips. A hum in the back room is a positional
   // source: panned and attenuated by distance, and muffled by the walls and

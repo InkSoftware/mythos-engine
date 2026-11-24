@@ -206,6 +206,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   mixer applies the maths; tests cover the maths.
 
 ### 4.2 SSAO (M)
+- **Progress:** done as a post pass (`ssao.frag` at half size, a blur, multiplied in the composite, less on bright
+  pixels), behind the Ambient occlusion setting (off by default; `CameraState::ssao`); the scene target's depth is now a
+  texture, copied out of the multisampled target only while it is on. The template shows it with `--ssao`. Not done:
+  applying it to the ambient term inside the world shader (it would need the depth before the lit pass) and the mirror view.
 - **Where:** a half-resolution pass beside bloom, multiplied into the ambient
   term only. Needs a depth/normal copy of the multisampled target (resolve).
   Setting: off / on, off keeps pixel parity.

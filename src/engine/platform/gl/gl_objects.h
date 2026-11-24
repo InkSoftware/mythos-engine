@@ -163,6 +163,12 @@ class RenderTarget {
   // Blits the multisampled image into the color texture; no-op without MSAA.
   void Resolve() const;
 
+  // Also copies the depth into `DepthTexture()` when resolving (off by
+  // default: the blit costs). The depth texture is always attached, so with
+  // no MSAA the scene is drawn straight into it.
+  void SetResolveDepth(bool on) { resolve_depth_ = on; }
+  [[nodiscard]] const GlTexture& DepthTexture() const { return depth_tex_; }
+
   void Bind() const;
 
   // Binds the window's default framebuffer.
@@ -174,12 +180,14 @@ class RenderTarget {
 
  private:
   GlTexture color_;
+  GlTexture depth_tex_;
+  bool resolve_depth_ = false;
 
   void RebuildMultisample();
 
   void DropMultisample();
 
-  gl::GLuint depth_ = 0, fbo_ = 0;
+  gl::GLuint fbo_ = 0;
   gl::GLuint ms_color_ = 0, ms_depth_ = 0, ms_fbo_ = 0;
   int samples_ = 0;
   int w_ = 0, h_ = 0;

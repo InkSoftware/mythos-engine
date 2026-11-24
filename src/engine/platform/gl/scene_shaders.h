@@ -30,6 +30,7 @@ extern const char* const kParticleFrag;
 extern const char* const kGlassPaneFrag;
 extern const char* const kOverlayFrag;
 extern const char* const kBloomBlurFrag;
+extern const char* const kSsaoFrag;
 }
 
 #endif

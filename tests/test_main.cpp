@@ -4852,6 +4852,23 @@ TEST(cutscene_skip_fires_the_rest_and_yaw_turns_the_short_way) {
   CHECK(p3.Finished());
 }
 
+TEST(settings_ambient_occlusion_is_off_by_default_and_persists) {
+  GameSettings s;
+  CHECK(!s.ambient_occlusion);
+  const auto& rows = SettingsPageItems(SettingsPage::kGraphics);
+  CHECK(std::ranges::find(rows, kSetAmbientOcclusion) != rows.end());
+  s.ambient_occlusion = true;
+  GameSettings back;
+  ApplyKeyValues(back, ToKeyValues(s));
+  CHECK(back.ambient_occlusion);
+  // An old settings file without the key keeps the default.
+  GameSettings old;
+  ApplyKeyValues(old, {{"filmGrain", "0"}});
+  CHECK(!old.ambient_occlusion);
+  CHECK(!Tr("settings.ambientOcclusion").empty() &&
+        Tr("settings.ambientOcclusion") != "settings.ambientOcclusion");
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

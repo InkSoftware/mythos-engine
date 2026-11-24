@@ -64,6 +64,8 @@ struct GameSettings {
   bool film_grain = true;
   int motion_blur = 0;
   bool visual_fx = true;
+  // Screen-space ambient occlusion (`CameraState::ssao`): off by default.
+  bool ambient_occlusion = false;
 
   // The camcorder tape look (`CameraState::tape`), separate from `visual_fx`.
   bool camera_effect = false;
@@ -92,6 +94,7 @@ enum SettingsItem {
   kSetFilmGrain,
   kSetMotionBlur,
   kSetVisualFx,
+  kSetAmbientOcclusion,
   kSetCameraEffect,
   kSetMaster,
   kSetAmbience,

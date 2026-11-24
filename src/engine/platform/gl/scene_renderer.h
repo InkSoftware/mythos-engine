@@ -147,6 +147,12 @@ struct CameraState {
   bool lens_effect = true;
   double bloom = 0;
 
+  // Screen-space ambient occlusion strength, 0 (off, the default: the picture
+  // is exactly as without it) to 1. Darkens creases and corners from the depth
+  // buffer, less where the picture is already bright (it stands in for the
+  // ambient term only).
+  double ssao = 0;
+
   // Camcorder tape look, drawn in the composite pass (HUD included).
   bool tape = false;
 
@@ -460,6 +466,10 @@ class SceneRenderer {
       composite_program_, mirror_program_, glass_program_, bloom_program_,
       particle_program_;
   RenderTarget bloom_a_, bloom_b_;
+  // The occlusion at half size, and its blur partner.
+  RenderTarget ao_a_, ao_b_;
+  GlProgram ssao_program_;
+  bool BuildAo(const CameraState& cam, const Frame& f);
   RenderTarget mirror_target_;
   GlVertexArray mirror_vao_;
   GlBuffer mirror_vbo_;

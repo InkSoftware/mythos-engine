@@ -252,6 +252,8 @@ bool SceneRenderer::BuildPrograms() {
         {{0, "aPos"}, {1, "aUV"}, {2, "aColor"}, {3, "aShape"}});
   build(bloom_program_, shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
         quad_attribs);
+  build(ssao_program_, shaders::kFullscreenQuadVert, shaders::kSsaoFrag,
+        quad_attribs);
   if (world_program_.Valid()) LookUpWorldUniforms();
   return all;
 }
@@ -303,6 +305,8 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
   // Bloom works at a quarter of the render size.
   bloom_a_.Create(kInternalW / 4, kInternalH / 4);
   bloom_b_.Create(kInternalW / 4, kInternalH / 4);
+  ao_a_.Create(kInternalW / 2, kInternalH / 2);
+  ao_b_.Create(kInternalW / 2, kInternalH / 2);
   return world_program_.Valid() && quad_program_.Valid() &&
          composite_program_.Valid() && sky_program_.Valid() && text_ok;
 }
@@ -472,6 +476,8 @@ void SceneRenderer::ResizeTarget(const int window_w, const int window_h) {
   target_.Resize(w, h);
   bloom_a_.Resize(std::max(1, w / 4), std::max(1, h / 4));
   bloom_b_.Resize(std::max(1, w / 4), std::max(1, h / 4));
+  ao_a_.Resize(std::max(1, w / 2), std::max(1, h / 2));
+  ao_b_.Resize(std::max(1, w / 2), std::max(1, h / 2));
 }
 
 GLuint SceneRenderer::TextureFor(const std::string& name) const {
@@ -1215,6 +1221,52 @@ void SceneRenderer::MotionBlurSmear(const CameraState& cam, const Frame& f,
   have_last_view_ = true;
 }
 
+// The occlusion pass: reads the resolved depth of the scene, writes the
+// occlusion at half size, then blurs it (the bloom blur, no threshold) to hide
+// the per-pixel rotation of the sample ring. Returns whether `ao_a_` holds it.
+bool SceneRenderer::BuildAo(const CameraState& cam, const Frame& f) {
+  if (cam.ssao <= 0.0 || !ssao_program_.Valid() || !bloom_program_.Valid() ||
+      !ao_a_.Width()) {
+    return false;
+  }
+  Disable(kDepthTest);
+  Disable(kBlend);
+  ao_a_.Bind();
+  Viewport(0, 0, ao_a_.Width(), ao_a_.Height());
+  ssao_program_.Use();
+  ActiveTexture(kTexture0);
+  target_.DepthTexture().Bind();
+  ssao_program_.Set("uDepth", 0);
+  const float tan_half_y = std::tan(f.fov_y * 0.5f);
+  ssao_program_.Set("uTan", tan_half_y * f.aspect, tan_half_y);
+  ssao_program_.Set("uNearFar", kNearPlane, kFarPlane);
+  ssao_program_.Set("uTexel", 1.0f / static_cast<float>(target_.Width()),
+                    1.0f / static_cast<float>(target_.Height()));
+  ssao_program_.Set("uRadius", 0.7f);
+  DrawQuad();
+
+  bloom_program_.Use();
+  bloom_program_.Set("uTex", 0);
+  bloom_program_.Set("uThreshold", 0.0f);
+  const float tx = 1.0f / static_cast<float>(ao_a_.Width());
+  const float ty = 1.0f / static_cast<float>(ao_a_.Height());
+  struct Pass {
+    const RenderTarget* from;
+    RenderTarget* to;
+    float dx, dy;
+  };
+  const Pass passes[2] = {{&ao_a_, &ao_b_, tx, 0.0f},
+                          {&ao_b_, &ao_a_, 0.0f, ty}};
+  for (const Pass& p : passes) {
+    p.to->Bind();
+    Viewport(0, 0, p.to->Width(), p.to->Height());
+    p.from->Color().Bind();
+    bloom_program_.Set("uDir", p.dx, p.dy);
+    DrawQuad();
+  }
+  return true;
+}
+
 bool SceneRenderer::BuildBloom(const CameraState& cam) {
   if (cam.bloom <= 0.0 || !bloom_program_.Valid() || !bloom_a_.Width())
     return false;
@@ -1260,6 +1312,7 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
   float bx = 0.0f, by = 0.0f;
   MotionBlurSmear(cam, f, bx, by);
 
+  const bool ao = BuildAo(cam, f);
   const bool bloom = BuildBloom(cam);
   RenderTarget::BindWindow();
   Viewport(0, 0, window_w, window_h);
@@ -1288,6 +1341,14 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
     ActiveTexture(kTexture0 + 2);
     lut_tex_.Bind();
     composite_program_.Set("uLutTex", 2);
+    ActiveTexture(kTexture0);
+  }
+  composite_program_.Set(
+      "uAo", ao ? static_cast<float>(std::clamp(cam.ssao, 0.0, 1.0)) : 0.0f);
+  if (ao) {
+    ActiveTexture(kTexture0 + 3);
+    ao_a_.Color().Bind();
+    composite_program_.Set("uAoTex", 3);
     ActiveTexture(kTexture0);
   }
   composite_program_.Set("uTape", cam.tape ? 1.0f : 0.0f);
@@ -1429,6 +1490,7 @@ void SceneRenderer::Render(const CameraState& cam, const int window_w,
   if (mirrored) {
     DrawMirrorView(cam, f);
   }
+  target_.SetResolveDepth(cam.ssao > 0.0);
   DrawMainView(cam, f, mirrored);
 
   Composite(cam, f, window_w, window_h);

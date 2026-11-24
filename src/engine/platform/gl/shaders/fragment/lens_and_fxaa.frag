@@ -14,6 +14,8 @@ uniform float uGradeOn;   // 1: apply the contrast / saturation / tint below
 uniform float uContrast;  // around mid grey
 uniform float uSaturation;
 uniform vec3 uTint;
+uniform sampler2D uAoTex;  // ambient occlusion at half size (1 = open)
+uniform float uAo;         // its strength; 0 = off
 uniform sampler2D uLutTex;  // colour table strip (size * size by size), see gfx/grade.h
 uniform float uLutSize;     // its size; 0 = no table
 uniform float uLutAmount;   // how much of it is mixed in
@@ -43,13 +45,19 @@ vec3 fxaa(vec2 uv) {
 
 vec3 fetch(vec2 uv) { return uFxaa > 0.5 ? fxaa(uv) : texture(uTex, uv).rgb; }
 
-vec3 sampleLensPlain(vec2 uv) {
-    if (uLens < 0.5) return fetch(uv);
-    vec2 c = uv - 0.5;
-    float k = dot(c, c) * 0.020;  // fringing grows with the square of the distance from the centre
-    return vec3(fetch(0.5 + c * (1.0 + k)).r, fetch(uv).g, fetch(0.5 + c * (1.0 - k)).b);
+// Occlusion stands in for the ambient term only, so a bright (directly lit) pixel keeps most of its light.
+vec3 applyAo(vec3 c, vec2 uv) {
+    if (uAo <= 0.0) return c;
+    float lit = clamp(luma(c) * 1.5, 0.0, 0.7);
+    return c * mix(1.0, texture(uAoTex, uv).r, uAo * (1.0 - lit));
 }
 
+vec3 sampleLensPlain(vec2 uv) {
+    if (uLens < 0.5) return applyAo(fetch(uv), uv);
+    vec2 c = uv - 0.5;
+    float k = dot(c, c) * 0.020;  // fringing grows with the square of the distance from the centre
+    return applyAo(vec3(fetch(0.5 + c * (1.0 + k)).r, fetch(uv).g, fetch(0.5 + c * (1.0 - k)).b), uv);
+}
 
 vec3 sceneColor(vec2 uv) { return sampleLensPlain(uv); }
 

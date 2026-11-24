@@ -176,15 +176,18 @@ void RenderTarget::Create(const int w, const int h) {
   color_.Create();
   color_.Allocate(w, h);
   color_.SetParams(kLinear, kLinear, kClampToEdge);
-  GenRenderbuffers(1, &depth_);
-  BindRenderbuffer(kRenderbuffer, depth_);
-  RenderbufferStorage(kRenderbuffer, kDepthFormat, w, h);
+  // The depth is a texture (so a pass can read it), not a renderbuffer.
+  depth_tex_.Create();
+  depth_tex_.Bind();
+  TexImage2D(kTexture2D, 0, static_cast<GLint>(kDepthFormat), w, h, 0,
+             gl::kDepthComponent, gl::kUnsignedInt, nullptr);
+  depth_tex_.SetParams(kNearest, kNearest, kClampToEdge);
   GenFramebuffers(1, &fbo_);
   BindFramebuffer(kFramebuffer, fbo_);
   FramebufferTexture2D(kFramebuffer, kColorAttachment0, kTexture2D, color_.Id(),
                        0);
-  FramebufferRenderbuffer(kFramebuffer, kDepthAttachment, kRenderbuffer,
-                          depth_);
+  FramebufferTexture2D(kFramebuffer, kDepthAttachment, kTexture2D,
+                       depth_tex_.Id(), 0);
   BindFramebuffer(kFramebuffer, 0);
 }
 
@@ -243,7 +246,9 @@ void RenderTarget::Resolve() const {
   if (!ms_fbo_) return;
   BindFramebuffer(kReadFramebuffer, ms_fbo_);
   BindFramebuffer(kDrawFramebuffer, fbo_);
-  BlitFramebuffer(0, 0, w_, h_, 0, 0, w_, h_, kColorBufferBit, kNearestFilter);
+  BlitFramebuffer(0, 0, w_, h_, 0, 0, w_, h_,
+                  kColorBufferBit | (resolve_depth_ ? gl::kDepthBufferBit : 0),
+                  kNearestFilter);
   BindFramebuffer(kFramebuffer, 0);
 }
 
@@ -252,10 +257,10 @@ void RenderTarget::Reset() {
   samples_ = 0;
   if (gl::Loaded()) {
     if (fbo_) DeleteFramebuffers(1, &fbo_);
-    if (depth_) DeleteRenderbuffers(1, &depth_);
   }
-  fbo_ = depth_ = 0;
+  fbo_ = 0;
   color_.Reset();
+  depth_tex_.Reset();
   w_ = h_ = 0;
 }
 
@@ -264,8 +269,9 @@ void RenderTarget::Resize(const int w, const int h) {
   w_ = w;
   h_ = h;
   color_.Allocate(w, h);
-  BindRenderbuffer(kRenderbuffer, depth_);
-  RenderbufferStorage(kRenderbuffer, kDepthFormat, w, h);
+  depth_tex_.Bind();
+  TexImage2D(kTexture2D, 0, static_cast<GLint>(kDepthFormat), w, h, 0,
+             gl::kDepthComponent, gl::kUnsignedInt, nullptr);
   RebuildMultisample();
 }
 

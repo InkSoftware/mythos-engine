@@ -42,6 +42,7 @@ void ApplySettings(const GameSettings& s, CameraState& cam) {
       kPercent;
   cam.lens_effect = s.visual_fx;
   cam.bloom = s.visual_fx ? 0.55 : 0.0;
+  cam.ssao = s.ambient_occlusion ? 1.0 : 0.0;
   cam.tape = s.camera_effect;
 }
 

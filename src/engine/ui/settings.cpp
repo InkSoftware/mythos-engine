@@ -16,10 +16,10 @@ const std::vector<int>& SettingsPageItems(const SettingsPage page) {
   const static std::vector<int> kMain = {kSetGraphics, kSetAudio, kSetLanguage,
                                          kSetBack};
   const static std::vector<int> kGraphics = {
-      kSetResolution,  kSetFullscreen, kSetVsync,    kSetFpsCap,
-      kSetRenderScale, kSetAntiAlias,  kSetShadows,  kSetMaterials,
-      kSetFilmGrain,   kSetMotionBlur, kSetVisualFx, kSetCameraEffect,
-      kSetBack};
+      kSetResolution,       kSetFullscreen, kSetVsync,    kSetFpsCap,
+      kSetRenderScale,      kSetAntiAlias,  kSetShadows,  kSetMaterials,
+      kSetFilmGrain,        kSetMotionBlur, kSetVisualFx, kSetCameraEffect,
+      kSetAmbientOcclusion, kSetBack};
   const static std::vector<int> kAudio = {kSetMaster, kSetAmbience, kSetEffects,
                                           kSetBack};
   return page == SettingsPage::kGraphics
@@ -113,6 +113,9 @@ bool ApplyToRow(GameSettings& s, SettingsPage& page, int& index,
     case kSetVisualFx:
       if (in.toggle) s.visual_fx = !s.visual_fx;
       break;
+    case kSetAmbientOcclusion:
+      if (in.toggle) s.ambient_occlusion = !s.ambient_occlusion;
+      break;
     case kSetCameraEffect:
       if (in.toggle) s.camera_effect = !s.camera_effect;
       break;
@@ -192,6 +195,7 @@ std::map<std::string, std::string> ToKeyValues(const GameSettings& s) {
           {"motionBlurScale", std::to_string(kMotionBlurScales[std::clamp(
                                   s.motion_blur, 0, kMotionBlurCount - 1)])},
           {"visualFx", s.visual_fx ? "1" : "0"},
+          {"ambientOcclusion", s.ambient_occlusion ? "1" : "0"},
           {"cameraEffect", s.camera_effect ? "1" : "0"},
           {"fullscreen", s.fullscreen ? "1" : "0"},
           {"vsync", s.vsync ? "1" : "0"},
@@ -239,6 +243,8 @@ void ApplyKeyValues(GameSettings& s,
       }
     } else if (key == "visualFx") {
       s.visual_fx = val != "0";
+    } else if (key == "ambientOcclusion") {
+      s.ambient_occlusion = val != "0";
     } else if (key == "cameraEffect") {
       s.camera_effect = val != "0";
     } else if (key == "vsync") {
