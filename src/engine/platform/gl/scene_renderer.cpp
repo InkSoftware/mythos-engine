@@ -130,14 +130,32 @@ constexpr float kNormalStrength = 2.5f;
 // Chunk edge in world units for culling.
 constexpr float kChunk = 8.0f;
 // Vertex layout: position (3 floats), normal (3), uv (2).
-constexpr GLsizei kVertexStride = 32;
 // Texture units: color 0, lamp shadow cubes 1-4, hand shadow cube 5, then the
 // surface (normal and gloss) map and the material map.
 constexpr int kNormalUnit = 6, kMaterialUnit = 7;
 constexpr int kFirstShadowUnit = 1, kHandShadowUnit = 5;
 
-void SetVertexLayout(const GLuint vbo) {
+// A skinned vertex is a Vertex followed by SkinWeights: joints (4 floats) and
+// weights (4 floats).
+constexpr GLsizei kSkinnedVertexStride = 64;
+
+struct SkinnedVertex {
+  Vertex v;
+  SkinWeights skin;
+};
+static_assert(sizeof(SkinnedVertex) == kSkinnedVertexStride);
+
+void SetVertexLayout(const GLuint vbo, const bool skinned = false) {
   BindBuffer(kArrayBuffer, vbo);
+  if (skinned) {
+    EnableVertexAttribArray(3);
+    VertexAttribPointer(3, 4, kFloat, kFalse, kSkinnedVertexStride,
+                        reinterpret_cast<const void*>(32));
+    EnableVertexAttribArray(4);
+    VertexAttribPointer(4, 4, kFloat, kFalse, kSkinnedVertexStride,
+                        reinterpret_cast<const void*>(48));
+  }
+  const GLsizei kVertexStride = skinned ? kSkinnedVertexStride : 32;
   EnableVertexAttribArray(0);
   VertexAttribPointer(0, 3, kFloat, kFalse, kVertexStride, nullptr);
   EnableVertexAttribArray(1);
@@ -186,11 +204,19 @@ void GrowBounds(float* const bmin, float* const bmax,
 
 bool SceneRenderer::Init(const TextureLibrary& textures) {
   world_program_.Build(shaders::kWorldGeometryVert, shaders::kWorldLightingFrag,
-                       {{0, "aPos"}, {1, "aNormal"}, {2, "aUV"}},
+                       {{0, "aPos"},
+                        {1, "aNormal"},
+                        {2, "aUV"},
+                        {3, "aJoints"},
+                        {4, "aWeights"}},
                        shaders::kToneMapAndGrainFrag);
   shadow_program_.Build(shaders::kWorldGeometryVert,
                         shaders::kShadowDistanceFrag,
-                        {{0, "aPos"}, {1, "aNormal"}, {2, "aUV"}});
+                        {{0, "aPos"},
+                         {1, "aNormal"},
+                         {2, "aUV"},
+                         {3, "aJoints"},
+                         {4, "aWeights"}});
   composite_program_.Build(shaders::kFullscreenQuadVert,
                            shaders::kLensAndFxaaFrag,
                            {{0, "aPos"}, {2, "aUV"}});
@@ -246,6 +272,8 @@ void SceneRenderer::LookUpWorldUniforms() {
   u_emissive_ = world_program_.Uniform("uEmissive");
   u_alpha_test_ = world_program_.Uniform("uAlphaTest");
   u_opacity_ = world_program_.Uniform("uOpacity");
+  u_skinned_ = world_program_.Uniform("uSkinned");
+  u_bones_ = world_program_.Uniform("uBones");
   u_decal_ = world_program_.Uniform("uDecal");
   WorldUniforms& u = world_u_;
   u.mist = world_program_.Uniform("uMist");
@@ -418,6 +446,10 @@ void SceneRenderer::UploadBatches(BatchList& dst,
                                   const std::vector<Batch>& src) {
   for (const auto& b : src) {
     if (b.verts.empty()) continue;
+    if (b.skin.size() == b.verts.size()) {
+      UploadSkinnedBatch(dst, b);
+      continue;
+    }
 
     // Group whole triangles by the chunk of their first vertex.
     std::map<std::pair<int, int>, std::vector<Vertex>> chunks;
@@ -458,6 +490,44 @@ void SceneRenderer::UploadBatches(BatchList& dst,
     g.opacity = b.opacity;
     dst.push_back(std::move(g));
   }
+}
+
+// A skinned batch is one chunk: its bones move every vertex, so the bounds of
+// the bind pose would not hold and the model is never culled per chunk.
+void SceneRenderer::UploadSkinnedBatch(BatchList& dst, const Batch& b) {
+  GpuBatch g;
+  std::vector<SkinnedVertex> all;
+  all.reserve(b.verts.size());
+  ResetBounds(g.bmin, g.bmax);
+  for (size_t i = 0; i < b.verts.size(); ++i) {
+    SkinWeights w = b.skin[i];
+    for (float& j : w.joints) {
+      j = std::clamp(j, 0.0f, static_cast<float>(kMaxBones - 1));
+    }
+    all.push_back({b.verts[i], w});
+  }
+  GpuChunk c;
+  c.first = 0;
+  c.count = static_cast<int>(all.size() / 3 * 3);
+  ResetBounds(c.bmin, c.bmax);
+  g.bmin[0] = g.bmin[1] = g.bmin[2] = -1e9f;
+  g.bmax[0] = g.bmax[1] = g.bmax[2] = 1e9f;
+  c.bmin[0] = c.bmin[1] = c.bmin[2] = -1e9f;
+  c.bmax[0] = c.bmax[1] = c.bmax[2] = 1e9f;
+  g.chunks.push_back(c);
+  g.skinned = true;
+  g.vbo.Upload(all.data(), all.size() * sizeof(SkinnedVertex), kStaticDraw);
+  g.vao.Create();
+  g.vao.Bind();
+  SetVertexLayout(g.vbo.Id(), true);
+  BindVertexArray(0);
+  g.texture = TextureFor(b.texture);
+  g.normal = NormalMapFor(b.texture);
+  g.material = MaterialMapFor(b.texture);
+  g.emissive = b.emissive;
+  g.alpha_test = b.alpha_test;
+  g.opacity = b.opacity;
+  dst.push_back(std::move(g));
 }
 
 int SceneRenderer::UploadModel(const std::vector<Batch>& batches) {
@@ -771,7 +841,17 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
         std::cmp_greater_equal(inst.model, models_.size())) {
       continue;
     }
+    // The bone matrices (at most kMaxBones) go up once per instance; static
+    // batches of the same model ignore them.
+    const bool skinned = !inst.skin.empty();
+    if (skinned) {
+      const auto count = static_cast<GLsizei>(
+          std::min(inst.skin.size(), static_cast<size_t>(kMaxBones)));
+      Uniform1i(u_skinned_, 1);
+      UniformMatrix4fv(u_bones_, count, kFalse, inst.skin[0].data());
+    }
     DrawBatches(models_[static_cast<size_t>(inst.model)], inst.matrix);
+    if (skinned) Uniform1i(u_skinned_, 0);
   }
 }
 

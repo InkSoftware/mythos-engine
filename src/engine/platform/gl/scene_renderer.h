@@ -10,6 +10,7 @@
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/particles.h"
 #include "engine/gfx/render_stats.h"
+#include "engine/gfx/skeleton.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -60,6 +61,9 @@ struct ModelInstance {
   int model = -1;
   float matrix[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   unsigned views = kMain | kMirror;
+  // Bone matrices (see SkinMatrices in gfx/skeleton.h, at most kMaxBones) for
+  // a model uploaded with skinned batches; empty for a static model.
+  std::vector<Mat4f> skin;
 };
 
 // One planar mirror: the glass center (world), its horizontal normal (nx, nz;
@@ -273,6 +277,8 @@ class SceneRenderer {
     bool emissive = false;
     bool alpha_test = false;
     float opacity = 1.0f;
+    // Vertices carry joints and weights (see SkinWeights).
+    bool skinned = false;
     float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
   };
 
@@ -325,6 +331,7 @@ class SceneRenderer {
   void DrawDoors(const CameraState& cam, const Frustum& cull, float* model);
 
   void DrawInstances(const CameraState& cam, unsigned views);
+  void UploadSkinnedBatch(BatchList& dst, const Batch& b);
 
   // Splits batches into 8-cell chunks, uploads them and resolves their texture
   // maps by name (falling back to "missing").
@@ -477,7 +484,7 @@ class SceneRenderer {
   gl::GLint u_decal_ = -1;
 
   gl::GLint u_model_ = -1, u_emissive_ = -1, u_alpha_test_ = -1,
-            u_opacity_ = -1;
+            u_opacity_ = -1, u_skinned_ = -1, u_bones_ = -1;
   // False during shadow passes, which use no normal or material maps.
   bool bind_normals_ = true;
 

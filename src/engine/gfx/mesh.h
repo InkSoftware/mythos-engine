@@ -34,6 +34,13 @@ struct Vertex {
   float u, v;
 };
 
+// Skin of one vertex: up to four bones (indices into the skeleton, kept as
+// floats for the vertex shader) and their weights, which sum to 1.
+struct SkinWeights {
+  float joints[4] = {0, 0, 0, 0};
+  float weights[4] = {1, 0, 0, 0};
+};
+
 // Triangles that share one texture and one set of draw flags.
 struct Batch {
   std::string texture;
@@ -49,6 +56,9 @@ struct Batch {
   float opacity = 1.0f;
   // Three vertices per triangle; there is no index buffer.
   std::vector<Vertex> verts;
+  // One per vertex for a skinned batch (drawn with an instance's bone
+  // matrices, see ModelInstance::skin); empty for a static one.
+  std::vector<SkinWeights> skin;
 };
 
 // A rectangle in model-local meters. Tangent gives the +U direction; its

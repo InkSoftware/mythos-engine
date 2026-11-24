@@ -203,16 +203,22 @@ void SceneRenderer::DrawShadows(const CameraState& cam) {
       if (dx * dx + dy * dy + dz * dz > near_reach * near_reach) continue;
       Mix(h, inst.model);
       Mix(h, inst.matrix, sizeof(inst.matrix));
+      if (!inst.skin.empty()) {
+        Mix(h, inst.skin.data(), inst.skin.size() * sizeof(Mat4f));
+      }
     }
     return h | 1;
   };
 
   // Borrow the batch drawing machinery for the shadow program; restored below.
   const GLint saved_model = u_model_, saved_emissive = u_emissive_,
-              saved_alpha = u_alpha_test_;
+              saved_alpha = u_alpha_test_, saved_skinned = u_skinned_,
+              saved_bones = u_bones_;
   u_model_ = shadow_program_.Uniform("uModel");
   u_emissive_ = -1;
   u_alpha_test_ = shadow_program_.Uniform("uAlphaTest");
+  u_skinned_ = shadow_program_.Uniform("uSkinned");
+  u_bones_ = shadow_program_.Uniform("uBones");
   bind_normals_ = false;
   shadow_program_.Use();
   shadow_program_.Set("uTex", 0);
@@ -235,6 +241,8 @@ void SceneRenderer::DrawShadows(const CameraState& cam) {
   u_model_ = saved_model;
   u_emissive_ = saved_emissive;
   u_alpha_test_ = saved_alpha;
+  u_skinned_ = saved_skinned;
+  u_bones_ = saved_bones;
   bind_normals_ = true;
 }
 
