@@ -4,6 +4,33 @@
 #include <cmath>
 
 namespace mythos {
+double NextBarTime(const double now, const double bpm,
+                   const int beats_per_bar) {
+  if (bpm <= 0 || beats_per_bar <= 0) return now;
+  const double bar = 60.0 / bpm * beats_per_bar;
+  const double bars = std::ceil(now / bar - 1e-9);
+  return std::max(0.0, bars) * bar;
+}
+
+void LayerFader::FadeAt(const std::string& layer, const double target,
+                        const double seconds, const double at) {
+  if (at <= time_) {
+    Fade(layer, target, seconds);
+    return;
+  }
+  layers_[layer];  // a layer the fade will touch is known from now on
+  pending_.push_back({at, layer, {}, target, seconds});
+}
+
+void LayerFader::CrossfadeAt(const std::vector<std::string>& to,
+                             const double seconds, const double at) {
+  if (at <= time_) {
+    Crossfade(to, seconds);
+    return;
+  }
+  pending_.push_back({at, "", to, 1.0, seconds});
+}
+
 void LayerFader::Fade(const std::string& layer, const double target,
                       const double seconds) {
   State& s = layers_[layer];
@@ -27,6 +54,21 @@ void LayerFader::Crossfade(const std::vector<std::string>& to,
 }
 
 void LayerFader::Update(const double dt) {
+  time_ += std::max(0.0, dt);
+  // Fades that were waiting for their time start now (in the order given).
+  for (size_t i = 0; i < pending_.size();) {
+    if (pending_[i].at > time_) {
+      ++i;
+      continue;
+    }
+    const Pending p = pending_[i];
+    pending_.erase(pending_.begin() + static_cast<std::ptrdiff_t>(i));
+    if (p.layer.empty()) {
+      Crossfade(p.to, p.seconds);
+    } else {
+      Fade(p.layer, p.target, p.seconds);
+    }
+  }
   for (auto& entry : layers_) {
     State& s = entry.second;
     const double step = s.rate * std::max(0.0, dt);

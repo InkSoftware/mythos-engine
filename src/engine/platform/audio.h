@@ -92,6 +92,13 @@ class AudioEngine {
   void StartMusic(const std::vector<std::string>& layers);
   void SetMusicLayer(const std::string& layer, float gain, float seconds);
   void CrossfadeMusic(const std::vector<std::string>& layers, float seconds);
+  // The same, but waiting for the next bar line of music at `bpm` with
+  // `beats_per_bar` beats (counted from `StartMusic`), so a layer comes in on
+  // the beat.
+  void SetMusicLayerAtBar(const std::string& layer, float gain, float seconds,
+                          double bpm, int beats_per_bar = 4);
+  void CrossfadeMusicAtBar(const std::vector<std::string>& layers,
+                           float seconds, double bpm, int beats_per_bar = 4);
   void StopMusic(float seconds = 1.0f);
 
   // Mixer groups (audio/spatial.h `MixerGroups`). Every sound belongs to one:

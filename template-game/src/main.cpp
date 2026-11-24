@@ -519,7 +519,9 @@ int main(const int argc, char** const argv) {
     if (const bool in_back_room = game.player().pos.x > 9.0;
         in_back_room != was_in_back_room) {
       was_in_back_room = in_back_room;
-      audio.SetMusicLayer("tick", in_back_room ? 0.35f : 0.0f, 1.5f);
+      // On the next bar line of a 100 bpm loop, so it comes in on the beat.
+      audio.SetMusicLayerAtBar("tick", in_back_room ? 0.35f : 0.0f, 1.5f,
+                               100.0);
     }
     // The room's reverb: the bigger the room the player stands in (the cells
     // reachable without a door), the longer the tail.

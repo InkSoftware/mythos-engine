@@ -206,8 +206,8 @@ more than was built.
   listener; `AudioEngine::SetSourceMuffle` low-passes a positional source (the template's hum in the back room is
   muffled by its walls and closed door); `audio/reverb.h` is the reverb and `AudioEngine::SetReverb` applies it, the
   template sets it from the size of the room the player is in (`RoomDoors::RegionSize`). The mixer uses `MixerGroups` (`SetGroupVolume`, `AddGroupDuck`, a group per sound). Layered music (`audio/music.h`: `LayerFader`, `AudioEngine::StartMusic` / `SetMusicLayer` /
-  `CrossfadeMusic` / `StopMusic`). Each sound has its own reverb share (`Play(..., reverb)`, `AddSource(..., reverb)`). Not done:
-  tempo or beat-synchronised music transitions.
+  `CrossfadeMusic` / `StopMusic`). Each sound has its own reverb share (`Play(..., reverb)`, `AddSource(..., reverb)`). Fades and crossfades can wait for the next bar line
+  (`NextBarTime`, `SetMusicLayerAtBar`). Not done: tempo changes and transitions that wait for a musical phrase end.
 - **Where:** `audio/audio_math.h` gets cell-based occlusion (walls between
   source and listener, doors open or closed, a low-pass amount) and reverb
   zones from room size (`RoomDoors` regions). Mixer groups with volume and
@@ -324,7 +324,7 @@ Gaps named in the Progress lines, by area:
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   steering around moving obstacles and group behaviour for the AI.
-- **Audio:** beat-synchronised music transitions.
+- **Audio:** tempo changes and phrase-synchronised music transitions.
 - **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
 - **Tools and data:** furniture changes in a save.

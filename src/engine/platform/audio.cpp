@@ -274,6 +274,26 @@ void AudioEngine::CrossfadeMusic(const std::vector<std::string>& layers,
   SDL_UnlockAudioStream(stream_);
 }
 
+void AudioEngine::SetMusicLayerAtBar(const std::string& layer, const float gain,
+                                     const float seconds, const double bpm,
+                                     const int beats_per_bar) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  music_.FadeAt(layer, static_cast<double>(gain), static_cast<double>(seconds),
+                NextBarTime(music_.Time(), bpm, beats_per_bar));
+  SDL_UnlockAudioStream(stream_);
+}
+
+void AudioEngine::CrossfadeMusicAtBar(const std::vector<std::string>& layers,
+                                      const float seconds, const double bpm,
+                                      const int beats_per_bar) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  music_.CrossfadeAt(layers, static_cast<double>(seconds),
+                     NextBarTime(music_.Time(), bpm, beats_per_bar));
+  SDL_UnlockAudioStream(stream_);
+}
+
 void AudioEngine::StopMusic(const float seconds) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);

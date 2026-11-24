@@ -5628,6 +5628,32 @@ TEST(reverb_send_bus_feeds_from_its_own_block) {
   CHECK(energy > 1e-6f);
 }
 
+TEST(music_fades_wait_for_the_bar_line) {
+  // 120 bpm, four beats: a bar is two seconds.
+  CHECK_EQ(mythos::NextBarTime(0.0, 120, 4), 0.0);
+  CHECK_EQ(mythos::NextBarTime(0.1, 120, 4), 2.0);
+  CHECK_EQ(mythos::NextBarTime(2.0, 120, 4), 2.0);
+  CHECK(std::fabs(mythos::NextBarTime(3.5, 120, 4) - 4.0) < 1e-9);
+  CHECK_EQ(mythos::NextBarTime(3.0, 0, 4), 3.0);  // no tempo: now
+  mythos::LayerFader f;
+  f.Fade("pad", 0.0, 0.0);
+  f.Update(0.5);
+  f.FadeAt("pad", 1.0, 0.0, mythos::NextBarTime(f.Time(), 120, 4));  // at 2 s
+  f.Update(1.0);
+  CHECK_EQ(f.Gain("pad"), 0.0);  // still waiting at 1.5 s
+  f.Update(0.6);
+  CHECK_EQ(f.Gain("pad"), 1.0);  // the bar line passed
+  // A time already past starts at once; a crossfade waits like a fade.
+  f.FadeAt("pad", 0.5, 0.0, 0.1);
+  CHECK_EQ(f.Gain("pad"), 0.5);
+  f.CrossfadeAt({"strings"}, 0.0, f.Time() + 1.0);
+  CHECK_EQ(f.Gain("strings"), 0.0);
+  f.Update(1.1);
+  CHECK(f.Gain("strings") == 1.0 && f.Gain("pad") == 0.0);
+  f.Clear();
+  CHECK_EQ(f.Time(), 0.0);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);
