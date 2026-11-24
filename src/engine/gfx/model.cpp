@@ -239,6 +239,23 @@ bool ModelLibrary::LoadDir(const std::string& dir, std::string* const error) {
   return !models_.empty();
 }
 
+bool ModelLibrary::LoadFile(const std::string& path, std::string* const error) {
+  std::string text;
+  if (!vfs::ReadFile(path, text)) {
+    if (error) *error = path + ": cannot read";
+    return false;
+  }
+  Model m;
+  m.name = std::filesystem::path(path).stem().string();
+  std::string err;
+  if (!ParseObj(text, m.batches, &err)) {
+    if (error) *error = path + ": " + err;
+    return false;
+  }
+  models_[m.name] = std::move(m);
+  return true;
+}
+
 const Model* ModelLibrary::Find(const std::string& name) const {
   const auto it = models_.find(name);
   return it != models_.end() ? &it->second : nullptr;

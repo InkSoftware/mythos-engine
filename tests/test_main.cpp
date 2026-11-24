@@ -5032,6 +5032,34 @@ TEST(reverb_adds_a_decaying_tail_and_does_nothing_when_off) {
   }
 }
 
+TEST(model_library_reloads_one_file_and_keeps_the_old_one_on_error) {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "mythos_model_reload";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  const std::string tri =
+      "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nf 1//1 2//1 3//1\n";
+  const std::string quad = tri + "f 1//1 3//1 2//1\n";
+  const std::string path = (dir / "thing.obj").string();
+  CHECK(mythos::WriteFileAtomic(path, tri));
+  mythos::ModelLibrary lib;
+  std::string error;
+  CHECK(lib.LoadFile(path, &error));
+  const mythos::Model* m = lib.Find("thing");
+  CHECK(m != nullptr && m->batches[0].verts.size() == 3u);
+  // Changed on disk: the new triangles replace the old.
+  CHECK(mythos::WriteFileAtomic(path, quad));
+  CHECK(lib.LoadFile(path, &error));
+  CHECK(lib.Find("thing")->batches[0].verts.size() == 6u);
+  // A broken file keeps what was there.
+  CHECK(mythos::WriteFileAtomic(path, "f 1 2 3 4 five\n"));
+  const bool bad = lib.LoadFile(path, &error);
+  CHECK(!bad && !error.empty());
+  CHECK(lib.Find("thing")->batches[0].verts.size() == 6u);
+  CHECK(!lib.LoadFile((dir / "none.obj").string(), &error));
+  fs::remove_all(dir);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

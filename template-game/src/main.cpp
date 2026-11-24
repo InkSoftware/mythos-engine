@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <string>
 
 #include "engine/audio/audio_math.h"
@@ -209,6 +210,8 @@ int main(const int argc, char** const argv) {
   mythos::FileWatcher watcher;
   watcher.Add(GameAssets());
   watcher.Add(EngineShaders());
+  watcher.Add(EngineAssets() + "/models");
+  watcher.Add(EngineAssets() + "/sounds");
   // The opening cutscene (`--no-intro` skips it).
   bool intro = true;
   for (int i = 1; i < argc; ++i) {
@@ -267,15 +270,31 @@ int main(const int argc, char** const argv) {
     if (!controls_open) game.Update(dt, move, act);
 
     bool level_changed = false, textures_changed = false,
-         shaders_changed = false;
+         shaders_changed = false, models_changed = false,
+         sounds_changed = false;
     for (const std::string& path : watcher.Poll(dt)) {
       if (HasSuffix(path, ".txt")) level_changed = true;
       for (const char* ext : {".png", ".bmp", ".tga", ".jpg"}) {
         if (HasSuffix(path, ext)) textures_changed = true;
       }
       if (path.starts_with(EngineShaders())) shaders_changed = true;
+      if (HasSuffix(path, ".obj")) {
+        std::string why;
+        if (game.ReloadModel(path, &why)) {
+          models_changed = true;
+        } else {
+          std::fprintf(stderr, "model reload: %s\n", why.c_str());
+        }
+      }
+      if (HasSuffix(path, ".wav")) {
+        // A clip replaced in place: a sound that is playing carries on.
+        const std::filesystem::path file(path);
+        audio.LoadDir(file.parent_path().string(), {file.stem().string()});
+        sounds_changed = true;
+      }
     }
-    if (level_changed || textures_changed || shaders_changed) {
+    if (level_changed || textures_changed || shaders_changed ||
+        models_changed || sounds_changed) {
       bool ok = true;
       if (shaders_changed) ok = renderer.ReloadShaders(EngineShaders()) && ok;
       if (textures_changed) {
@@ -289,14 +308,15 @@ int main(const int argc, char** const argv) {
           ok = false;
         }
       }
-      if (level_changed || textures_changed) {
+      if (level_changed || textures_changed || models_changed) {
         renderer.UploadWorld(
             mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
       }
-      std::fprintf(stderr, "hot reload:%s%s%s%s\n",
-                   level_changed ? " level" : "",
-                   textures_changed ? " textures" : "",
-                   shaders_changed ? " shaders" : "", ok ? "" : " (failed)");
+      std::fprintf(
+          stderr, "hot reload:%s%s%s%s%s%s\n", level_changed ? " level" : "",
+          textures_changed ? " textures" : "",
+          shaders_changed ? " shaders" : "", models_changed ? " models" : "",
+          sounds_changed ? " sounds" : "", ok ? "" : " (failed)");
       game.Say(ok ? "template.reloaded" : "template.reload_failed");
     }
 

@@ -602,6 +602,16 @@ int SceneRenderer::UploadModel(const std::vector<Batch>& batches) {
   return static_cast<int>(models_.size()) - 1;
 }
 
+bool SceneRenderer::ReplaceModel(const int id,
+                                 const std::vector<Batch>& batches) {
+  if (id < 0 || std::cmp_greater_equal(id, models_.size())) return false;
+  ++scene_revision_;
+  BatchList fresh;
+  UploadBatches(fresh, batches);
+  models_[static_cast<size_t>(id)] = std::move(fresh);
+  return true;
+}
+
 void SceneRenderer::UploadWorld(const SceneGeometry& geometry) {
   ++scene_revision_;
   world_.clear();

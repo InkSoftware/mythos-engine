@@ -37,6 +37,12 @@ class ModelLibrary {
   // folder is missing or empty, or a file cannot be read or parsed.
   bool LoadDir(const std::string& dir, std::string* error = nullptr);
 
+  // Loads one .obj file (through the vfs), replacing the model of its name; a
+  // file that cannot be read or parsed leaves the old model in place. For
+  // reloading a model that changed on disk. Returns false with the reason in
+  // `error` when not null.
+  bool LoadFile(const std::string& path, std::string* error = nullptr);
+
   // The model called `name`, or null. The pointer stays valid until the library
   // is destroyed or reloaded.
   [[nodiscard]] const Model* Find(const std::string& name) const;

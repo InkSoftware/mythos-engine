@@ -249,6 +249,11 @@ class SceneRenderer {
   // Uploads a model and returns its id for `ModelInstance::model`.
   int UploadModel(const std::vector<Batch>& batches);
 
+  // Replaces the geometry of an uploaded model (a model that changed on disk):
+  // instances of `id` draw the new one from the next frame. Returns false for
+  // an id that was never uploaded.
+  bool ReplaceModel(int id, const std::vector<Batch>& batches);
+
   // Beyond `distance` metres from the eye an instance of `model` is drawn as
   // `far_model` (a cheaper upload of the same thing) in the main and mirror
   // views; shadows keep the near model.

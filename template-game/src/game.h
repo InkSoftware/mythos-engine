@@ -59,6 +59,12 @@ class Game {
     return cutscene_player_.Value(name);
   }
 
+  // Reads a model file again (development: it changed on disk). The caller
+  // uploads the world again to see it.
+  bool ReloadModel(const std::string& path, std::string* error) {
+    return models_.LoadFile(path, error);
+  }
+
   bool Save(const std::string& dir, int slot);
   // Returns false (and says why in the message) when there is nothing to load.
   bool LoadSave(const std::string& dir, int slot);
