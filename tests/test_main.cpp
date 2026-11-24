@@ -4192,6 +4192,38 @@ TEST(skeleton_blend_slerp_and_crossfade) {
   CHECK(!anim.Finished());
 }
 
+TEST(EditorRenamingAndRemovingTriggersKeepsRulesInStep) {
+  mythos::editor::LevelDoc doc;
+  mythos::Trigger a, b;
+  a.id = "door";
+  b.id = "lamp";
+  doc.triggers = {a, b};
+  mythos::EventRule r1, r2, r3;
+  r1.id = "r1";
+  r1.event = {mythos::EventKind::kTrigger, "door", "enter", false};
+  r2.id = "r2";
+  r2.event = {mythos::EventKind::kTrigger, "door", "exit", false};
+  r3.id = "r3";
+  r3.event = {mythos::EventKind::kFlag, "door", "", true};  // not a trigger
+  doc.rules = {r1, r2, r3};
+  int n = -1;
+  CHECK(!mythos::editor::RenameTrigger(doc, "door", "lamp", &n));  // taken
+  CHECK(!mythos::editor::RenameTrigger(doc, "nope", "x", &n));
+  CHECK(!mythos::editor::RenameTrigger(doc, "door", "", &n));
+  CHECK_EQ(n, 0);
+  CHECK(mythos::editor::RenameTrigger(doc, "door", "gate", &n));
+  CHECK_EQ(n, 2);
+  CHECK(doc.triggers[0].id == "gate" && doc.rules[0].event.id == "gate");
+  CHECK(doc.rules[2].event.id == "door");  // a flag of that name is its own
+  CHECK_EQ(mythos::editor::RemoveTrigger(doc, "nope"), -1);
+  CHECK_EQ(mythos::editor::RemoveTrigger(doc, "gate"), 2);
+  CHECK_EQ(doc.triggers.size(), 1u);
+  CHECK_EQ(doc.rules.size(), 1u);
+  CHECK(mythos::editor::NewRuleId(doc) == "rule_1");
+  doc.rules[0].id = "rule_1";
+  CHECK(mythos::editor::NewRuleId(doc) == "rule_2");
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

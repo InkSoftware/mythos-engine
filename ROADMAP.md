@@ -90,7 +90,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
 ## Phase 2: Game logic (makes the editor useful for designers)
 
-### 2.1 Triggers and event graph (M to L)
+### 2.1 Triggers and event graph (M to L) - done (no visual graph)
 - **Progress:** `world/trigger.h` provides a headless, single-subject trigger
   runtime with box/cell volumes, ordered enter/exit/stay/use events and once
   flags. A headless event-rule runtime dispatches generic actions for trigger,
@@ -98,8 +98,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   and `[rules]`. `world/event_graph.h` connects level triggers and rules for a
   single sampled subject; games must supply the update, flags, timers and action
   callbacks. The editor can add, edit, delete and display trigger volumes;
-  it does not rewrite rule references on trigger rename or deletion. Rule
-  editing and a visual graph remain. Rule strings use a hex-encoded line
+  renaming a trigger rewrites the rules it drives and deleting it deletes them
+  (`RenameTrigger`, `RemoveTrigger`). A Rules section in the Inspector adds,
+  edits (as a draft, applied when valid) and deletes rules. A visual graph
+  remains. Rule strings use a hex-encoded line
   format (documented in `core/events.h`).
 - **Why:** UnityEvents and Blueprints. Today a game hand-writes every rule.
 - **Where:** `world/trigger.h` (box and cell trigger volumes: enter, exit,

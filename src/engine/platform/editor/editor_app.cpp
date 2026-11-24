@@ -191,6 +191,7 @@ void EditorApp::OpenLevel(const std::string& name) {
   }
   Deselect();
   trigger_sel_.clear();
+  rule_sel_.clear();
   RebuildScene();
   FrameLevel();
   RefreshProblems();
@@ -200,6 +201,7 @@ void EditorApp::SetContext(const std::string& context) {
   context_ = context;
   Deselect();
   trigger_sel_.clear();
+  rule_sel_.clear();
   built_revision_ = 0;
   RefreshProblems();
 }
@@ -531,6 +533,7 @@ void EditorApp::Save() {
 void EditorApp::Undo() {
   if (history_.Undo(&project_)) {
     trigger_sel_.clear();
+    rule_sel_.clear();
     if (has_sel_) {
       Pose p;
       if (!project_.GetPose(Here(), sel_, &p)) Deselect();
@@ -542,6 +545,7 @@ void EditorApp::Undo() {
 void EditorApp::Redo() {
   if (history_.Redo(&project_)) {
     trigger_sel_.clear();
+    rule_sel_.clear();
     if (has_sel_) {
       Pose p;
       if (!project_.GetPose(Here(), sel_, &p)) Deselect();

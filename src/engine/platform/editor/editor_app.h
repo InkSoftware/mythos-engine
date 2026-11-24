@@ -218,6 +218,8 @@ class EditorApp {
 
   void DrawTriggers(LevelDoc& doc);
 
+  void DrawRules(LevelDoc& doc);
+
   void DrawPalette();
 
   void DrawAssets();
@@ -256,6 +258,8 @@ class EditorApp {
   bool has_sel_ = false;
   std::string trigger_sel_;
   Trigger trigger_draft_;
+  std::string rule_sel_;
+  EventRule rule_draft_;
   bool show_triggers_ = true;
   Tool tool_ = Tool::kSelect;
   char glyph_ = '#';

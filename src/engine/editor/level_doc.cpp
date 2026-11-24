@@ -1,5 +1,6 @@
 #include "engine/editor/level_doc.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <set>
@@ -179,5 +180,51 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
     for (const auto& rule : doc.rules) s += SerializeEventRuleLine(rule) + "\n";
   }
   return s;
+}
+
+bool RenameTrigger(LevelDoc& doc, const std::string& from,
+                   const std::string& to, int* const rules_updated) {
+  if (rules_updated != nullptr) *rules_updated = 0;
+  const auto has = [&](const std::string& id) {
+    return std::any_of(doc.triggers.begin(), doc.triggers.end(),
+                       [&](const Trigger& t) { return t.id == id; });
+  };
+  if (to.empty() || !has(from)) return false;
+  if (from == to) return true;
+  if (has(to)) return false;
+  for (Trigger& t : doc.triggers) {
+    if (t.id == from) t.id = to;
+  }
+  int n = 0;
+  for (EventRule& r : doc.rules) {
+    if (r.event.kind == EventKind::kTrigger && r.event.id == from) {
+      r.event.id = to;
+      ++n;
+    }
+  }
+  if (rules_updated != nullptr) *rules_updated = n;
+  return true;
+}
+
+int RemoveTrigger(LevelDoc& doc, const std::string& id) {
+  const auto it = std::find_if(doc.triggers.begin(), doc.triggers.end(),
+                               [&](const Trigger& t) { return t.id == id; });
+  if (it == doc.triggers.end()) return -1;
+  doc.triggers.erase(it);
+  const size_t before = doc.rules.size();
+  std::erase_if(doc.rules, [&](const EventRule& r) {
+    return r.event.kind == EventKind::kTrigger && r.event.id == id;
+  });
+  return static_cast<int>(before - doc.rules.size());
+}
+
+std::string NewRuleId(const LevelDoc& doc) {
+  for (size_t n = 1;; ++n) {
+    const std::string id = "rule_" + std::to_string(n);
+    if (std::none_of(doc.rules.begin(), doc.rules.end(),
+                     [&](const EventRule& r) { return r.id == id; })) {
+      return id;
+    }
+  }
 }
 }

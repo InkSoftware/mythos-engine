@@ -70,6 +70,20 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* out, std::string* error);
 // or out-of-bounds cell triggers, or invalid or duplicate rules.
 std::string SerializeLevelDoc(const LevelDoc& doc);
 
+// Renames a trigger and the rules driven by it (a rule whose event is that
+// trigger). Returns false, changing nothing, if `from` does not exist, `to`
+// is empty or already names another trigger. `rules_updated` (when non-null)
+// gets the number of rules changed.
+bool RenameTrigger(LevelDoc& doc, const std::string& from,
+                   const std::string& to, int* rules_updated = nullptr);
+
+// Removes a trigger and the rules driven by it, which could never fire again.
+// Returns how many rules went, or -1 if there is no such trigger.
+int RemoveTrigger(LevelDoc& doc, const std::string& id);
+
+// A rule id not used yet, "rule_1", "rule_2", ...
+std::string NewRuleId(const LevelDoc& doc);
+
 // Formats a number with at most four decimals and no trailing zeros, so saved
 // files stay stable and readable.
 std::string FormatNumber(double v);

@@ -618,12 +618,15 @@ void EditorApp::DrawTriggers(LevelDoc& doc) {
     ImGui::TextWrapped("Cell must be inside the level map.");
   ImGui::TextWrapped(
       "Apply saves the draft to the level. Switching triggers discards it. "
-      "Renaming or deleting does not update rules that reference this ID.");
+      "Renaming a trigger updates the rules it drives; deleting it deletes "
+      "them.");
   ImGui::BeginDisabled(!valid_line || !unique || !in_bounds ||
                        trigger_draft_ == *selected);
   if (ImGui::Button("Apply trigger")) {
+    const std::string new_id = trigger_draft_.id;
+    if (new_id != selected->id) RenameTrigger(doc, selected->id, new_id);
     *selected = trigger_draft_;
-    trigger_sel_ = trigger_draft_.id;
+    trigger_sel_ = new_id;
     project_.Touch(level_);
   }
   ImGui::EndDisabled();
@@ -631,8 +634,115 @@ void EditorApp::DrawTriggers(LevelDoc& doc) {
   if (ImGui::Button("Revert draft")) trigger_draft_ = *selected;
   ImGui::SameLine();
   if (ImGui::Button("Delete trigger")) {
-    doc.triggers.erase(selected);
+    RemoveTrigger(doc, selected->id);
     trigger_sel_.clear();
+    rule_sel_.clear();
+    project_.Touch(level_);
+  }
+}
+
+// Event rules: when <trigger|flag|timer> and <flag conditions>, do <actions>.
+// Edited as a draft and applied, like triggers, so a half-typed rule never
+// reaches the level file.
+void EditorApp::DrawRules(LevelDoc& doc) {
+  if (!ImGui::CollapsingHeader("Rules")) return;
+  if (ImGui::SmallButton("Add rule")) {
+    EventRule r;
+    r.id = NewRuleId(doc);
+    r.event = {EventKind::kTrigger,
+               doc.triggers.empty() ? "trigger_1" : doc.triggers[0].id, "enter",
+               false};
+    doc.rules.push_back(r);
+    project_.Touch(level_);
+    rule_sel_ = r.id;
+    rule_draft_ = r;
+  }
+  if (ImGui::BeginCombo(
+          "Rule", rule_sel_.empty() ? "(select a rule)" : rule_sel_.c_str())) {
+    for (size_t i = 0; i < doc.rules.size(); ++i) {
+      ImGui::PushID(static_cast<int>(i));
+      if (ImGui::Selectable(doc.rules[i].id.c_str(),
+                            doc.rules[i].id == rule_sel_)) {
+        rule_sel_ = doc.rules[i].id;
+        rule_draft_ = doc.rules[i];
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndCombo();
+  }
+  const auto selected = std::ranges::find_if(
+      doc.rules, [&](const EventRule& r) { return r.id == rule_sel_; });
+  if (selected == doc.rules.end()) {
+    rule_sel_.clear();
+    return;
+  }
+
+  InputStr("Rule ID", &rule_draft_.id);
+  int kind = static_cast<int>(rule_draft_.event.kind);
+  if (ImGui::Combo("On", &kind, "Trigger\0Flag\0Timer\0"))
+    rule_draft_.event.kind = static_cast<EventKind>(kind);
+  InputStr("Event ID", &rule_draft_.event.id);
+  if (rule_draft_.event.kind == EventKind::kTrigger) {
+    InputStr("Detail (enter, exit, stay, use)", &rule_draft_.event.detail);
+  } else if (rule_draft_.event.kind == EventKind::kFlag) {
+    ImGui::Checkbox("New value", &rule_draft_.event.value);
+  }
+  ImGui::SeparatorText("Conditions");
+  for (size_t i = 0; i < rule_draft_.conditions.size(); ++i) {
+    ImGui::PushID(static_cast<int>(i));
+    InputStr("Flag", &rule_draft_.conditions[i].flag);
+    ImGui::Checkbox("Is set", &rule_draft_.conditions[i].value);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Remove")) {
+      rule_draft_.conditions.erase(rule_draft_.conditions.begin() +
+                                   static_cast<std::ptrdiff_t>(i));
+      ImGui::PopID();
+      break;
+    }
+    ImGui::PopID();
+  }
+  if (ImGui::SmallButton("Add condition"))
+    rule_draft_.conditions.push_back({"flag", true});
+  ImGui::SeparatorText("Actions");
+  for (size_t i = 0; i < rule_draft_.actions.size(); ++i) {
+    ImGui::PushID(1000 + static_cast<int>(i));
+    InputStr("Type", &rule_draft_.actions[i].type);
+    InputStr("Argument", &rule_draft_.actions[i].argument);
+    if (ImGui::SmallButton("Remove")) {
+      rule_draft_.actions.erase(rule_draft_.actions.begin() +
+                                static_cast<std::ptrdiff_t>(i));
+      ImGui::PopID();
+      break;
+    }
+    ImGui::PopID();
+  }
+  if (ImGui::SmallButton("Add action"))
+    rule_draft_.actions.push_back({"set_flag", ""});
+
+  const bool valid = !SerializeEventRuleLine(rule_draft_).empty();
+  const bool unique = std::ranges::none_of(doc.rules, [&](const EventRule& r) {
+    return r.id != rule_sel_ && r.id == rule_draft_.id;
+  });
+  if (!valid)
+    ImGui::TextWrapped(
+        "Needs an ID, an event ID (and a detail for a trigger), and a type "
+        "for every action and a flag for every condition.");
+  else if (!unique)
+    ImGui::TextWrapped("Rule ID is already in use.");
+  ImGui::TextWrapped("Action types and arguments are the game's to run.");
+  ImGui::BeginDisabled(!valid || !unique || rule_draft_ == *selected);
+  if (ImGui::Button("Apply rule")) {
+    *selected = rule_draft_;
+    rule_sel_ = rule_draft_.id;
+    project_.Touch(level_);
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  if (ImGui::Button("Revert rule")) rule_draft_ = *selected;
+  ImGui::SameLine();
+  if (ImGui::Button("Delete rule")) {
+    doc.rules.erase(selected);
+    rule_sel_.clear();
     project_.Touch(level_);
   }
 }
@@ -658,6 +768,7 @@ void EditorApp::DrawInspector() {
   }
 
   if (doc) DrawTriggers(*doc);
+  if (doc) DrawRules(*doc);
 
   Pose pose;
   if (has_sel_ && SelectedPose(&pose)) {
