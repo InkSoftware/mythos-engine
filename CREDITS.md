@@ -118,3 +118,9 @@ Converted to OBJ and BMP by `tools/fetch_cc0_models.py` (textures in `assets/mod
 | `hat.obj` | [Fishermans Hat](https://polyhaven.com/a/fishermans_hat) | PierreB3D | CC0 1.0 | the hat on the coat rack |
 
 <!-- cc0-models:end -->
+
+## Characters
+
+| File | Source | Author | Licence | Used for |
+| --- | --- | --- | --- | --- |
+| `assets/characters/prototype_pete.glb` | [KayKit Character Animations 1.2](https://opengameart.org/content/kaykit-character-animations) | Kay Lousberg ([kaylousberg.com](https://www.kaylousberg.com)) | CC0 1.0 | the animated stand-in character (30 clips: Idle, Walk, Run, ...); `assets/characters/KAYKIT_LICENSE.txt` is the author's licence note |

@@ -43,6 +43,7 @@
 #include "engine/editor/project.h"
 #include "engine/gfx/flicker.h"
 #include "engine/gfx/font.h"
+#include "engine/gfx/gltf.h"
 #include "engine/gfx/grade.h"
 #include "engine/gfx/materials.h"
 #include "engine/gfx/mesh.h"
@@ -4222,6 +4223,152 @@ TEST(EditorRenamingAndRemovingTriggersKeepsRulesInStep) {
   CHECK(mythos::editor::NewRuleId(doc) == "rule_1");
   doc.rules[0].id = "rule_1";
   CHECK(mythos::editor::NewRuleId(doc) == "rule_2");
+}
+
+namespace {
+// A .glb of one triangle skinned to two joints (a root and a child), with a
+// two-key clip moving the child.
+std::string TinyGlb() {
+  std::string bin;
+  const auto f = [&](std::initializer_list<float> v) {
+    for (const float x : v) bin.append(reinterpret_cast<const char*>(&x), 4);
+  };
+  f({0, 0, 0, 1, 0, 0, 0, 1, 0});  // positions: 0..35
+  const unsigned char joints[12] = {1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0};
+  bin.append(reinterpret_cast<const char*>(joints), 12);  // 36..47
+  f({1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0});                // weights: 48..95
+  f({0, 1});                                              // times: 96..103
+  f({0, 0, 0, 0, 2, 0});                                  // translations
+  mythos::json::Value j = {
+      {"asset", {{"version", "2.0"}}},
+      {"scene", 0},
+      {"scenes", {{{"nodes", {0, 2}}}}},
+      {"nodes",
+       {{{"name", "root"}, {"children", {1}}, {"translation", {0, 1, 0}}},
+        {{"name", "child"}, {"translation", {0, 1, 0}}},
+        {{"name", "body"}, {"mesh", 0}, {"skin", 0}}}},
+      {"skins", {{{"joints", {0, 1}}}}},
+      {"meshes",
+       {{{"primitives",
+          {{{"attributes",
+             {{"POSITION", 0}, {"JOINTS_0", 1}, {"WEIGHTS_0", 2}}},
+            {"material", 0}}}}}}},
+      {"materials",
+       {{{"name", "skin"},
+         {"pbrMetallicRoughness", {{"baseColorFactor", {1, 0, 0, 1}}}}}}},
+      {"animations",
+       {{{"name", "lift"},
+         {"samplers", {{{"input", 3}, {"output", 4}}}},
+         {"channels",
+          {{{"sampler", 0},
+            {"target", {{"node", 1}, {"path", "translation"}}}}}}}}},
+      {"accessors",
+       {{{"bufferView", 0},
+         {"componentType", 5126},
+         {"count", 3},
+         {"type", "VEC3"}},
+        {{"bufferView", 1},
+         {"componentType", 5121},
+         {"count", 3},
+         {"type", "VEC4"}},
+        {{"bufferView", 2},
+         {"componentType", 5126},
+         {"count", 3},
+         {"type", "VEC4"}},
+        {{"bufferView", 3},
+         {"componentType", 5126},
+         {"count", 2},
+         {"type", "SCALAR"}},
+        {{"bufferView", 4},
+         {"componentType", 5126},
+         {"count", 2},
+         {"type", "VEC3"}}}},
+      {"bufferViews",
+       {{{"buffer", 0}, {"byteOffset", 0}, {"byteLength", 36}},
+        {{"buffer", 0}, {"byteOffset", 36}, {"byteLength", 12}},
+        {{"buffer", 0}, {"byteOffset", 48}, {"byteLength", 48}},
+        {{"buffer", 0}, {"byteOffset", 96}, {"byteLength", 8}},
+        {{"buffer", 0}, {"byteOffset", 104}, {"byteLength", 24}}}},
+      {"buffers", {{{"byteLength", static_cast<int>(bin.size())}}}}};
+  std::string text = j.dump();
+  while (text.size() % 4) text += ' ';
+  while (bin.size() % 4) bin += '\0';
+  std::string out = "glTF";
+  const auto u32 = [&](uint32_t v) {
+    out.append(reinterpret_cast<const char*>(&v), 4);
+  };
+  u32(2);
+  u32(static_cast<uint32_t>(12 + 8 + text.size() + 8 + bin.size()));
+  u32(static_cast<uint32_t>(text.size()));
+  u32(0x4E4F534A);
+  out += text;
+  u32(static_cast<uint32_t>(bin.size()));
+  u32(0x004E4942);
+  out += bin;
+  return out;
+}
+}
+
+TEST(gltf_loads_a_skinned_mesh_skeleton_and_clip) {
+  mythos::GltfModel m;
+  std::string error;
+  CHECK(mythos::ParseGlb(TinyGlb(), m, &error));
+  CHECK(error.empty());
+  CHECK_EQ(m.skeleton.Count(), 2);
+  CHECK_EQ(m.skeleton.Find("child"), 1);
+  CHECK_EQ(m.skeleton.Bones()[1].parent, 0);
+  CHECK_EQ(m.batches.size(), 1u);
+  CHECK_EQ(m.batches[0].verts.size(), 3u);
+  CHECK_EQ(m.batches[0].skin.size(), 3u);
+  CHECK(m.batches[0].texture == "skin");
+  CHECK_EQ(m.base_colors[0][0], 1.0f);
+  CHECK_EQ(m.batches[0].skin[0].joints[0], 1.0f);
+  const mythos::Clip* lift = m.FindClip("lift");
+  CHECK(lift != nullptr && lift->duration == 1.0);
+  CHECK(m.FindClip("nope") == nullptr);
+  const mythos::Pose mid = mythos::SamplePose(m.skeleton, *lift, 0.5);
+  CHECK(std::fabs(mid[1].t.y - 1.0) < 1e-6);
+  // The bind pose skins to identity.
+  const auto skin =
+      mythos::SkinMatrices(m.skeleton, mythos::BindPose(m.skeleton));
+  CHECK(std::fabs(skin[1][13]) < 1e-5);
+}
+
+TEST(gltf_rejects_bad_files) {
+  mythos::GltfModel m;
+  std::string error;
+  CHECK(!mythos::ParseGlb("", m, &error));
+  CHECK(!mythos::ParseGlb("not a glb at all, but long enough", m, &error));
+  CHECK(error.find("glb") != std::string::npos);
+  std::string cut = TinyGlb();
+  cut.resize(cut.size() - 40);
+  CHECK(!mythos::ParseGlb(cut, m, &error));
+  CHECK(!mythos::LoadGlb("/no/such/file.glb", m, &error));
+}
+
+TEST(gltf_loads_the_shipped_character) {
+  mythos::GltfModel m;
+  std::string error;
+  CHECK(mythos::LoadGlb(
+      std::string(MYTHOS_TEST_ASSET_DIR) + "/characters/prototype_pete.glb", m,
+      &error));
+  CHECK(error.empty());
+  CHECK(m.skeleton.Count() > 1 && m.skeleton.Count() <= mythos::kMaxBones);
+  CHECK(!m.batches.empty() &&
+        m.batches[0].skin.size() == m.batches[0].verts.size());
+  const mythos::Clip* walk = m.FindClip("Walk");
+  CHECK(walk != nullptr && m.FindClip("Idle") != nullptr);
+  if (walk == nullptr) return;
+  // Every sampled skin matrix is finite, and the mesh stays human sized.
+  for (const double t : {0.0, 0.3, 0.7}) {
+    for (const auto& mat : mythos::SkinMatrices(
+             m.skeleton, mythos::SamplePose(m.skeleton, *walk, t))) {
+      for (const float v : mat) CHECK(std::isfinite(v));
+    }
+  }
+  float top = -1e9f;
+  for (const auto& v : m.batches[0].verts) top = std::max(top, v.py);
+  CHECK(top > 0.5f && top < 4.0f);
 }
 
 }

@@ -151,8 +151,11 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   uniform array), used by the main, mirror and shadow passes (and in the
   shadow cache key). Static models draw exactly as before. Smoke-tested on
   macOS (shaders link, a skinned instance renders and casts a shadow), not
-  yet compared against a real character. Not done: the glTF loader, an
-  animation state machine, `mythos_models.py` keeping skins.
+  yet compared against a real character. `gfx/gltf.h` loads a skinned
+  glb (skeleton, skinned batches, every clip; CC0 stand-in
+  `assets/characters/prototype_pete.glb`, KayKit, 30 clips). Not done: an
+  animation state machine, `mythos_models.py` keeping skins, external-buffer
+  `.gltf`, sparse accessors and morph targets.
 - **Why:** models are static OBJ, so no animated NPCs, creatures or doors.
 - **Where:** `gfx/skeleton.h` (bones, skin weights, clips, sampler, blend,
   crossfade, all CPU and tested), a glTF 2.0 loader for skins and clips
