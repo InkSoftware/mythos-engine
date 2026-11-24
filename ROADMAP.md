@@ -134,8 +134,9 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   `ActionTracker` (per-frame state) and `DefaultGameplayMap` (the usual keys);
   `ProbeBinding`, `ApplyActions` and `InputPoll::pressed` feed a game from it (the
   template's F3 opens the controls page and saves `bindings.json`). The rebind page is
-  `ui/controls_ui.h` (`UpdateControlsPage` tested, `DrawControlsPage`). Not done: saving in settings.txt, and an
-  entry for it on the settings menu's own pages.
+  `ui/controls_ui.h` (`UpdateControlsPage` tested, `DrawControlsPage`). The settings menu has a Controls row
+  (`GameSettings::controls_page`, `SettingsPage::kControls`, `LeaveControlsPage`). Not done: saving the bindings in
+  settings.txt.
 - **Why:** Unity Input System, Unreal Enhanced Input.
 - **Where:** `ui/input_map.h` has named actions bound to keys, buttons and
   axes, with contexts (gameplay, menu), a conflict check, persistence in

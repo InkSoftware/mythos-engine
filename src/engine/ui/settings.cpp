@@ -12,9 +12,12 @@ int ResolutionIndex(const int w, const int h) {
   return 0;
 }
 
-const std::vector<int>& SettingsPageItems(const SettingsPage page) {
+const std::vector<int>& SettingsPageItems(const SettingsPage page,
+                                          const bool controls) {
   const static std::vector<int> kMain = {kSetGraphics, kSetAudio, kSetLanguage,
                                          kSetBack};
+  const static std::vector<int> kMainWithControls = {
+      kSetGraphics, kSetAudio, kSetControls, kSetLanguage, kSetBack};
   const static std::vector<int> kGraphics = {
       kSetResolution,       kSetFullscreen, kSetVsync,    kSetFpsCap,
       kSetRenderScale,      kSetAntiAlias,  kSetShadows,  kSetMaterials,
@@ -22,9 +25,9 @@ const std::vector<int>& SettingsPageItems(const SettingsPage page) {
       kSetAmbientOcclusion, kSetBack};
   const static std::vector<int> kAudio = {kSetMaster, kSetAmbience, kSetEffects,
                                           kSetBack};
-  return page == SettingsPage::kGraphics
-             ? kGraphics
-             : (page == SettingsPage::kAudio ? kAudio : kMain);
+  if (page == SettingsPage::kGraphics) return kGraphics;
+  if (page == SettingsPage::kAudio) return kAudio;
+  return controls && page == SettingsPage::kMain ? kMainWithControls : kMain;
 }
 
 namespace {
@@ -79,6 +82,9 @@ bool ApplyToRow(GameSettings& s, SettingsPage& page, int& index,
         page = SettingsPage::kAudio;
         index = kSetMaster;
       }
+      break;
+    case kSetControls:
+      if (in.choose) page = SettingsPage::kControls;
       break;
     case kSetResolution:
       s.resolution = StepValue(in, s.resolution, 0, max_resolution);
@@ -147,7 +153,9 @@ bool ApplyToRow(GameSettings& s, SettingsPage& page, int& index,
 bool UpdateSettingsPage(GameSettings& s, SettingsPage& page, int& index,
                         const UiInput& in, const bool activate,
                         const int max_resolution) {
-  const std::vector<int>& items = SettingsPageItems(page);
+  // The controls page is the game's to run.
+  if (page == SettingsPage::kControls) return false;
+  const std::vector<int>& items = SettingsPageItems(page, s.controls_page);
   const int row_count = static_cast<int>(items.size());
   int selected = RowPosition(items, index);
   selected = std::max(selected, 0);
@@ -181,6 +189,11 @@ bool UpdateSettingsPage(GameSettings& s, SettingsPage& page, int& index,
     page = SettingsPage::kMain;
   }
   return false;
+}
+
+void LeaveControlsPage(SettingsPage& page, int& index) {
+  page = SettingsPage::kMain;
+  index = kSetControls;
 }
 
 std::map<std::string, std::string> ToKeyValues(const GameSettings& s) {

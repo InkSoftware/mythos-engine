@@ -50,6 +50,11 @@ Row RowFor(const int item, const GameSettings& s,
               .value = "›",
               .meter = -1,
               .link = true};
+    case kSetControls:
+      return {.label = Tr("settings.controls"),
+              .value = "›",
+              .meter = -1,
+              .link = true};
     case kSetResolution:
       return {.label = Tr("settings.resolution"),
               .value = s.fullscreen ? Tr("settings.desktop")
@@ -118,6 +123,8 @@ Row RowFor(const int item, const GameSettings& s,
 void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
                       const SettingsPage page, const int index,
                       const std::string& language_name, const double time_sec) {
+  // The controls page is drawn by the game (DrawControlsPage).
+  if (page == SettingsPage::kControls) return;
   Surface& fb = c.fb;
   FillRect(fb, 0, 0, fb.w, fb.h, t.backdrop);
   const int px = (fb.w - t.page_w) / 2, py = (fb.h - t.page_h) / 2;
@@ -131,7 +138,8 @@ void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
   Style row_style = t.item;
   row_style.size = t.row_size;
   float y = fpy + t.first_row_y;
-  const int rows = static_cast<int>(SettingsPageItems(page).size());
+  const std::vector<int>& items = SettingsPageItems(page, s.controls_page);
+  const int rows = static_cast<int>(items.size());
   // Squeezes the rows together when the window is too short for the usual
   // pitch.
   const float pitch = std::min(
@@ -139,7 +147,7 @@ void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
                        static_cast<float>(std::max(rows - 1, 1)));
   const float left = fpx + t.margin,
               right = fpx + static_cast<float>(t.page_w) - t.margin;
-  for (const int i : SettingsPageItems(page)) {
+  for (const int i : items) {
     if (i == kSetBack) y += t.back_gap;
     const Row r = RowFor(i, s, language_name);
     const bool selected = index == i;

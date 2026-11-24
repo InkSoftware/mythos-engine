@@ -5174,6 +5174,47 @@ TEST(sun_shadow_box_covers_the_viewer_and_does_not_shimmer) {
   }
 }
 
+TEST(settings_menu_opens_the_controls_page_only_when_the_game_has_one) {
+  GameSettings s;
+  CHECK(!s.controls_page);
+  CHECK(
+      std::ranges::find(SettingsPageItems(SettingsPage::kMain), kSetControls) ==
+      SettingsPageItems(SettingsPage::kMain).end());
+  const auto& with = SettingsPageItems(SettingsPage::kMain, true);
+  CHECK(std::ranges::find(with, kSetControls) != with.end());
+  CHECK_EQ(with.back(), kSetBack);
+  s.controls_page = true;
+  SettingsPage page = SettingsPage::kMain;
+  int index = kSetGraphics;
+  UiInput down;
+  down.down_pressed = true;
+  UpdateSettingsPage(s, page, index, down, false, 2);  // audio
+  UpdateSettingsPage(s, page, index, down, false, 2);  // controls
+  CHECK_EQ(index, kSetControls);
+  UiInput confirm;
+  confirm.confirm_pressed = true;
+  CHECK(!UpdateSettingsPage(s, page, index, confirm, false, 2));
+  CHECK(page == SettingsPage::kControls);
+  // The menu leaves the controls page alone; the game runs it, then returns.
+  UiInput esc;
+  esc.pause_pressed = true;
+  CHECK(!UpdateSettingsPage(s, page, index, esc, false, 2));
+  CHECK(page == SettingsPage::kControls);
+  LeaveControlsPage(page, index);
+  CHECK(page == SettingsPage::kMain && index == kSetControls);
+  // Escape from the main page leaves the menu as before.
+  CHECK(UpdateSettingsPage(s, page, index, esc, false, 2));
+  // Without the flag a Controls row is not reachable.
+  GameSettings plain;
+  page = SettingsPage::kMain;
+  index = kSetGraphics;
+  for (int i = 0; i < 4; ++i)
+    UpdateSettingsPage(plain, page, index, down, false, 2);
+  CHECK(index != kSetControls);
+  CHECK(!Tr("settings.controls").empty() &&
+        Tr("settings.controls") != "settings.controls");
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

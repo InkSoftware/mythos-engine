@@ -76,6 +76,10 @@ struct GameSettings {
   int ambience_volume = 7;
   int effects_volume = 8;
   Lang language = Lang::kEnglish;
+
+  // Not saved: a game that shows the controls page (ui/controls_ui.h) sets it,
+  // and the main page then has a Controls row that opens it.
+  bool controls_page = false;
 };
 
 // Rows of the settings menu. A page shows a subset, in the order given by
@@ -83,6 +87,7 @@ struct GameSettings {
 enum SettingsItem {
   kSetGraphics,
   kSetAudio,
+  kSetControls,
   kSetResolution,
   kSetFullscreen,
   kSetVsync,
@@ -104,11 +109,19 @@ enum SettingsItem {
   kSettingsItemCount
 };
 
-enum class SettingsPage { kMain, kGraphics, kAudio };
+// `kControls` is the controls page: the settings menu only switches to it (from
+// the Controls row, when `GameSettings::controls_page` is set); the game draws
+// and updates it (`UpdateControlsPage`, `DrawControlsPage`) and calls
+// `LeaveControlsPage` when it reports back.
+enum class SettingsPage { kMain, kGraphics, kAudio, kControls };
 
 // The rows of a page, in display order. The last row of every page is
-// `kSetBack`.
-const std::vector<int>& SettingsPageItems(SettingsPage page);
+// `kSetBack`. With `controls` the main page also has `kSetControls`.
+const std::vector<int>& SettingsPageItems(SettingsPage page,
+                                          bool controls = false);
+
+// Back from the controls page to the main page, on its Controls row.
+void LeaveControlsPage(SettingsPage& page, int& index);
 
 // Applies one frame of input to the settings menu: moves the selection (`index`
 // is a `SettingsItem`), changes the selected value, switches page, and applies

@@ -98,7 +98,9 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
-  // `--controls` opens the controls page at the start (for a screenshot).
+  // `--menu` opens the settings menu at the start.
+  // `--controls` opens the menu on the controls page at the start (for a
+  // screenshot).
   // `--crowd N` scatters N chairs as model instances (a stress test for
   // instancing; `--no-instancing` draws them one by one to compare).
   // `--sun-shadow` (with `--outdoor`) adds the shadow of the sun or the moon.
@@ -115,6 +117,7 @@ int main(const int argc, char** const argv) {
   int crowd = 0;
   bool instancing = true;
   bool start_controls = false;
+  bool start_menu = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -126,6 +129,7 @@ int main(const int argc, char** const argv) {
     if (i + 1 < argc && arg == "--crowd")
       crowd = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (arg == "--controls") start_controls = true;
+    if (arg == "--menu") start_menu = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
       hour = std::strtod(argv[i + 1], nullptr);
@@ -186,8 +190,15 @@ int main(const int argc, char** const argv) {
   const mythos::UserFiles files("mythos", "template-game");
   const std::string save_dir = files.Path("saves");
 
-  mythos::GameSettings settings;
-  settings.ambient_occlusion = ssao;
+  // The player's settings, from settings.txt (the first run opens at 1280 x
+  // 720). `controls_page` adds a Controls row to the menu.
+  mythos::GameSettings settings = mythos::LoadSettings(files);
+  if (files.Read("settings.txt").empty()) {
+    settings.resolution = mythos::ResolutionIndex(1280, 720);
+  }
+  settings.controls_page = true;
+  if (ssao) settings.ambient_occlusion = true;
+  mythos::SetLanguage(settings.language);
 
   // Sound: the engine's common clips. A hum in the back room is a positional
   // source: panned and attenuated by distance, and muffled by the walls and
@@ -233,7 +244,14 @@ int main(const int argc, char** const argv) {
   theme.row_pitch = 22.0f;
   mythos::ControlsState controls;
   mythos::TextLayer text_layer;
-  bool controls_open = start_controls, f3_was = false;
+  // The settings menu (Esc) and, from its Controls row or F3, the controls
+  // page. The game pauses while either is open.
+  bool menu_open = start_controls || start_menu, f3_was = false;
+  mythos::SettingsPage page = start_controls ? mythos::SettingsPage::kControls
+                                             : mythos::SettingsPage::kMain;
+  int menu_index = mythos::kSetGraphics;
+  auto applied = mythos::ToKeyValues(settings);
+  mythos::ApplySettings(settings, window, renderer, audio);
 
   // Hot reload (development): edit the level, a texture or a shader and see it
   // without restarting. The paths are the ones compiled in by CMake.
@@ -263,27 +281,46 @@ int main(const int argc, char** const argv) {
     mythos::ActionInput act;
     const mythos::InputPoll poll =
         mythos::PollInput(move, ui, act, true, nullptr);
-    if (poll.quit || (ui.pause_pressed && !controls_open)) break;
+    if (poll.quit) break;
 
-    // The controls page: F3 opens it; it rebinds, resets and saves.
+    // The menu: Esc opens the settings, F3 goes straight to the controls.
     const bool* keys = SDL_GetKeyboardState(nullptr);
-    if (controls_open) {
+    if (!menu_open) {
+      if (ui.pause_pressed) {
+        menu_open = true;
+        page = mythos::SettingsPage::kMain;
+        menu_index = mythos::kSetGraphics;
+      } else if (keys[SDL_SCANCODE_F3] && !f3_was) {
+        menu_open = true;
+        page = mythos::SettingsPage::kControls;
+        controls = {};
+      }
+    } else if (page == mythos::SettingsPage::kControls) {
       const mythos::ControlsResult result = mythos::UpdateControlsPage(
           bindings, mythos::kPlayContext, controls, ui, poll.pressed);
       if (result == mythos::ControlsResult::kChanged &&
           !files.Write("bindings.json", bindings.ToJson().dump(2))) {
         std::fprintf(stderr, "could not save the key bindings\n");
       }
-      if (result == mythos::ControlsResult::kBack) controls_open = false;
-    } else if (keys[SDL_SCANCODE_F3] && !f3_was) {
-      controls_open = true;
-      controls = {};
+      if (result == mythos::ControlsResult::kBack) {
+        mythos::LeaveControlsPage(page, menu_index);
+      }
+    } else if (mythos::UpdateSettingsPage(
+                   settings, page, menu_index, ui, false,
+                   mythos::LargestFittingResolution(window))) {
+      menu_open = false;
+      mythos::SaveSettings(files, settings);
     }
     f3_was = keys[SDL_SCANCODE_F3];
+    // A changed setting reaches the window, the renderer and the mixer.
+    if (const auto now = mythos::ToKeyValues(settings); now != applied) {
+      applied = now;
+      mythos::ApplySettings(settings, window, renderer, audio);
+    }
     actions.Update(
         bindings, mythos::kPlayContext,
         [](const mythos::Binding& b) { return mythos::ProbeBinding(b); });
-    if (controls_open) {
+    if (menu_open) {
       move = {};
       act = {};
     } else {
@@ -297,7 +334,7 @@ int main(const int argc, char** const argv) {
     f9_was = keys[SDL_SCANCODE_F9];
 
     const double dt = std::min(clock.Step(false), 0.1);
-    if (!controls_open) game.Update(dt, move, act);
+    if (!menu_open) game.Update(dt, move, act);
 
     bool level_changed = false, textures_changed = false,
          shaders_changed = false, models_changed = false,
@@ -422,10 +459,17 @@ int main(const int argc, char** const argv) {
     mythos::DrawText(overlay, 8, 8, mythos::Tr("template.help"),
                      mythos::Rgba(255, 255, 255));
     text_layer.Clear();
-    if (controls_open) {
+    if (menu_open) {
       mythos::UiCanvas canvas{overlay, text_layer, nullptr};
-      mythos::DrawControlsPage(canvas, theme, bindings, mythos::kPlayContext,
-                               controls, clock.Seconds());
+      if (page == mythos::SettingsPage::kControls) {
+        mythos::DrawControlsPage(canvas, theme, bindings, mythos::kPlayContext,
+                                 controls, clock.Seconds());
+      } else {
+        mythos::DrawSettingsPage(
+            canvas, theme, settings, page, menu_index,
+            settings.language == mythos::Lang::kGreek ? "ΕΛΛΗΝΙΚΑ" : "ENGLISH",
+            clock.Seconds());
+      }
     } else if (!game.message().empty()) {
       const std::string line = mythos::Tr(game.message());
       mythos::DrawText(overlay, (overlay.w - mythos::TextWidth(line, 2)) / 2,
