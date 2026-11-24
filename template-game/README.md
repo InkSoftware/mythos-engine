@@ -37,7 +37,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--sun-shadow` | with `--outdoor`: the shadow of the sun or moon | `CameraState::sun_shadow` |
 | `--ssao` | ambient occlusion (also the Ambient occlusion setting) | `CameraState::ssao` |
 | `--baked` | the lamps baked into light probes instead of live lamps | `BakeProbes`, `UploadProbes` |
-| `--reflections` | a reflection probe in each room, with the room's box for parallax correction (the toolbox and bucket are shiny) | `AddReflectionProbe` |
+| `--reflections` | a reflection probe in each room, with the room's box for parallax correction (the toolbox and bucket are shiny; the two nearest blend as you cross between rooms) | `AddReflectionProbe` |
 | `--crowd N` | N chairs as model instances; `--no-instancing` draws them one by one | GPU instancing |
 | `--debug` | opens the debug console (the ` key or F12 anywhere) with the frame stats and graph on: every setting is a variable, `cutscene.play intro` runs a cutscene, `help` lists it all | `CvarRegistry`, `DebugConsole`, `DrawDebugOverlay`, `RegisterCutsceneCommands` |
 | `--screenshot file.ppm` | renders 90 frames, saves the last, prints the draw calls, exits | `WriteFramebufferPpm`, `RenderStats` |

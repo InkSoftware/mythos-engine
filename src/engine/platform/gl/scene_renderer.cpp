@@ -347,6 +347,9 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.env = world_program_.Uniform("uEnv");
   u.env_pos = world_program_.Uniform("uEnvPos");
   u.env_half = world_program_.Uniform("uEnvHalf");
+  u.env_pos2 = world_program_.Uniform("uEnvPos2");
+  u.env_half2 = world_program_.Uniform("uEnvHalf2");
+  u.env_blend = world_program_.Uniform("uEnvBlend");
   u.sun_shadow = world_program_.Uniform("uSunShadow");
   u.sun_vp = world_program_.Uniform("uSunVP");
   u.sun_texel = world_program_.Uniform("uSunTexel");
@@ -391,6 +394,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uSunShadowTex", 9);
   world_program_.Set("uSunShadowTexFar", 11);
   world_program_.Set("uReflectionEnv", 10);
+  world_program_.Set("uReflectionEnv2", 12);
 }
 
 void SceneRenderer::BuildFullscreenQuad() {
@@ -684,36 +688,18 @@ void SceneRenderer::ClearReflectionProbes() {
 // Captures the probe nearest the viewer when it is new or the scene changed:
 // six faces of the world drawn with the usual world pass (without what moves,
 // the hand light, the vignette and the grain), then the mip chain.
-void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
-                                         const Frame& f) {
+// Captures probe `index` when it is new or the scene changed. Returns whether
+// its cube holds a picture.
+bool SceneRenderer::CaptureReflectionProbe(const CameraState& cam,
+                                           const Frame& f, const int index) {
   constexpr int kProbeSize = 128;
-  env_probe_ = -1;
-  if (cam.reflections <= 0.0 || reflection_count_ == 0 ||
-      !world_program_.Valid()) {
-    return;
-  }
-  float best = 1e30f;
-  for (int i = 0; i < reflection_count_; ++i) {
-    const float dx = reflection_[i].pos[0] - f.eye[0],
-                dy = reflection_[i].pos[1] - f.eye[1],
-                dz = reflection_[i].pos[2] - f.eye[2];
-    const float d = dx * dx + dy * dy + dz * dz;
-    if (d < best) {
-      best = d;
-      env_probe_ = i;
-    }
-  }
-  if (env_probe_ < 0) return;  // (a position that is not a number)
-  ReflectionProbe& probe = reflection_[env_probe_];
+  ReflectionProbe& probe = reflection_[index];
   if (!probe.cube.Valid()) {
     if (reflection_depth_.Id() == 0) {
       reflection_depth_.Create(kProbeSize, kProbeSize);
     }
     probe.cube.Create(kProbeSize, reflection_depth_);
-    if (!probe.cube.Valid()) {
-      env_probe_ = -1;
-      return;
-    }
+    if (!probe.cube.Valid()) return false;
     probe.key = 0;
   }
   uint64_t key = SceneKey(cam);
@@ -723,7 +709,7 @@ void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
     key = (key ^ bits) * 1099511628211ull;
   }
   key |= 1;
-  if (key == probe.key) return;
+  if (key == probe.key) return true;
   probe.key = key;
 
   CameraState pc = cam;
@@ -757,6 +743,44 @@ void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
   }
   capturing_probe_ = false;
   probe.cube.BuildMips();
+  return true;
+}
+
+// Chooses the two probes nearest the viewer (the second blends in as the
+// viewer leaves the first) and captures them when needed.
+void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
+                                         const Frame& f) {
+  env_probe_ = env_probe2_ = -1;
+  env_blend_ = 0.0f;
+  if (cam.reflections <= 0.0 || reflection_count_ == 0 ||
+      !world_program_.Valid()) {
+    return;
+  }
+  float best[2] = {1e30f, 1e30f};
+  int pick[2] = {-1, -1};
+  for (int i = 0; i < reflection_count_; ++i) {
+    const float dx = reflection_[i].pos[0] - f.eye[0],
+                dy = reflection_[i].pos[1] - f.eye[1],
+                dz = reflection_[i].pos[2] - f.eye[2];
+    const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+    if (d < best[0]) {
+      best[1] = best[0];
+      pick[1] = pick[0];
+      best[0] = d;
+      pick[0] = i;
+    } else if (d < best[1]) {
+      best[1] = d;
+      pick[1] = i;
+    }
+  }
+  if (pick[0] < 0 || !CaptureReflectionProbe(cam, f, pick[0])) return;
+  env_probe_ = pick[0];
+  if (pick[1] >= 0 && CaptureReflectionProbe(cam, f, pick[1])) {
+    env_probe2_ = pick[1];
+    // 0 at the first probe, 0.5 halfway to the second.
+    const float total = best[0] + best[1];
+    env_blend_ = total > 1e-6f ? best[0] / total : 0.0f;
+  }
 }
 
 bool SceneRenderer::ReplaceModel(const int id,
@@ -1007,6 +1031,17 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
         u.env, env ? static_cast<float>(std::min(cam.reflections, 1.0)) : 0.0f,
         env ? static_cast<float>(reflection_[env_probe_].cube.Levels() - 1)
             : 0.0f);
+    const bool two =
+        env && env_probe2_ >= 0 && reflection_[env_probe2_].cube.Valid();
+    Uniform1f(u.env_blend, two ? env_blend_ : 0.0f);
+    if (two) {
+      const ReflectionProbe& second = reflection_[env_probe2_];
+      Uniform3f(u.env_pos2, second.pos[0], second.pos[1], second.pos[2]);
+      Uniform3f(u.env_half2, second.half[0], second.half[1], second.half[2]);
+      ActiveTexture(kTexture0 + 12);
+      BindTexture(gl::kTextureCubeMap, second.cube.Texture());
+      ActiveTexture(kTexture0);
+    }
     if (env) {
       const ReflectionProbe& probe = reflection_[env_probe_];
       Uniform3f(u.env_pos, probe.pos[0], probe.pos[1], probe.pos[2]);

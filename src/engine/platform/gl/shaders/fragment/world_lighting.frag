@@ -25,6 +25,10 @@ uniform vec3 uMoonDir;
 uniform samplerCube uReflectionEnv;  // the room as captured at a reflection probe (display colours, mips = blur)
 uniform vec2 uEnv;                 // strength (0 = none), the highest mip level
 uniform vec3 uEnvPos;              // where the probe was captured
+uniform samplerCube uReflectionEnv2;  // the next nearest probe, blended in by uEnvBlend
+uniform vec3 uEnvPos2;
+uniform vec3 uEnvHalf2;
+uniform float uEnvBlend;            // 0 = only the first probe
 uniform vec3 uEnvHalf;             // half the box of the room around it for parallax correction (0 = none)
 uniform sampler2DArray uProbeTex;  // baked light over the floor plan: a layer per face of the ambient cube (+x -x +y -y +z -z)
 uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
@@ -175,6 +179,21 @@ vec3 specular(vec3 n, vec3 v, vec3 l) {
     return min(ndf * vis * nl, 8.0) * fres;
 }
 
+// What a probe saw along the reflected ray: with a box the ray is followed to its walls and read from the probe at
+// that point (parallax correction); a rougher surface reads a blurrier mip level.
+vec3 envSeen(samplerCube cube, vec3 pos, vec3 half_, vec3 refl, float rough) {
+    vec3 look = refl;
+    if (half_.x > 0.0 && half_.y > 0.0 && half_.z > 0.0) {
+        vec3 inv = 1.0 / (abs(refl) + 1e-4) * sign(refl + 1e-6);
+        vec3 hit1 = (pos + half_ - vWorld) * inv;
+        vec3 hit2 = (pos - half_ - vWorld) * inv;
+        vec3 farHit = max(hit1, hit2);
+        float t = max(min(min(farHit.x, farHit.y), farHit.z), 0.0);
+        look = vWorld + refl * t - pos;
+    }
+    return textureLod(cube, look, rough * uEnv.y).rgb * 0.8;
+}
+
 // What a shiny surface reflects of the room: there are no probes, so the environment is the ambient light of the
 // era (brighter overhead, darker underfoot), or the night sky outdoors. Karis' analytic environment BRDF gives
 // the split-sum scale and bias, and the baked occlusion dims the reflection in crevices.
@@ -191,17 +210,10 @@ vec3 environmentSpecular(vec3 n, vec3 v, vec3 ambient) {
     vec3 env = ambient * sky;
     if (uEnv.x > 0.0) {
         // A captured room replaces the guess: rougher surfaces read a blurrier mip level.
-        vec3 look = refl;
-        if (uEnvHalf.x > 0.0 && uEnvHalf.y > 0.0 && uEnvHalf.z > 0.0) {
-            // Follow the ray to the box's walls, and look from the probe at that point.
-            vec3 inv = 1.0 / (abs(refl) + 1e-4) * sign(refl + 1e-6);
-            vec3 hit1 = (uEnvPos + uEnvHalf - vWorld) * inv;
-            vec3 hit2 = (uEnvPos - uEnvHalf - vWorld) * inv;
-            vec3 farHit = max(hit1, hit2);
-            float t = max(min(min(farHit.x, farHit.y), farHit.z), 0.0);
-            look = vWorld + refl * t - uEnvPos;
+        vec3 seen = envSeen(uReflectionEnv, uEnvPos, uEnvHalf, refl, gRough);
+        if (uEnvBlend > 0.0) {
+            seen = mix(seen, envSeen(uReflectionEnv2, uEnvPos2, uEnvHalf2, refl, gRough), uEnvBlend);
         }
-        vec3 seen = textureLod(uReflectionEnv, look, gRough * uEnv.y).rgb * 0.8;
         env = mix(env, seen, uEnv.x);
     }
     return env * (gF0 * ab.x + ab.y) * occ;

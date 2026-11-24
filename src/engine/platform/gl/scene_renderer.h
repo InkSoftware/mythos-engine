@@ -446,10 +446,14 @@ class SceneRenderer {
   };
   ReflectionProbe reflection_[kMaxReflectionProbes];
   int reflection_count_ = 0;
-  int env_probe_ = -1;  // the probe this frame's world pass reflects
+  int env_probe_ = -1;   // the probe this frame's world pass reflects
+  int env_probe2_ = -1;  // the next nearest, blended in by `env_blend_`
+  float env_blend_ = 0.0f;
   bool capturing_probe_ = false;
   DepthBuffer reflection_depth_;
   void DrawReflectionProbes(const CameraState& cam, const Frame& f);
+  bool CaptureReflectionProbe(const CameraState& cam, const Frame& f,
+                              int index);
   // Two cascades: a close one (more detail near the viewer) and a far one.
   static constexpr int kSunCascades = 2;
   RenderTarget sun_target_[kSunCascades];
@@ -628,16 +632,16 @@ class SceneRenderer {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
               sun_color = -1, probe = -1, sun_shadow = -1, sun_vp = -1,
-              env = -1, env_pos = -1, env_half = -1, sun_texel = -1,
-              sky_ambient = -1, fog_color = -1, fog_density = -1, time = -1,
-              ambient_base = -1, ambient_near = -1, lightning = -1,
-              zone_count = -1, zone_xz = -1, zone_y = -1, light_count = -1,
-              light_pos = -1, light_color = -1, light_radius = -1,
-              light_halo = -1, shadow_count = -1, shadow_texel = -1,
-              hand_shadow = -1, hand_pos = -1, hand_origin = -1,
-              hand_faces = -1, res = -1, grain = -1, materials = -1, clip = -1,
-              mist = -1, mist_height = -1, exposure = -1, tonemap = -1,
-              vignette = -1;
+              env = -1, env_pos = -1, env_half = -1, env_pos2 = -1,
+              env_half2 = -1, env_blend = -1, sun_texel = -1, sky_ambient = -1,
+              fog_color = -1, fog_density = -1, time = -1, ambient_base = -1,
+              ambient_near = -1, lightning = -1, zone_count = -1, zone_xz = -1,
+              zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
+              light_radius = -1, light_halo = -1, shadow_count = -1,
+              shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
+              hand_origin = -1, hand_faces = -1, res = -1, grain = -1,
+              materials = -1, clip = -1, mist = -1, mist_height = -1,
+              exposure = -1, tonemap = -1, vignette = -1;
   } world_u_;
 };
 

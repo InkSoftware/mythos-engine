@@ -227,8 +227,8 @@ more than was built.
 - **Progress:** `SceneRenderer::AddReflectionProbe` and `CameraState::reflections`: a 128 x 128 cube capture of the world at
   each probe (redrawn only when the scene changes), mips as the roughness blur, read in the world shader's
   environment reflection; off by default and unchanged then. The template shows it with `--reflections` (a toolbox
-  and a bucket stand in the first room). A probe can have a box for parallax correction. Not done: a probe per chunk (only the one nearest the
-  viewer is used), the sky and moving models in the capture, HDR capture (the cube holds tone-mapped colours) and
+  and a bucket stand in the first room). A probe can have a box for parallax correction, and the two nearest blend by distance. Not done: a probe per chunk (only
+  the two nearest the viewer are used), the sky and moving models in the capture, HDR capture (the cube holds tone-mapped colours) and
   a proper roughness filter (the mip chain is a box filter).
 - **Where:** a probe is a cube capture of the scene at a position (reusing the
   shadow cube plumbing), filtered to a few roughness levels, assigned per
@@ -321,7 +321,7 @@ The order the items were built in. All have a first version.
 Gaps named in the Progress lines, by area:
 
 - **Rendering:** sun shadows beyond 26 m; the mirror and glass panes with the sun-aware sky, ambient occlusion, baked light
-  and reflection probes; HDR reflection probes, a probe per chunk and blending two probes, a real roughness filter;
+  and reflection probes; HDR reflection probes, a probe per chunk, a real roughness filter;
   lightmaps and probes at several heights; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
