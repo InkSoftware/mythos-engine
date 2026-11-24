@@ -334,6 +334,9 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.moon_dir = world_program_.Uniform("uMoonDir");
   u.sun_color = world_program_.Uniform("uSunColor");
   u.probe = world_program_.Uniform("uProbe");
+  u.sun_shadow = world_program_.Uniform("uSunShadow");
+  u.sun_vp = world_program_.Uniform("uSunVP");
+  u.sun_texel = world_program_.Uniform("uSunTexel");
   u.sky_ambient = world_program_.Uniform("uSkyAmbient");
   u.fog_color = world_program_.Uniform("uFogColor");
   u.fog_density = world_program_.Uniform("uFogDensity");
@@ -372,6 +375,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uNormalTex", 6);
   world_program_.Set("uMaterialTex", 7);
   world_program_.Set("uProbeTex", 8);
+  world_program_.Set("uSunShadowTex", 9);
 }
 
 void SceneRenderer::BuildFullscreenQuad() {
@@ -845,6 +849,14 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
       probe_tex_.Bind();
       ActiveTexture(kTexture0);
     }
+  }
+  Uniform1f(u.sun_shadow, sun_on_ ? 1.0f : 0.0f);
+  if (sun_on_) {
+    UniformMatrix4fv(u.sun_vp, 1, kFalse, sun_view_proj_);
+    Uniform1f(u.sun_texel, 1.0f / static_cast<float>(sun_target_.Width()));
+    ActiveTexture(kTexture0 + 9);
+    sun_target_.DepthTexture().Bind();
+    ActiveTexture(kTexture0);
   }
   Uniform3f(u.sun_color, f.sky.light_color[0], f.sky.light_color[1],
             f.sky.light_color[2]);
@@ -1535,6 +1547,7 @@ void SceneRenderer::Render(const CameraState& cam, const int window_w,
   stats_.lights = static_cast<int>(lamps_.size());
   stats_.shadow_casters = shadow_count_ + (hand_shadow_on_ ? 1 : 0);
   DrawShadows(cam);
+  DrawSunShadow(cam, f);
   const bool mirrored = MirrorVisible(cam, f);
   stats_.mirror = mirrored;
   if (mirrored) {

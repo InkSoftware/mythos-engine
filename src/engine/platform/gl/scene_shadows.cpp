@@ -184,6 +184,75 @@ uint64_t SceneRenderer::SceneKey(const CameraState& cam) const {
   return h;
 }
 
+// The shadow map of the light that lights an outdoor scene (the sun or the
+// moon): one orthographic depth map centred on the viewer, redrawn only when
+// the scene, the snapped box or a shadow caster changes.
+void SceneRenderer::DrawSunShadow(const CameraState& cam, const Frame& f) {
+  constexpr int kSunMapSize = 2048;
+  constexpr float kSunExtent = 24.0f, kSunDepth = 80.0f;
+  sun_on_ = false;
+  if (!cam.outdoor || cam.sun_shadow <= 0.0 || cam.shadow_level <= 0 ||
+      !shadow_program_.Valid()) {
+    return;
+  }
+  if (sun_target_.Width() == 0) sun_target_.Create(kSunMapSize, kSunMapSize);
+  const float eye[3] = {static_cast<float>(cam.x),
+                        static_cast<float>(cam.eye_height),
+                        static_cast<float>(cam.z)};
+  const SunShadow sun =
+      ComputeSunShadow(eye, f.moon, kSunExtent, kSunDepth, kSunMapSize);
+  std::memcpy(sun_view_proj_, sun.view_proj, sizeof(sun_view_proj_));
+  sun_texel_ = sun.texel;
+  sun_on_ = true;
+
+  uint64_t key = SceneKey(cam);
+  Mix(key, sun.view_proj, sizeof(sun.view_proj));
+  for (const ModelInstance& inst : cam.instances) {
+    if (!(inst.views & ModelInstance::kShadow) || inst.model < 0) continue;
+    Mix(key, inst.model);
+    Mix(key, inst.matrix, sizeof(inst.matrix));
+    if (!inst.skin.empty()) {
+      Mix(key, inst.skin.data(), inst.skin.size() * sizeof(Mat4f));
+    }
+  }
+  key |= 1;
+  if (key == sun_key_) return;
+  sun_key_ = key;
+
+  const GLint saved_model = u_model_, saved_emissive = u_emissive_,
+              saved_alpha = u_alpha_test_, saved_skinned = u_skinned_,
+              saved_bones = u_bones_;
+  u_model_ = shadow_program_.Uniform("uModel");
+  u_emissive_ = -1;
+  u_alpha_test_ = shadow_program_.Uniform("uAlphaTest");
+  u_skinned_ = shadow_program_.Uniform("uSkinned");
+  u_bones_ = shadow_program_.Uniform("uBones");
+  bind_normals_ = false;
+  shadow_program_.Use();
+  shadow_program_.Set("uTex", 0);
+  shadow_program_.SetMat4("uView", sun.view);
+  shadow_program_.SetMat4("uProj", sun.proj);
+  sun_target_.Bind();
+  gl::Viewport(0, 0, sun_target_.Width(), sun_target_.Height());
+  Enable(kDepthTest);
+  DepthFunc(kLequal);
+  Disable(kBlend);
+  ActiveTexture(kTexture0);
+  Clear(kDepthBufferBit);
+  draw_state_ = DrawState{};
+  Frustum frustum;
+  FrustumPlanes(sun.view_proj, frustum);
+  counting_shadows_ = true;
+  DrawScene(cam, frustum, ModelInstance::kShadow);
+  counting_shadows_ = false;
+  u_model_ = saved_model;
+  u_emissive_ = saved_emissive;
+  u_alpha_test_ = saved_alpha;
+  u_skinned_ = saved_skinned;
+  u_bones_ = saved_bones;
+  bind_normals_ = true;
+}
+
 void SceneRenderer::DrawShadows(const CameraState& cam) {
   if (shadow_count_ == 0 && !hand_shadow_on_) return;
   const uint64_t scene = SceneKey(cam);

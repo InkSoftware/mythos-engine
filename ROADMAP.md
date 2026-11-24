@@ -225,8 +225,8 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ### 4.4 Sun and day/night (S to M)
 - **Progress:** `gfx/sky.h` (`SkyAt(hour)`, `NightLook`) and `CameraState::time_of_day` drive the sun or moon's direction and
   light, ambient, the sky gradient, stars, clouds and haze of an outdoor scene; with it unset the night is as it was.
-  The template shows it (`--outdoor --hour H`). Not done: a sun shadow (one cascade or a single shadow map) and a
-  sun-aware sky for the mirror and glass panes.
+  The template shows it (`--outdoor --hour H`). A sun shadow (`CameraState::sun_shadow`, one orthographic map around the viewer, `gfx/sun_shadow.h`) is done.
+  Not done: cascades (shadows beyond 24 m) and a sun-aware sky for the mirror and glass panes.
 - **Where:** `CameraState::sun` (direction, colour, intensity), a time-of-day
   curve in `gfx/sky.h` (headless), one cascade or a single shadow map for
   outdoor scenes. The sky shader blends dawn to dusk.

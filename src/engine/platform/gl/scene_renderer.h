@@ -15,6 +15,7 @@
 #include "engine/gfx/render_stats.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/gfx/sky.h"
+#include "engine/gfx/sun_shadow.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -157,6 +158,12 @@ struct CameraState {
   // How much of the uploaded baked light (`SceneRenderer::UploadProbes`) is
   // added, 0 (none) to 1 (as baked); without an upload it does nothing.
   double baked_light = 1;
+
+  // A shadow from the sun (or the moon) in an `outdoor` scene: 0 off (the
+  // default; the picture is as without it), above 0 on. One orthographic map
+  // follows the viewer, 48 m across, so the shadows are of what is near; the
+  // Shadows setting (`shadow_level`) at 0 turns it off.
+  double sun_shadow = 0;
 
   // Camcorder tape look, drawn in the composite pass (HUD included).
   bool tape = false;
@@ -390,6 +397,11 @@ class SceneRenderer {
                     gl::GLenum internal_format = gl::kRgba8);
   std::map<std::string, std::string> loose_shaders_;
   ModelLods lods_;
+  RenderTarget sun_target_;
+  float sun_view_proj_[16] = {};
+  float sun_texel_ = 0;
+  bool sun_on_ = false;
+  uint64_t sun_key_ = 0;
   GlTexture probe_tex_;
   float probe_scale_[2] = {0, 0};  // 1 / extent in metres; 0 = none
   ModelLods no_lods_;  // always empty: shadow passes do not swap models
@@ -433,6 +445,7 @@ class SceneRenderer {
 
   // Refreshes the shadow cube faces whose lamp or scene changed.
   void DrawShadows(const CameraState& cam);
+  void DrawSunShadow(const CameraState& cam, const Frame& f);
 
   // Renders the faces in `face_mask` of one cube from `pos`, skipping each face
   // whose entry in `keys` already equals `base_key`.
@@ -559,7 +572,8 @@ class SceneRenderer {
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
-              sun_color = -1, probe = -1, sky_ambient = -1, fog_color = -1,
+              sun_color = -1, probe = -1, sun_shadow = -1, sun_vp = -1,
+              sun_texel = -1, sky_ambient = -1, fog_color = -1,
               fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
               lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
               light_count = -1, light_pos = -1, light_color = -1,

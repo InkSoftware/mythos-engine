@@ -15,6 +15,11 @@ void Mat4Perspective(float fovy, float aspect, float zn, float zf, float* m);
 void Mat4LookAt(const float* eye, const float* center, const float* up,
                 float* m);
 
+// Orthographic projection of the box left..right, bottom..top, near..far (all
+// distances in front of the eye), clip depth -1..1.
+void Mat4Ortho(float left, float right, float bottom, float top, float zn,
+               float zf, float* m);
+
 // out = a * b. `out` may alias an input.
 void Mat4Multiply(const float* a, const float* b, float* out);
 

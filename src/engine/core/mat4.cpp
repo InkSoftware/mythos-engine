@@ -24,6 +24,12 @@ void Mat4Perspective(const float fovy, const float aspect, const float zn,
   Store(glm::perspectiveRH_NO(fovy, aspect, zn, zf), m);
 }
 
+void Mat4Ortho(const float left, const float right, const float bottom,
+               const float top, const float zn, const float zf,
+               float* const m) {
+  Store(glm::orthoRH_NO(left, right, bottom, top, zn, zf), m);
+}
+
 void Mat4LookAt(const float* const eye, const float* const center,
                 const float* const up, float* const m) {
   Store(glm::lookAtRH(glm::make_vec3(eye), glm::make_vec3(center),

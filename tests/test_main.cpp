@@ -61,6 +61,7 @@
 #include "engine/gfx/render_stats.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/gfx/sky.h"
+#include "engine/gfx/sun_shadow.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -5105,6 +5106,72 @@ TEST(probes_bake_light_with_walls_and_sample_smoothly) {
   CHECK(!mythos::ParseProbes("probes 0.5 2 2\n1 2 3\n", &back, &error));
   CHECK(!mythos::ParseProbes("nope", &back, &error));
   CHECK(back == kept);
+}
+
+namespace {
+// A world point through a column-major matrix, divided by w.
+void Project(const float* m, const float* p, float* out) {
+  float v[4];
+  for (int r = 0; r < 4; ++r) {
+    v[r] = m[r] * p[0] + m[4 + r] * p[1] + m[8 + r] * p[2] + m[12 + r];
+  }
+  for (int i = 0; i < 3; ++i) out[i] = v[i] / v[3];
+}
+}
+
+TEST(sun_shadow_box_covers_the_viewer_and_does_not_shimmer) {
+  const float eye[3] = {10.3f, 1.6f, 7.7f};
+  const float sun[3] = {0.4f, 0.8f, 0.3f};
+  const mythos::SunShadow s =
+      mythos::ComputeSunShadow(eye, sun, 20.0f, 60.0f, 2048);
+  CHECK(std::fabs(s.texel - 40.0f / 2048.0f) < 1e-6f);
+  // The viewer is near the middle of the box (within a texel) and in front.
+  float c[3];
+  Project(s.view_proj, eye, c);
+  CHECK(std::fabs(c[0]) < 0.01f && std::fabs(c[1]) < 0.01f);
+  CHECK(c[2] > -1.0f && c[2] < 1.0f);
+  // A point 15 m to the side is inside; 25 m outside; one toward the light is
+  // nearer (smaller depth) than the viewer, one away is farther.
+  const float side[3] = {eye[0] + 15.0f, eye[1], eye[2]};
+  float p[3];
+  Project(s.view_proj, side, p);
+  CHECK(std::fabs(p[0]) <= 1.0f && std::fabs(p[1]) <= 1.0f);
+  // 25 m along the light's own right axis, (0.6, 0, -0.8) for this sun.
+  const float far_side[3] = {eye[0] + 15.0f, eye[1], eye[2] - 20.0f};
+  float q[3];
+  Project(s.view_proj, far_side, q);
+  CHECK(std::fabs(q[0]) > 1.0f || std::fabs(q[1]) > 1.0f);
+  const float toward[3] = {eye[0] + sun[0] * 5, eye[1] + sun[1] * 5,
+                           eye[2] + sun[2] * 5};
+  const float away[3] = {eye[0] - sun[0] * 5, eye[1] - sun[1] * 5,
+                         eye[2] - sun[2] * 5};
+  float t[3], a[3];
+  Project(s.view_proj, toward, t);
+  Project(s.view_proj, away, a);
+  CHECK(t[2] < c[2] && c[2] < a[2]);
+  // Moving the viewer less than a texel leaves the matrices as they were;
+  // moving it by a texel or more changes them.
+  float nudged[3] = {eye[0] + 0.001f, eye[1], eye[2]};
+  const mythos::SunShadow same =
+      mythos::ComputeSunShadow(nudged, sun, 20.0f, 60.0f, 2048);
+  bool equal = true;
+  for (int i = 0; i < 16; ++i)
+    equal = equal && same.view_proj[i] == s.view_proj[i];
+  CHECK(equal);
+  float moved[3] = {eye[0] + 1.0f, eye[1], eye[2]};
+  const mythos::SunShadow other =
+      mythos::ComputeSunShadow(moved, sun, 20.0f, 60.0f, 2048);
+  bool differs = false;
+  for (int i = 0; i < 16; ++i)
+    differs = differs || other.view_proj[i] != s.view_proj[i];
+  CHECK(differs);
+  // A light straight overhead and a zero vector still give finite matrices.
+  const float overhead[3] = {0, 1, 0}, none[3] = {0, 0, 0};
+  for (const float* dir : {overhead, none}) {
+    const mythos::SunShadow o =
+        mythos::ComputeSunShadow(eye, dir, 10.0f, 30.0f, 1024);
+    for (const float v : o.view_proj) CHECK(std::isfinite(v));
+  }
 }
 
 }

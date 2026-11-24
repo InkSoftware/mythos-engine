@@ -76,6 +76,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/probes.cpp
     src/engine/gfx/skeleton.cpp
     src/engine/gfx/sky.cpp
+    src/engine/gfx/sun_shadow.cpp
     src/engine/gfx/model.cpp
     src/engine/gfx/normalmap.cpp
     src/engine/gfx/particles.cpp

@@ -24,6 +24,10 @@ uniform int uOutdoor;
 uniform vec3 uMoonDir;
 uniform sampler2D uProbeTex;  // baked light over the floor plan (RGB)
 uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
+uniform float uSunShadow;      // 1: a shadow map of the outdoor light is bound
+uniform mat4 uSunVP;           // world -> the shadow map's clip space
+uniform sampler2D uSunShadowTex;
+uniform float uSunTexel;       // one texel in uv
 uniform vec3 uSunColor;    // direct light outdoors (the moon's, unless a time of day is set)
 uniform vec3 uSkyAmbient;  // ambient light outdoors
 uniform vec3 uAmbientBase;
@@ -109,6 +113,20 @@ float gGloss = 0.0;  // the normal map's alpha: 1 - roughness (0 = matt), set by
 float gMetal = 0.0, gAo = 1.0;  // the material map, set by main
 float gRough = 1.0;             // the roughness the specular uses
 vec3 gF0 = vec3(0.04);          // reflectance at normal incidence: 0.04 for a dielectric, the albedo for a metal
+// The outdoor light's shadow: 1 lit, 0 in shadow, a 3x3 soft edge. `p` is already pushed off the surface along its normal.
+float sunShadowFactor(vec3 p) {
+    vec4 c = uSunVP * vec4(p, 1.0);
+    vec3 s = c.xyz / c.w * 0.5 + 0.5;
+    if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z > 1.0) return 1.0;
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x)
+            lit += (texture(uSunShadowTex, s.xy + vec2(float(x), float(y)) * uSunTexel).r + 0.0008 < s.z) ? 0.0 : 1.0;
+    // Fade out toward the edge of the box, where there is no map.
+    vec2 edge = min(s.xy, 1.0 - s.xy);
+    return mix(1.0, lit / 9.0, smoothstep(0.0, 0.06, min(edge.x, edge.y)));
+}
+
 vec3 bumpNormal(vec3 n) {
     vec4 map = texture(uNormalTex, vUV);
     gGloss = map.a;
@@ -212,10 +230,11 @@ void main() {
         vec3 ambient;
         if (uOutdoor == 1) {
             // Cold moonlight plus a faint blue sky ambient.
+            float sunLit = uSunShadow > 0.5 ? sunShadowFactor(vWorld + geo * 0.05) : 1.0;
             float ndl = abs(dot(n, uMoonDir));
             vec3 moon = uSunColor;
-            light = moon * ndl;
-            spec += moon * specular(n, toCam, uMoonDir);
+            light = moon * ndl * sunLit;
+            spec += moon * sunLit * specular(n, toCam, uMoonDir);
             ambient = uSkyAmbient;
         } else {
             // A dark interior: dim ambient, slightly stronger near the player (both per era).

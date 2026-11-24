@@ -99,6 +99,7 @@ int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
   // `--controls` opens the controls page at the start (for a screenshot).
+  // `--sun-shadow` (with `--outdoor`) adds the shadow of the sun or the moon.
   // `--baked` bakes the lamps into light probes instead of lighting with them
   // live (no shadows from them, no 32-lamp limit).
   // `--ssao` turns on ambient occlusion (the Ambient occlusion setting).
@@ -108,6 +109,7 @@ int main(const int argc, char** const argv) {
   bool outdoor = false;
   bool ssao = false;
   bool baked = false;
+  bool sun_shadow = false;
   bool start_controls = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
@@ -115,6 +117,7 @@ int main(const int argc, char** const argv) {
     if (arg == "--outdoor") outdoor = true;
     if (arg == "--ssao") ssao = true;
     if (arg == "--baked") baked = true;
+    if (arg == "--sun-shadow") sun_shadow = true;
     if (arg == "--controls") start_controls = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
@@ -355,6 +358,7 @@ int main(const int argc, char** const argv) {
     }
     cam.time = clock.Seconds();
     cam.outdoor = outdoor;
+    cam.sun_shadow = sun_shadow ? 1.0 : 0.0;
     if (outdoor)
       cam.time_of_day = std::fmod(hour + clock.Seconds() / 10.0, 24.0);
     for (const mythos::Vec3& p :
