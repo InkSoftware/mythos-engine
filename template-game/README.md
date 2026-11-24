@@ -8,7 +8,7 @@ character, a skinned glTF model) patrols the first room, stopping to face you wh
 room fires a level trigger whose rule shows a line of text. F5 saves, F9 loads.
 
 ```
-WASD walk   mouse look   Shift run   E use a door   F3 rebind Use   F5 save   F9 load   Esc quit
+WASD walk   mouse look   Shift run   E use a door   F3 controls   F5 save   F9 load   Esc quit
 ```
 
 ## Build and run
@@ -21,6 +21,7 @@ cmake -S .. -B ../build && cmake --build ../build --parallel
 ctest --test-dir ../build                     # the engine's tests and this game's
 ../build/template-game/template_game --screenshot shot.ppm --no-intro   # renders 90 frames, saves one, exits
 ../build/template-game/template_game --outdoor --hour 18   # no roof, and a day that runs (10 seconds an hour)
+../build/template-game/template_game --controls            # opens the controls page at the start
 ../build/template-game/template_game --ssao                # ambient occlusion on (the Ambient occlusion setting)
 ```
 
@@ -33,7 +34,7 @@ in `CMakeLists.txt` with a `GIT_REPOSITORY` and tag, as the engine's README show
 | File | What it shows |
 | --- | --- |
 | `src/game.h`, `src/game.cpp` | The rules, with no SDL or GL (so they are tested headless): a `Level` from `assets/levels/hall.txt` and the tile legend `assets/data/tiles.json`, the `Player` and `PlayerWalker`, `RoomDoors` and using a door, the trigger and rule runtime (`EventGraphRuntime`) with the game's own action types (`set_flag`, `message`), a behaviour tree (`ai::`) with `CanSee` and A* patrol (`FindPath`) driving an `AnimStateMachine` (idle, walk, and a wave that plays once when she first sees you), and saving (`SaveSlots`, `PlayerToJson`, `ProgressToJson`); it raises sound cues (`TakeSounds`: footsteps, doors) that the front end plays. |
-| `src/main.cpp` | The front end: window, textures (`AddCommonMaterials`, model textures), `SceneRenderer`, input (`PollInput`, then `ActionTracker` and `ApplyActions` so keys are rebindable: F3 rebinds Use and saves `bindings.json`), the camera and lamps each frame, door panels, the skinned model instance (`ModelInstance::skin`) and a little text on the overlay, hot reload (a `FileWatcher` over the game's assets and the engine's shaders: edit `assets/levels/hall.txt`, drop a `brick.png` in `assets/`, or change a shader, and the running game reloads it; a mistake is logged and the old one kept), a distance cull on the guide (`ModelInstance::max_distance`), an opening cutscene (`CutscenePlayer`, cues run through the same `Game::Act` as level rules), ambient occlusion (`--ssao`: `GameSettings::ambient_occlusion` through `ApplySettings`), a day cycle (`--outdoor`: `CameraState::outdoor` and `time_of_day`), and sound: cues played, and a hum in the back room as a positional source (`PositionalGain`) muffled by the walls and the closed door between it and you (`CountSoundBlockers`, `ComputeOcclusion`, `SetSourceMuffle`): open the door and it clears. |
+| `src/main.cpp` | The front end: window, textures (`AddCommonMaterials`, model textures), `SceneRenderer`, input (`PollInput`, then `ActionTracker` and `ApplyActions` so keys are rebindable: F3 opens the engine's controls page, `UpdateControlsPage` / `DrawControlsPage`, which rebinds, resets and saves `bindings.json`; the game pauses meanwhile), the camera and lamps each frame, door panels, the skinned model instance (`ModelInstance::skin`) and a little text on the overlay, hot reload (a `FileWatcher` over the game's assets and the engine's shaders: edit `assets/levels/hall.txt`, drop a `brick.png` in `assets/`, or change a shader, and the running game reloads it; a mistake is logged and the old one kept), a distance cull on the guide (`ModelInstance::max_distance`), an opening cutscene (`CutscenePlayer`, cues run through the same `Game::Act` as level rules), ambient occlusion (`--ssao`: `GameSettings::ambient_occlusion` through `ApplySettings`), a day cycle (`--outdoor`: `CameraState::outdoor` and `time_of_day`), and sound: cues played, and a hum in the back room as a positional source (`PositionalGain`) muffled by the walls and the closed door between it and you (`CountSoundBlockers`, `ComputeOcclusion`, `SetSourceMuffle`): open the door and it clears. |
 | `assets/` | `levels/hall.txt` (`[map]`, `[furniture]`, `[triggers]`, `[rules]`), `data/tiles.json`, `data/en.json` and `el.json` (strings, looked up with `Tr`). The engine's own assets (models, textures, the character) are laid under it. |
 | `assets/cutscenes/intro.cutscene` | The opening: a camera glide, a fade, a line of text, the guide's wave (`Game::StartCutscene`; E skips it, `--no-intro` leaves it out). |
 | `assets/prefabs/dining.prefab` | A prefab: a table, two chairs and a bowl in the level's own line format. The editor's Inspector > Prefabs saves and places them; the test places this one into the hall. |

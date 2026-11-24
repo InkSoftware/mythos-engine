@@ -82,6 +82,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/stb_truetype_impl.cpp
     src/engine/gfx/text.cpp
     src/engine/gfx/textures.cpp
+    src/engine/ui/controls_ui.cpp
     src/engine/ui/input_map.cpp
     src/engine/ui/debug_console.cpp
     src/engine/ui/debug_overlay.cpp

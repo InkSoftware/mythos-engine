@@ -4,9 +4,7 @@
   "strings": {
     "template": {
       "title": "Template game",
-      "help": "WASD walk, mouse look, E use a door, F3 rebind use, F5 save, F9 load, Esc quit",
-      "rebind": "Press a key for Use (Esc cancels)",
-      "rebound": "Use is rebound.",
+      "help": "WASD walk, mouse look, E use a door, F3 controls, F5 save, F9 load, Esc quit",
       "east_room": "The back room. Somebody left the lamp on.",
       "intro": "Someone is waiting in the hall.",
       "saved": "Saved.",

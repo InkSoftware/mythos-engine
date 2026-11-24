@@ -21,7 +21,7 @@ listen to and pick up, menus, and a bit of procedural art.
 - **Life and logic** (headless, tested): skeletal animation (`gfx/skeleton.h`: bones, clips, blending, crossfade, `AnimStateMachine`;
   `gfx/gltf.h` loads a skinned `.glb`; the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
   perception (`world/ai.h`), A* (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned
-  save files with slots (`data/save.h`, `world/save_state.h`) and rebindable input actions (`ui/input_map.h`, `ProbeBinding` / `ApplyActions` in `platform/input.h`).
+  save files with slots (`data/save.h`, `world/save_state.h`) and rebindable input actions (`ui/input_map.h`, `ProbeBinding` / `ApplyActions` in `platform/input.h`) with a controls page to rebind them (`ui/controls_ui.h`).
 - **Everything around a game**: a settings system (pages, drawing, saving, applying), localisation with built-in
   English and Greek strings, JSON loaders for sounds, translations, achievements and credits, positional audio with occlusion (`audio/spatial.h`), packed
   assets, and procedural textures.

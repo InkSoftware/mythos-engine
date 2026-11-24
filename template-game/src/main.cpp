@@ -22,6 +22,7 @@
 #include "engine/platform/gl/scene_renderer.h"
 #include "engine/platform/input.h"
 #include "engine/platform/window.h"
+#include "engine/ui/controls_ui.h"
 #include "engine/ui/input_map.h"
 #include "engine/ui/settings.h"
 #include "engine/world/sound_path.h"
@@ -96,17 +97,20 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
+  // `--controls` opens the controls page at the start (for a screenshot).
   // `--ssao` turns on ambient occlusion (the Ambient occlusion setting).
   // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
   bool outdoor = false;
   bool ssao = false;
+  bool start_controls = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--outdoor") outdoor = true;
     if (arg == "--ssao") ssao = true;
+    if (arg == "--controls") start_controls = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
       hour = std::strtod(argv[i + 1], nullptr);
@@ -177,7 +181,26 @@ int main(const int argc, char** const argv) {
     }
   }
   mythos::ActionTracker actions;
-  bool rebinding = false, f3_was = false;
+  // The controls page (F3): the engine's rebind page, drawn with the SDF font
+  // on a text layer over the overlay. The game pauses while it is open.
+  mythos::SdfFont font;
+  if (!font.LoadFile(EngineAssets() + "/fonts/Alegreya.ttf", &error)) {
+    std::fprintf(stderr, "no font: %s\n", error.c_str());
+    return 1;
+  }
+  renderer.AddFont(font);
+  mythos::MenuTheme theme;
+  theme.heading = {&font, 22.0f, 0xFFE8C45A, mythos::DropShadow()};
+  theme.item = {&font, 13.0f, 0xFFE6DCC8, mythos::DropShadow()};
+  theme.hint = {&font, 10.0f, 0xFF8A807A, mythos::DropShadow()};
+  theme.number = theme.item;
+  theme.page_w = 440;
+  theme.page_h = 300;
+  theme.first_row_y = 38.0f;
+  theme.row_pitch = 22.0f;
+  mythos::ControlsState controls;
+  mythos::TextLayer text_layer;
+  bool controls_open = start_controls, f3_was = false;
 
   // Hot reload (development): edit the level, a texture or a shader and see it
   // without restarting. The paths are the ones compiled in by CMake.
@@ -205,27 +228,27 @@ int main(const int argc, char** const argv) {
     mythos::ActionInput act;
     const mythos::InputPoll poll =
         mythos::PollInput(move, ui, act, true, nullptr);
-    if (poll.quit || (ui.pause_pressed && !rebinding)) break;
+    if (poll.quit || (ui.pause_pressed && !controls_open)) break;
 
-    // Rebinding: F3 starts it, the next key becomes Use, Esc cancels.
+    // The controls page: F3 opens it; it rebinds, resets and saves.
     const bool* keys = SDL_GetKeyboardState(nullptr);
-    if (rebinding && ui.pause_pressed) {
-      rebinding = false;
-    } else if (rebinding && poll.pressed) {
-      bindings.Rebind("interact", 0, *poll.pressed, true);
-      if (!files.Write("bindings.json", bindings.ToJson().dump(2))) {
+    if (controls_open) {
+      const mythos::ControlsResult result = mythos::UpdateControlsPage(
+          bindings, mythos::kPlayContext, controls, ui, poll.pressed);
+      if (result == mythos::ControlsResult::kChanged &&
+          !files.Write("bindings.json", bindings.ToJson().dump(2))) {
         std::fprintf(stderr, "could not save the key bindings\n");
       }
-      rebinding = false;
-      game.Say("template.rebound");
+      if (result == mythos::ControlsResult::kBack) controls_open = false;
     } else if (keys[SDL_SCANCODE_F3] && !f3_was) {
-      rebinding = true;
+      controls_open = true;
+      controls = {};
     }
     f3_was = keys[SDL_SCANCODE_F3];
     actions.Update(
         bindings, mythos::kPlayContext,
         [](const mythos::Binding& b) { return mythos::ProbeBinding(b); });
-    if (rebinding) {
+    if (controls_open) {
       move = {};
       act = {};
     } else {
@@ -239,7 +262,7 @@ int main(const int argc, char** const argv) {
     f9_was = keys[SDL_SCANCODE_F9];
 
     const double dt = std::min(clock.Step(false), 0.1);
-    game.Update(dt, move, act);
+    if (!controls_open) game.Update(dt, move, act);
 
     bool level_changed = false, textures_changed = false,
          shaders_changed = false;
@@ -333,10 +356,11 @@ int main(const int argc, char** const argv) {
     }
     mythos::DrawText(overlay, 8, 8, mythos::Tr("template.help"),
                      mythos::Rgba(255, 255, 255));
-    if (rebinding) {
-      const std::string line = mythos::Tr("template.rebind");
-      mythos::DrawText(overlay, (overlay.w - mythos::TextWidth(line, 2)) / 2,
-                       overlay.h - 40, line, mythos::Rgba(160, 220, 255), 2);
+    text_layer.Clear();
+    if (controls_open) {
+      mythos::UiCanvas canvas{overlay, text_layer, nullptr};
+      mythos::DrawControlsPage(canvas, theme, bindings, mythos::kPlayContext,
+                               controls, clock.Seconds());
     } else if (!game.message().empty()) {
       const std::string line = mythos::Tr(game.message());
       mythos::DrawText(overlay, (overlay.w - mythos::TextWidth(line, 2)) / 2,
@@ -359,7 +383,7 @@ int main(const int argc, char** const argv) {
 
     int w = 0, h = 0;
     window.DrawableSize(w, h);
-    renderer.Render(cam, w, h, &overlay);
+    renderer.Render(cam, w, h, &overlay, &text_layer);
     if (!screenshot.empty() && frame == 90) {
       mythos::WriteFramebufferPpm(screenshot, w, h);
       break;

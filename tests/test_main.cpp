@@ -62,6 +62,7 @@
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
+#include "engine/ui/controls_ui.h"
 #include "engine/ui/debug_console.h"
 #include "engine/ui/debug_overlay.h"
 #include "engine/ui/input_map.h"
@@ -4867,6 +4868,102 @@ TEST(settings_ambient_occlusion_is_off_by_default_and_persists) {
   CHECK(!old.ambient_occlusion);
   CHECK(!Tr("settings.ambientOcclusion").empty() &&
         Tr("settings.ambientOcclusion") != "settings.ambientOcclusion");
+}
+
+TEST(controls_page_rebinds_resets_and_leaves) {
+  mythos::InputMap map = mythos::DefaultGameplayMap();
+  const std::string ctx = mythos::kPlayContext;
+  const int actions = static_cast<int>(map.Actions(ctx).size());
+  CHECK_EQ(mythos::ControlsRowCount(map, ctx), actions + 2);
+  mythos::ControlsState state;
+  mythos::UiInput none;
+  using mythos::ControlsResult;
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, none, std::nullopt) ==
+        ControlsResult::kNone);
+  // Down to the second action ("back"), confirm: it waits for a key.
+  mythos::UiInput down;
+  down.down_pressed = true;
+  mythos::UpdateControlsPage(map, ctx, state, down, std::nullopt);
+  CHECK_EQ(state.index, 1);
+  mythos::UiInput confirm;
+  confirm.confirm_pressed = true;
+  // The key that confirmed (Enter) is in `pressed` that frame and is not taken.
+  const mythos::Binding enter{mythos::BindKind::kKey, "Return", 0};
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, confirm, enter) ==
+        ControlsResult::kNone);
+  CHECK(state.capturing);
+  CHECK(map.Bindings("back")[0].code == "S");
+  // The next key is the binding; "E" belongs to interact, so it is taken from
+  // it.
+  const mythos::Binding e{mythos::BindKind::kKey, "E", 0};
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, none, e) ==
+        ControlsResult::kChanged);
+  CHECK(!state.capturing && map.Bindings("back")[0] == e);
+  CHECK(state.note == "interact");
+  CHECK(map.Bindings("interact").size() == 1 &&
+        map.Bindings("interact")[0].code == "Space");
+  // Escape cancels a capture without changing anything.
+  state.capturing = true;
+  mythos::UiInput esc;
+  esc.pause_pressed = true;
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, esc, e) ==
+        ControlsResult::kNone);
+  CHECK(!state.capturing);
+  // The second slot: right picks it.
+  mythos::UiInput right;
+  right.right_pressed = true;
+  mythos::UpdateControlsPage(map, ctx, state, right, std::nullopt);
+  CHECK_EQ(state.slot, 1);
+  // Reset (the row after the actions) restores the defaults.
+  state.index = actions;
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, confirm, std::nullopt) ==
+        ControlsResult::kChanged);
+  CHECK(map.Bindings("back")[0].code == "S" &&
+        map.Bindings("interact").size() == 2);
+  // Back row and Escape leave.
+  state.index = actions + 1;
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, confirm, std::nullopt) ==
+        ControlsResult::kBack);
+  state.index = 0;
+  CHECK(mythos::UpdateControlsPage(map, ctx, state, esc, std::nullopt) ==
+        ControlsResult::kBack);
+  CHECK(mythos::BindingLabel({mythos::BindKind::kPadButton, "South", 0}) ==
+        "PAD SOUTH");
+  CHECK(mythos::BindingLabel({mythos::BindKind::kPadAxis, "LeftX", -1}) ==
+        "LEFTX -");
+  CHECK(mythos::BindingLabel({mythos::BindKind::kMouseButton, "Left", 0}) ==
+        "MOUSE LEFT");
+}
+
+TEST(controls_page_draws_rows_and_hotspots) {
+  mythos::SdfFont font;
+  std::string err;
+  CHECK(font.LoadFile(
+      std::string(MYTHOS_TEST_ASSET_DIR) + "/fonts/Alegreya.ttf", &err));
+  mythos::MenuTheme theme;
+  theme.heading = theme.item = theme.hint =
+      theme.number = {&font, 12, 0xFFFFFFFF, {}};
+  mythos::Surface fb(640, 360, 0);
+  mythos::TextLayer layer;
+  std::vector<mythos::Hotspot> hot;
+  mythos::UiCanvas canvas{fb, layer, &hot};
+  const mythos::InputMap map = mythos::DefaultGameplayMap();
+  mythos::ControlsState state;
+  mythos::DrawControlsPage(canvas, theme, map, mythos::kPlayContext, state, 0);
+  CHECK(!layer.runs.empty());
+  // Every action has a row hotspot and one per slot; reset and back one each.
+  const size_t actions = map.Actions(mythos::kPlayContext).size();
+  CHECK_EQ(hot.size(), actions * 3 + 2);
+  // Capturing shows the prompt instead of the selected binding.
+  state.capturing = true;
+  layer.Clear();
+  hot.clear();
+  mythos::DrawControlsPage(canvas, theme, map, mythos::kPlayContext, state, 0);
+  bool prompt = false;
+  for (const auto& run : layer.runs) {
+    prompt = prompt || run.text == mythos::Tr("controls.press");
+  }
+  CHECK(prompt);
 }
 
 }

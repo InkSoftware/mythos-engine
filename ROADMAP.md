@@ -133,8 +133,9 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   JSON persistence of the differences only and dead-zone maths,
   `ActionTracker` (per-frame state) and `DefaultGameplayMap` (the usual keys);
   `ProbeBinding`, `ApplyActions` and `InputPoll::pressed` feed a game from it (the
-  template rebinds Use with F3 and saves `bindings.json`). Not done: saving in
-  settings.txt and a rebind page in `settings_ui`.
+  template's F3 opens the controls page and saves `bindings.json`). The rebind page is
+  `ui/controls_ui.h` (`UpdateControlsPage` tested, `DrawControlsPage`). Not done: saving in settings.txt, and an
+  entry for it on the settings menu's own pages.
 - **Why:** Unity Input System, Unreal Enhanced Input.
 - **Where:** `ui/input_map.h` has named actions bound to keys, buttons and
   axes, with contexts (gameplay, menu), a conflict check, persistence in
