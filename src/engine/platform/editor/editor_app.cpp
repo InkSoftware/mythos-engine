@@ -118,6 +118,7 @@ bool EditorApp::Init(const EditorArgs& args, const Adapter* const adapter,
   if (args.tool == "rotate") tool_ = Tool::kRotate;
   if (args.tool == "paint") tool_ = Tool::kPaint;
   if (args.tool == "place") tool_ = Tool::kPlace;
+  if (args.tool == "prefab") tool_ = Tool::kPrefab;
   if (!args.select.empty()) {
     const auto colon = args.select.find(':');
     const std::string kind = args.select.substr(0, colon),
@@ -934,6 +935,9 @@ void EditorApp::ViewportInput(const ImVec2 size, const bool hovered,
       PlaceInput(ray, pressed);
       hover_entity_valid_ = PickEntity(ray, &hover_entity_, nullptr);
       break;
+    case Tool::kPrefab:
+      PrefabInput(pressed);
+      break;
   }
 
   if (hovered && !io.WantTextInput && !(cam_drag_)) {
@@ -943,6 +947,7 @@ void EditorApp::ViewportInput(const ImVec2 size, const bool hovered,
       if (ImGui::IsKeyPressed(ImGuiKey_E, false)) tool_ = Tool::kRotate;
       if (ImGui::IsKeyPressed(ImGuiKey_B, false)) tool_ = Tool::kPaint;
       if (ImGui::IsKeyPressed(ImGuiKey_N, false)) tool_ = Tool::kPlace;
+      if (ImGui::IsKeyPressed(ImGuiKey_P, false)) tool_ = Tool::kPrefab;
     }
     if (ImGui::IsKeyPressed(ImGuiKey_F, false)) FocusSelection();
     if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) FrameLevel();
@@ -961,6 +966,8 @@ void EditorApp::ViewportInput(const ImVec2 size, const bool hovered,
     if (ImGui::IsKeyPressed(ImGuiKey_R, false)) {
       if (tool_ == Tool::kPlace) {
         place_yaw_ = std::fmod(place_yaw_ + 90.0f, 360.0f);
+      } else if (tool_ == Tool::kPrefab) {
+        prefab_turns_ = (prefab_turns_ + 1) % 4;
       } else {
         Pose p;
         if (SelectedPose(&p) && p.has_yaw) {
@@ -979,6 +986,42 @@ void EditorApp::ViewportInput(const ImVec2 size, const bool hovered,
 }
 
 // Everything drawn here is rebuilt each frame from the editor state.
+bool EditorApp::EnsurePrefab() {
+  if (prefab_sel_.empty()) return false;
+  if (prefab_cache_name_ == prefab_sel_) return true;
+  const std::string path =
+      project_.AssetDir() + "/prefabs/" + prefab_sel_ + ".prefab";
+  Prefab p;
+  std::string error;
+  if (!ParsePrefab(ReadTextFile(path), &p, &error)) {
+    prefab_status_ = "Cannot read " + prefab_sel_ + ": " + error;
+    return false;
+  }
+  prefab_cache_ = std::move(p);
+  prefab_cache_name_ = prefab_sel_;
+  return true;
+}
+
+void EditorApp::PrefabInput(const bool pressed) {
+  if (!pressed || !hover_cell_valid_) return;
+  LevelDoc* doc = project_.Level(level_);
+  if (doc == nullptr) return;
+  if (!EnsurePrefab()) {
+    if (prefab_status_.empty())
+      prefab_status_ = "Choose a prefab in the Inspector first.";
+    return;
+  }
+  const TileSet& tiles = project_.Tiles();
+  const PlaceResult r =
+      PlacePrefab(*doc, prefab_cache_, hover_x_, hover_z_, prefab_turns_,
+                  [&](const char glyph) { return tiles.Solid(glyph); });
+  if (r.furniture + r.decor > 0) project_.Touch(level_);
+  prefab_status_ = "Placed " + std::to_string(r.furniture) + " furniture and " +
+                   std::to_string(r.decor) + " decor" +
+                   (r.skipped > 0 ? ", skipped " + std::to_string(r.skipped)
+                                  : std::string());
+}
+
 void EditorApp::DrawOverlay(const ImVec2 size) {
   (void)size;
   viewport_.ClearOverlay();
@@ -1102,6 +1145,28 @@ void EditorApp::DrawOverlay(const ImVec2 size) {
     viewport_.Line({x1, y, z1}, {rx0, y, z1}, kGreen, true);
     viewport_.Line({rx0, y, z1}, {rx0, y, rz0}, kGreen, true);
   }
+  if (tool_ == Tool::kPrefab && hover_cell_valid_ && EnsurePrefab()) {
+    // The footprint of the prefab, turned, with its top-left at the cell.
+    const Prefab turned = Rotated(prefab_cache_, prefab_turns_);
+    const auto x0 = static_cast<float>(hover_x_),
+               z0 = static_cast<float>(hover_z_);
+    const float x1 = x0 + static_cast<float>(turned.width),
+                z1 = z0 + static_cast<float>(turned.height);
+    const float y = fy + 0.012f;
+    const Rgba col{0.4f, 0.85f, 1.0f, 1.0f};
+    viewport_.Quad({x0, y, z0}, {x1, y, z0}, {x1, y, z1}, {x0, y, z1},
+                   {0.3f, 0.8f, 1.0f, 0.22f});
+    viewport_.Line({x0, y, z0}, {x1, y, z0}, col, true);
+    viewport_.Line({x1, y, z0}, {x1, y, z1}, col, true);
+    viewport_.Line({x1, y, z1}, {x0, y, z1}, col, true);
+    viewport_.Line({x0, y, z1}, {x0, y, z0}, col, true);
+    for (const Item& it : turned.furniture) {
+      const Vec3 c{x0 + static_cast<float>(it.x) + 0.5f, fy,
+                   z0 + static_cast<float>(it.y) + 0.5f};
+      viewport_.WireBox(c + Vec3{0, 0.4f, 0}, {0.35f, 0.4f, 0.35f},
+                        BoxYaw(static_cast<float>(it.yaw)), col, true);
+    }
+  }
   if (tool_ == Tool::kPlace && hover_cell_valid_) {
     Vec3 lo, hi;
     ModelBounds(place_model_, &lo, &hi);
@@ -1204,6 +1269,7 @@ void EditorApp::DrawScreenOverlay(const ImVec2 origin, const ImVec2 size) {
                               : tool_ == Tool::kMove   ? "Move"
                               : tool_ == Tool::kRotate ? "Rotate"
                               : tool_ == Tool::kPaint  ? "Paint"
+                              : tool_ == Tool::kPrefab ? "Prefab"
                                                        : "Place");
   if (doc && hover_cell_valid_) {
     const char g = doc->At(hover_x_, hover_z_);

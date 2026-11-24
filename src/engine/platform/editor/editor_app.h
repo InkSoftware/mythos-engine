@@ -9,6 +9,7 @@
 
 #include "engine/editor/adapter.h"
 #include "engine/editor/history.h"
+#include "engine/editor/prefab.h"
 #include "engine/editor/project.h"
 #include "engine/gfx/model.h"
 #include "engine/gfx/textures.h"
@@ -18,7 +19,7 @@
 
 namespace mythos::editor {
 // The editing tools of the viewport (keys Q, W, E, B, N).
-enum class Tool { kSelect, kMove, kRotate, kPaint, kPlace };
+enum class Tool { kSelect, kMove, kRotate, kPaint, kPlace, kPrefab };
 
 // Startup options, filled from the command line by RunEditor.
 struct EditorArgs {
@@ -225,6 +226,11 @@ class EditorApp {
 
   void DrawCutscenes();
 
+  // The Prefab tool: click a cell to place the prefab chosen in the
+  // Inspector's Prefabs section there (R turns it).
+  void PrefabInput(bool pressed);
+  bool EnsurePrefab();
+
   void DrawPalette();
 
   void DrawAssets();
@@ -270,6 +276,8 @@ class EditorApp {
   Cutscene cut_;
   std::string cut_file_, cut_new_name_ = "intro", cut_status_;
   bool cut_loaded_ = false;
+  Prefab prefab_cache_;
+  std::string prefab_cache_name_;
   std::string prefab_name_ = "group";
   std::string prefab_sel_;
   int prefab_at_[2] = {0, 0};

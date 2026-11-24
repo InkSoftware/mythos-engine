@@ -515,11 +515,14 @@ unsigned Viewport::Render(const OrbitCamera& cam, int w, int h,
     constexpr gl::GLenum kPolygonOffsetUnits = 0x2A00;
     constexpr gl::GLenum kBlendSrcRgb = 0x80C9, kBlendDstRgb = 0x80C8;
     constexpr gl::GLenum kBlendSrcAlpha = 0x80CB, kBlendDstAlpha = 0x80CA;
-    const auto is_enabled = reinterpret_cast<gl::GLboolean(MYTHOS_GL_CALL*)(gl::GLenum)>(
-        SDL_GL_GetProcAddress("glIsEnabled"));
-    const auto get_float = reinterpret_cast<void(MYTHOS_GL_CALL*)(gl::GLenum, gl::GLfloat*)>(
-        SDL_GL_GetProcAddress("glGetFloatv"));
-    const auto blend_separate = reinterpret_cast<void(MYTHOS_GL_CALL*)(gl::GLenum, gl::GLenum, gl::GLenum, gl::GLenum)>(
+    const auto is_enabled =
+        reinterpret_cast<gl::GLboolean(MYTHOS_GL_CALL*)(gl::GLenum)>(
+            SDL_GL_GetProcAddress("glIsEnabled"));
+    const auto get_float =
+        reinterpret_cast<void(MYTHOS_GL_CALL*)(gl::GLenum, gl::GLfloat*)>(
+            SDL_GL_GetProcAddress("glGetFloatv"));
+    const auto blend_separate = reinterpret_cast<void(MYTHOS_GL_CALL*)(
+        gl::GLenum, gl::GLenum, gl::GLenum, gl::GLenum)>(
         SDL_GL_GetProcAddress("glBlendFuncSeparate"));
     if (is_enabled && get_float && blend_separate) {
       const bool blend = is_enabled(gl::kBlend);

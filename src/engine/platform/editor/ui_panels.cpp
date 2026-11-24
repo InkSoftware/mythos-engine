@@ -1410,6 +1410,9 @@ void EditorApp::DrawViewportWindow(const float dt) {
   ImGui::SameLine();
   ToolButton("Place", Tool::kPlace, "Place a model (N). R turns it.");
   ImGui::SameLine();
+  ToolButton("Prefab", Tool::kPrefab,
+             "Place the prefab chosen in the Inspector (P). R turns it.");
+  ImGui::SameLine();
   ImGui::TextDisabled("|");
   ImGui::SameLine();
   ImGui::SetNextItemWidth(78);
