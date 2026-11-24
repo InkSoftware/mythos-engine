@@ -62,6 +62,7 @@
 #include "engine/ui/settings.h"
 #include "engine/ui/settings_cvars.h"
 #include "engine/ui/ui.h"
+#include "engine/world/ai.h"
 #include "engine/world/body.h"
 #include "engine/world/camera_fx.h"
 #include "engine/world/event_graph.h"
@@ -4009,6 +4010,88 @@ TEST(input_map_rebind_conflicts_contexts_and_persistence) {
   const mythos::json::Value junk = {{"nope", {"key:Q"}}, {"back", {"zzz"}}};
   CHECK(fresh.FromJson(junk));
   CHECK(fresh.Bindings("back").empty());
+}
+
+TEST(ai_selector_and_sequence_are_reactive) {
+  using mythos::ai::Status;
+  int chased = 0, patrolled = 0;
+  bool sees = false;
+  std::vector<mythos::ai::NodePtr> chase;
+  chase.push_back(mythos::ai::Condition([&] { return sees; }));
+  chase.push_back(mythos::ai::Leaf([&](double) {
+    ++chased;
+    return Status::kRunning;
+  }));
+  std::vector<mythos::ai::NodePtr> root;
+  root.push_back(mythos::ai::Sequence(std::move(chase)));
+  root.push_back(mythos::ai::Leaf([&](double) {
+    ++patrolled;
+    return Status::kSuccess;
+  }));
+  auto tree = mythos::ai::Selector(std::move(root));
+  CHECK(tree->Tick(0.1) == Status::kSuccess);
+  CHECK_EQ(patrolled, 1);
+  sees = true;
+  CHECK(tree->Tick(0.1) == Status::kRunning);
+  CHECK_EQ(chased, 1);
+  CHECK_EQ(patrolled, 1);
+  // Losing sight interrupts the chase at once.
+  sees = false;
+  CHECK(tree->Tick(0.1) == Status::kSuccess);
+  CHECK_EQ(patrolled, 2);
+}
+
+TEST(ai_decorators) {
+  using mythos::ai::Status;
+  auto ok = [] {
+    return mythos::ai::Leaf([](double) { return Status::kSuccess; });
+  };
+  auto bad = [] {
+    return mythos::ai::Leaf([](double) { return Status::kFailure; });
+  };
+  CHECK(mythos::ai::Inverter(ok())->Tick(0) == Status::kFailure);
+  CHECK(mythos::ai::Inverter(bad())->Tick(0) == Status::kSuccess);
+  CHECK(mythos::ai::Succeeder(bad())->Tick(0) == Status::kSuccess);
+  int runs = 0;
+  auto cd = mythos::ai::Cooldown(1.0, mythos::ai::Leaf([&](double) {
+                                   ++runs;
+                                   return Status::kSuccess;
+                                 }));
+  CHECK(cd->Tick(0.1) == Status::kSuccess);
+  CHECK(cd->Tick(0.5) == Status::kFailure);
+  CHECK(cd->Tick(0.5) == Status::kFailure);
+  CHECK_EQ(runs, 1);
+  CHECK(cd->Tick(0.5) == Status::kSuccess);
+  CHECK_EQ(runs, 2);
+  // Empty composites: a sequence passes, a selector fails.
+  CHECK(mythos::ai::Sequence({})->Tick(0) == Status::kSuccess);
+  CHECK(mythos::ai::Selector({})->Tick(0) == Status::kFailure);
+}
+
+TEST(ai_sight_and_hearing) {
+  mythos::Level l;
+  CHECK(l.Parse({"#######", "#..#..#", "#..#..#", "#.....#", "#######"}));
+  mythos::ai::Sight eye;
+  eye.eye = {1.5, 3.5};
+  eye.angle = 0;  // facing +x
+  eye.fov = 1.5;
+  eye.range = 6;
+  CHECK(mythos::ai::CanSee(l, eye, {4.5, 3.5}));
+  // Behind, out of range, and behind the wall.
+  eye.angle = 3.14159;
+  CHECK(!mythos::ai::CanSee(l, eye, {4.5, 3.5}));
+  eye.angle = 0;
+  eye.range = 2;
+  CHECK(!mythos::ai::CanSee(l, eye, {4.5, 3.5}));
+  eye.range = 6;
+  eye.eye = {1.5, 1.5};
+  CHECK(!mythos::ai::CanSee(l, eye, {4.5, 1.5}));
+  // Hearing: a wall doubles the distance.
+  const mythos::ai::Noise n{{4.5, 1.5}, 4.0};
+  CHECK(!mythos::ai::CanHear(l, {1.5, 1.5}, 1.0, n));
+  CHECK(mythos::ai::CanHear(l, {1.5, 1.5}, 2.0, n));
+  CHECK(mythos::ai::CanHear(l, {4.5, 3.5}, 1.0, n));
+  CHECK(!mythos::ai::CanHear(l, {4.5, 3.5}, 0.0, n));
 }
 
 }

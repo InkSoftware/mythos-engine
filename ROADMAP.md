@@ -156,7 +156,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Progress:** `world/nav.h` provides deterministic cardinal A* and a
   reachability flood, with optional conservative body-clearance checks and
   door avoidance. It treats thin-wall cells as blocked; sub-cell routing,
-  smoothing, behaviour trees and perception remain.
+  smoothing remains. `world/ai.h` adds a reactive behaviour tree (leaf and
+  condition callbacks, sequence, selector, inverter, succeeder, cooldown), a
+  sight cone with line of sight and hearing that walls muffle. Not done: noise
+  event queues, memory of last-seen positions, path smoothing.
 - **Where:** `world/nav.h` is A\* on the grid with door and thin-wall awareness
   (`Level::ThinArms`, `BoxBlocked`), path smoothing and a reachability flood.
   `world/ai.h` is a minimal behaviour-tree runtime (sequence, selector,

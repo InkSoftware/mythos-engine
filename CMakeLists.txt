@@ -82,6 +82,7 @@ add_library(mythos_engine STATIC
     src/engine/ui/settings_cvars.cpp
     src/engine/ui/settings_ui.cpp
     src/engine/ui/ui.cpp
+    src/engine/world/ai.cpp
     src/engine/world/interact.cpp
     src/engine/world/level.cpp
     src/engine/world/mirror.cpp
