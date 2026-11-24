@@ -56,6 +56,7 @@
 #include "engine/gfx/textures.h"
 #include "engine/ui/debug_console.h"
 #include "engine/ui/debug_overlay.h"
+#include "engine/ui/input_map.h"
 #include "engine/ui/menu.h"
 #include "engine/ui/paging.h"
 #include "engine/ui/settings.h"
@@ -3950,6 +3951,64 @@ TEST(save_state_round_trips_progress_and_player) {
   CHECK(mythos::PlayerFromJson(mythos::PlayerToJson(a), b));
   CHECK(b.pos.x == 3.5 && b.pos.y == 7.25 && b.angle == 1.5);
   CHECK(b.pitch == -0.2 && b.flashlight);
+}
+
+TEST(input_map_parses_and_prints_bindings) {
+  const auto k = mythos::ParseBinding("key:W");
+  CHECK(k && k->kind == mythos::BindKind::kKey && k->code == "W");
+  const auto a = mythos::ParseBinding("axis:LeftX-");
+  CHECK(a && a->code == "LeftX" && a->sign == -1);
+  CHECK(mythos::BindingToText(*a) == "axis:LeftX-");
+  CHECK(!mythos::ParseBinding("axis:LeftX"));
+  CHECK(!mythos::ParseBinding("bogus:W"));
+  CHECK(!mythos::ParseBinding("key:"));
+  CHECK(!mythos::ParseBinding("W"));
+}
+
+TEST(input_map_dead_zone_and_axis_strength) {
+  CHECK_EQ(mythos::ApplyDeadZone(0.1, 0.2), 0.0);
+  CHECK_EQ(mythos::ApplyDeadZone(1.0, 0.2), 1.0);
+  CHECK(std::fabs(mythos::ApplyDeadZone(-0.6, 0.2) + 0.5) < 1e-9);
+  const mythos::Binding plus{mythos::BindKind::kPadAxis, "LeftY", 1};
+  CHECK(mythos::AxisStrength(plus, 0.6, 0.2) > 0.49);
+  CHECK_EQ(mythos::AxisStrength(plus, -0.9, 0.2), 0.0);
+}
+
+TEST(input_map_rebind_conflicts_contexts_and_persistence) {
+  const mythos::Binding w{mythos::BindKind::kKey, "W", 0};
+  const mythos::Binding s{mythos::BindKind::kKey, "S", 0};
+  const mythos::Binding e{mythos::BindKind::kKey, "E", 0};
+  mythos::InputMap map;
+  map.Define("forward", "play", {w});
+  map.Define("back", "play", {s});
+  map.Define("confirm", "menu", {w});
+  CHECK(map.Resolve("play", w) == "forward");
+  CHECK(map.Resolve("menu", w) == "confirm");
+  // Same input in another context is no conflict.
+  CHECK(map.FindConflict("confirm", w).empty());
+  // Refused, then stolen.
+  CHECK(map.Rebind("back", 0, w) == "forward");
+  CHECK(map.Bindings("back")[0] == s);
+  CHECK(map.Rebind("back", 0, w, true).empty());
+  CHECK(map.Bindings("forward").empty());
+  CHECK(map.Rebind("forward", 0, e).empty());
+
+  const mythos::json::Value saved = map.ToJson();
+  CHECK(!saved.contains("confirm"));
+  mythos::InputMap fresh;
+  fresh.Define("forward", "play", {w});
+  fresh.Define("back", "play", {s});
+  fresh.Define("confirm", "menu", {w});
+  CHECK(fresh.FromJson(saved));
+  CHECK(fresh.Bindings("forward")[0] == e);
+  CHECK(fresh.Bindings("back")[0] == w);
+  CHECK(!fresh.FromJson(mythos::json::Value(3)));
+  fresh.ResetAll();
+  CHECK(fresh.Bindings("forward")[0] == w);
+  // Unknown actions and junk are skipped.
+  const mythos::json::Value junk = {{"nope", {"key:Q"}}, {"back", {"zzz"}}};
+  CHECK(fresh.FromJson(junk));
+  CHECK(fresh.Bindings("back").empty());
 }
 
 }

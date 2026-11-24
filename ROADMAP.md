@@ -123,6 +123,12 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Tests:** round trip, a corrupt file, forward version rejection.
 
 ### 2.3 Input actions and rebinding (M)
+- **Progress:** `ui/input_map.h` has named actions with contexts, up to two
+  bindings each (keys, pad buttons, axis halves, mouse buttons, written as
+  text), a conflict check per context with refuse-or-steal rebinding, reset,
+  JSON persistence of the differences only and dead-zone maths. Not done:
+  feeding `PollInput` from it, saving in settings.txt and the rebind page in
+  `settings_ui`.
 - **Why:** Unity Input System, Unreal Enhanced Input.
 - **Where:** `ui/input_map.h` has named actions bound to keys, buttons and
   axes, with contexts (gameplay, menu), a conflict check, persistence in
