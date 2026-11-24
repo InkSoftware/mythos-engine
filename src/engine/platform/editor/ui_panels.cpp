@@ -1096,7 +1096,9 @@ void EditorApp::DrawCutscenes() {
           cut_loaded_ = true;
           cut_status_.clear();
         } else {
-          cut_status_ = f + ": " + error;
+          cut_status_ = f;
+          cut_status_ += ": ";
+          cut_status_ += error;
         }
       }
     }
