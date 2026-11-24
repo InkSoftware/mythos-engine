@@ -263,7 +263,7 @@ more than was built.
 - **Progress:** `gfx/lod.h` plans each pass's model instances: a distance cull (`ModelInstance::max_distance`), a far model
   swapped in beyond a distance (`SceneRenderer::SetModelLod`) and a sort by model. Shadow casters are never culled or
   swapped. GPU instancing: runs of static instances of one model draw as one instanced draw per batch (200 chairs:
-  13 draw calls instead of 212). Not done: instancing skinned models and LOD for the baked world geometry.
+  13 draw calls instead of 212). Skinned models instance too (bones in a texture, `--clones N` in the template). Not done: LOD for the baked world geometry.
 - Instanced draw for repeated props (same model, many matrices) and a
   distance LOD or cull per model. The 8-cell chunking already helps; this
   removes per-prop draw calls.
@@ -320,7 +320,7 @@ The order the items were built in. All have a first version.
 Gaps named in the Progress lines, by area:
 
 - **Rendering:** ambient occlusion in the mirror (screen space, main picture only);
-  lightmaps and probes at several heights; instancing skinned models and LOD for baked world geometry; SSAO applied to
+  lightmaps and probes at several heights; LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   formations for the AI.

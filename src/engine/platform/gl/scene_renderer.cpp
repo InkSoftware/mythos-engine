@@ -290,6 +290,9 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
     const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     instance_vbo_.Upload(identity, sizeof(identity), kDynamicDraw);
   }
+  bone_tex_.Create();
+  bone_tex_.SetParams(gl::kNearest, gl::kNearest, gl::kClampToEdge);
+  bone_tex_.Allocate(kMaxBones * 4, kSkinRows, nullptr, gl::kRgba32f);
   gl::Enable(gl::kTextureCubeMapSeamless);
   mirror_vbo_.Upload(nullptr, 6 * sizeof(Vertex), kDynamicDraw);
   mirror_vao_.Create();
@@ -399,6 +402,11 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uSunShadowTexFar2", 13);
   world_program_.Set("uReflectionEnv", 10);
   world_program_.Set("uReflectionEnv2", 12);
+  world_program_.Set("uBoneTex", 14);
+  if (shadow_program_.Valid()) {
+    shadow_program_.Use();
+    shadow_program_.Set("uBoneTex", 14);
+  }
 }
 
 void SceneRenderer::BuildFullscreenQuad() {
@@ -1293,11 +1301,49 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
     // A run of static instances of one model (the plan is sorted by model)
     // is one instanced draw per batch: the matrices go up in one buffer.
     size_t run = 1;
-    if (instancing_ && inst.skin.empty()) {
-      while (i + run < plan.size() && plan[i + run].model == draw.model &&
-             lod_instances_[plan[i + run].request]->skin.empty()) {
+    const bool skinned_run = !inst.skin.empty();
+    if (instancing_ && (!skinned_run || bone_tex_.Id() != 0)) {
+      // Skinned instances of a model share its skeleton: their bones go in a
+      // texture, a row each, so a run is capped by its rows.
+      const size_t cap =
+          skinned_run ? static_cast<size_t>(kSkinRows) : plan.size();
+      while (i + run < plan.size() && run < cap &&
+             plan[i + run].model == draw.model &&
+             lod_instances_[plan[i + run].request]->skin.empty() !=
+                 skinned_run) {
         ++run;
       }
+    }
+    if (run >= 2 && skinned_run) {
+      bone_data_.assign(run * static_cast<size_t>(kMaxBones) * 16, 0.0f);
+      instance_data_.clear();
+      for (size_t k = 0; k < run; ++k) {
+        const ModelInstance& member = *lod_instances_[plan[i + k].request];
+        const size_t bones =
+            std::min(member.skin.size(), static_cast<size_t>(kMaxBones));
+        std::copy_n(member.skin[0].data(), bones * 16,
+                    bone_data_.begin() +
+                        static_cast<std::ptrdiff_t>(k * kMaxBones * 16));
+        instance_data_.insert(instance_data_.end(), member.matrix,
+                              member.matrix + 16);
+      }
+      instance_vbo_.Upload(instance_data_.data(),
+                           instance_data_.size() * sizeof(float), kDynamicDraw);
+      ActiveTexture(kTexture0 + 14);
+      bone_tex_.Bind();
+      gl::TexSubImage2D(gl::kTexture2D, 0, 0, 0, kMaxBones * 4,
+                        static_cast<GLsizei>(run), gl::kRgba, gl::kFloat,
+                        bone_data_.data());
+      ActiveTexture(kTexture0);
+      Uniform1i(u_instanced_, 1);
+      Uniform1i(u_skinned_, 2);
+      instance_count_ = static_cast<int>(run);
+      DrawBatches(batches, identity);
+      instance_count_ = 0;
+      Uniform1i(u_skinned_, 0);
+      Uniform1i(u_instanced_, 0);
+      i += run;
+      continue;
     }
     if (run >= 2) {
       instance_data_.clear();

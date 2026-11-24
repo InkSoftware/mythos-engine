@@ -123,6 +123,7 @@ int main(const int argc, char** const argv) {
   bool sun_shadow = false;
   bool reflections = false;
   int crowd = 0;
+  int clones = 0;
   bool instancing = true;
   bool start_controls = false;
   bool start_menu = false;
@@ -136,6 +137,8 @@ int main(const int argc, char** const argv) {
     if (arg == "--sun-shadow") sun_shadow = true;
     if (arg == "--reflections") reflections = true;
     if (arg == "--no-instancing") instancing = false;
+    if (i + 1 < argc && arg == "--clones")
+      clones = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (i + 1 < argc && arg == "--crowd")
       crowd = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (arg == "--controls") start_controls = true;
@@ -538,6 +541,16 @@ int main(const int argc, char** const argv) {
                 pete.matrix);
     pete.skin = mythos::SkinMatrices(guide.skeleton, game.guide_pose());
     cam.instances.push_back(pete);
+    // `--clones N`: the guide again, standing in the first room in her pose:
+    // skinned instances of one model are one instanced draw per batch (the
+    // bones go in a texture, a row each).
+    for (int i = 0; i < clones; ++i) {
+      mythos::ModelInstance clone = pete;
+      clone.views = mythos::ModelInstance::kMain;
+      PlaceMatrix(1.5 + 0.9 * (i % 8), 1.5 + 0.9 * (i / 8 % 4), i * 0.5,
+                  clone.matrix);
+      cam.instances.push_back(clone);
+    }
     // The crowd: the same chair many times, a different spot and turn each.
     for (int i = 0; chair_model >= 0 && i < crowd; ++i) {
       mythos::ModelInstance chair;

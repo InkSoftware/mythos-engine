@@ -32,6 +32,7 @@ constexpr GLenum kBgra = 0x80E1;
 constexpr GLenum kUnsignedInt8888Rev = 0x8367;
 constexpr GLenum kRgba8 = 0x8058;
 constexpr GLenum kRgba16f = 0x881A;
+constexpr GLenum kRgba32f = 0x8814;
 constexpr GLenum kSrgb8Alpha8 = 0x8C43;
 constexpr GLenum kRed = 0x1903;
 constexpr GLenum kR8 = 0x8229;

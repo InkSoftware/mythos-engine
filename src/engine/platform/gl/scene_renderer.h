@@ -433,6 +433,12 @@ class SceneRenderer {
   void DrawInstances(const CameraState& cam, unsigned views);
   void UploadSkinnedBatch(BatchList& dst, const Batch& b);
   bool BuildPrograms();
+  // The bone matrices of a run of skinned instances of one model: one row of
+  // 64 matrices (4 RGBA32F texels each) per instance, read in the vertex
+  // shader with texelFetch (`uSkinned` 2), on texture unit 14.
+  static constexpr int kSkinRows = 128;
+  GlTexture bone_tex_;
+  std::vector<float> bone_data_;
   GlBuffer instance_vbo_;  // one matrix per instance of a run, 16 floats each
   std::vector<float> instance_data_;
   int instance_count_ = 0;  // > 0 while DrawTris draws a run as instances
