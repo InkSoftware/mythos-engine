@@ -252,8 +252,9 @@ more than was built.
 ### 5.1 Baked lighting (L) - first version (probes)
 - **Progress:** light probes first: `gfx/probes.h` (`BakeProbes`, `ProbeGrid`, a text file; headless and tested) and
   `SceneRenderer::UploadProbes` (a float texture over the floor plan, added in `world_lighting.frag`; off and
-  pixel-identical without an upload). The template bakes its lamps with `--baked`. Not done: lightmaps, probes in 3D
-  with direction and baked light in the mirror view. `tools/bake/mythos_bake_probes` bakes a level and a lamps file into
+  pixel-identical without an upload). Each probe is an ambient cube (six directions, so a surface's normal matters).
+  The template bakes its lamps with `--baked`. Not done: lightmaps, probes at several heights and baked light in the
+  mirror view. `tools/bake/mythos_bake_probes` bakes a level and a lamps file into
   a `.probes` file (the template loads its checked-in `hall.probes`, and a ctest re-bakes it).
 - Lightmaps or light probes for static lamps, lifting the 32-light limit for
   static geometry. A bake tool in `tools/` (CPU, cell-based), light probes
@@ -320,7 +321,7 @@ Gaps named in the Progress lines, by area:
 
 - **Rendering:** sun shadows beyond 26 m; the mirror and glass panes with the sun-aware sky, ambient occlusion, baked light
   and reflection probes; HDR and parallax-corrected reflection probes, a probe per chunk, a real roughness filter;
-  lightmaps and probes in 3D with direction; instancing skinned models and LOD for baked world geometry; SSAO applied to
+  lightmaps and probes at several heights; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   steering around moving obstacles and group behaviour for the AI.

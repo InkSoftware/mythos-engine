@@ -24,7 +24,7 @@ uniform int uOutdoor;
 uniform vec3 uMoonDir;
 uniform samplerCube uReflectionEnv;  // the room as captured at a reflection probe (display colours, mips = blur)
 uniform vec2 uEnv;                 // strength (0 = none), the highest mip level
-uniform sampler2D uProbeTex;  // baked light over the floor plan (RGB)
+uniform sampler2DArray uProbeTex;  // baked light over the floor plan: a layer per face of the ambient cube (+x -x +y -y +z -z)
 uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
 uniform float uSunShadow;      // 1: a shadow map of the outdoor light is bound
 uniform mat4 uSunVP[2];        // world -> each cascade's clip space (0 close, 1 wide)
@@ -278,7 +278,13 @@ void main() {
         ambient += flash * vec3(0.50, 0.57, 0.80);
 
         // Baked light: the colour of the probes under this point (static lamps, no shadow).
-        if (uProbe.z > 0.0) light += uProbe.z * texture(uProbeTex, vWorld.xz * uProbe.xy).rgb;
+        if (uProbe.z > 0.0) {
+            vec2 puv = vWorld.xz * uProbe.xy;
+            vec3 nn = n * n;  // an ambient cube: the faces the normal looks at, by the squares of its components
+            light += uProbe.z * (nn.x * texture(uProbeTex, vec3(puv, n.x < 0.0 ? 1.0 : 0.0)).rgb +
+                                 nn.y * texture(uProbeTex, vec3(puv, n.y < 0.0 ? 3.0 : 2.0)).rgb +
+                                 nn.z * texture(uProbeTex, vec3(puv, n.z < 0.0 ? 5.0 : 4.0)).rgb);
+        }
 
         // Lamps: small positional lights, fading out smoothly at their radius.
         for (int i = 0; i < uLightCount; ++i) {

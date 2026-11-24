@@ -5706,6 +5706,49 @@ TEST(cutscene_console_commands_run_the_hooks) {
   CHECK(!bare.Execute("cutscene.list").ok);
 }
 
+TEST(probes_are_ambient_cubes_with_direction) {
+  mythos::Level l;
+  CHECK(l.Parse(
+      {"#########", "#.......#", "#.......#", "#.......#", "#########"}));
+  // A lamp at the probe's own height, straight east of it.
+  mythos::ProbeOptions options;
+  options.height = 1.2;
+  const mythos::ProbeLamp lamp{6.25, 1.2, 2.25, 1.0, 1.0, 1.0, 8.0};
+  const mythos::ProbeGrid g = mythos::BakeProbes(l, {lamp}, options);
+  const double x = 2.25, z = 2.25;  // exactly on a probe
+  // Surfaces along the line to the lamp (x) get the full angle term, across it
+  // (z, and up) only the floor of 0.35: x faces are about 2.9 times z faces.
+  const auto east = g.SampleNormal(x, z, 1, 0, 0);
+  const auto south = g.SampleNormal(x, z, 0, 0, 1);
+  const auto up = g.SampleNormal(x, z, 0, 1, 0);
+  CHECK(east[0] > south[0] * 2.5f && east[0] < south[0] * 3.2f);
+  CHECK(std::fabs(south[0] - up[0]) < 1e-3f);
+  // The renderer's angle term is two-sided: opposite faces match.
+  CHECK(std::fabs(g.SampleFace(x, z, 0)[0] - g.SampleFace(x, z, 1)[0]) < 1e-4f);
+  // A slanted normal is between its axes' values.
+  const double s = std::sqrt(0.5);
+  const auto diag = g.SampleNormal(x, z, s, 0, s);
+  CHECK(diag[0] > south[0] && diag[0] < east[0]);
+  // The mean of the faces is what Sample gives.
+  const auto mean = g.Sample(x, z);
+  float sum = 0;
+  for (int f = 0; f < mythos::kProbeFaces; ++f) sum += g.SampleFace(x, z, f)[0];
+  CHECK(std::fabs(mean[0] - sum / 6.0f) < 1e-5f);
+
+  // The new file form round-trips; the old one-colour form still reads.
+  mythos::ProbeGrid back;
+  std::string error;
+  CHECK(mythos::ParseProbes(mythos::SerializeProbes(g), &back, &error));
+  CHECK(back.rgb.size() == g.rgb.size());
+  CHECK(std::fabs(back.SampleNormal(x, z, 1, 0, 0)[0] - east[0]) < 1e-4f);
+  mythos::ProbeGrid old;
+  CHECK(mythos::ParseProbes("probes 0.5 2 1\n0.5 0.25 0.125 1 2 3\n", &old,
+                            &error));
+  CHECK(old.rgb.size() == 2 * 1 * 6 * 3);
+  CHECK(old.Face(0, 0, 3)[1] == 0.25f && old.Face(1, 0, 5)[2] == 3.0f);
+  CHECK(!mythos::ParseProbes("probes6 0.5 1 1\n1 2 3\n", &old, &error));
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);
