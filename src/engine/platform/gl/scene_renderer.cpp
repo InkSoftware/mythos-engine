@@ -345,6 +345,8 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.sun_color = world_program_.Uniform("uSunColor");
   u.probe = world_program_.Uniform("uProbe");
   u.env = world_program_.Uniform("uEnv");
+  u.env_pos = world_program_.Uniform("uEnvPos");
+  u.env_half = world_program_.Uniform("uEnvHalf");
   u.sun_shadow = world_program_.Uniform("uSunShadow");
   u.sun_vp = world_program_.Uniform("uSunVP");
   u.sun_texel = world_program_.Uniform("uSunTexel");
@@ -658,12 +660,17 @@ void SceneRenderer::UploadProbes(const ProbeGrid& grid) {
 }
 
 int SceneRenderer::AddReflectionProbe(const double x, const double y,
-                                      const double z) {
+                                      const double z, const double half_x,
+                                      const double half_y,
+                                      const double half_z) {
   if (reflection_count_ >= kMaxReflectionProbes) return -1;
   ReflectionProbe& p = reflection_[reflection_count_];
   p.pos[0] = static_cast<float>(x);
   p.pos[1] = static_cast<float>(y);
   p.pos[2] = static_cast<float>(z);
+  p.half[0] = static_cast<float>(std::max(0.0, half_x));
+  p.half[1] = static_cast<float>(std::max(0.0, half_y));
+  p.half[2] = static_cast<float>(std::max(0.0, half_z));
   p.key = 0;  // not captured yet
   return reflection_count_++;
 }
@@ -997,6 +1004,9 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
         env ? static_cast<float>(reflection_[env_probe_].cube.Levels() - 1)
             : 0.0f);
     if (env) {
+      const ReflectionProbe& probe = reflection_[env_probe_];
+      Uniform3f(u.env_pos, probe.pos[0], probe.pos[1], probe.pos[2]);
+      Uniform3f(u.env_half, probe.half[0], probe.half[1], probe.half[2]);
       ActiveTexture(kTexture0 + 10);
       BindTexture(gl::kTextureCubeMap, reflection_[env_probe_].cube.Texture());
       ActiveTexture(kTexture0);

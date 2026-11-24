@@ -281,7 +281,14 @@ class SceneRenderer {
   // sky, glass and particles are not in the capture. Returns the probe's index
   // or -1 when full.
   static constexpr int kMaxReflectionProbes = 4;
-  int AddReflectionProbe(double x, double y, double z);
+  //
+  // With a box (`half_x`, `half_y`, `half_z` above 0: half the room's size
+  // around the probe) the reflection is parallax corrected: a reflected ray
+  // is followed to the walls of that box, so what a surface sees lines up
+  // with where it really is; without one the capture is taken as infinitely
+  // far away.
+  int AddReflectionProbe(double x, double y, double z, double half_x = 0,
+                         double half_y = 0, double half_z = 0);
   void ClearReflectionProbes();
 
   // Uploads baked light (`BakeProbes`, gfx/probes.h): every surface gets the
@@ -429,6 +436,7 @@ class SceneRenderer {
   ModelLods lods_;
   struct ReflectionProbe {
     float pos[3] = {0, 0, 0};
+    float half[3] = {0, 0, 0};  // the box for parallax correction, or 0
     ReflectionCube cube;
     uint64_t key = 0;
   };
@@ -616,15 +624,16 @@ class SceneRenderer {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
               sun_color = -1, probe = -1, sun_shadow = -1, sun_vp = -1,
-              env = -1, sun_texel = -1, sky_ambient = -1, fog_color = -1,
-              fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
-              lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
-              light_count = -1, light_pos = -1, light_color = -1,
-              light_radius = -1, light_halo = -1, shadow_count = -1,
-              shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
-              hand_origin = -1, hand_faces = -1, res = -1, grain = -1,
-              materials = -1, clip = -1, mist = -1, mist_height = -1,
-              exposure = -1, tonemap = -1, vignette = -1;
+              env = -1, env_pos = -1, env_half = -1, sun_texel = -1,
+              sky_ambient = -1, fog_color = -1, fog_density = -1, time = -1,
+              ambient_base = -1, ambient_near = -1, lightning = -1,
+              zone_count = -1, zone_xz = -1, zone_y = -1, light_count = -1,
+              light_pos = -1, light_color = -1, light_radius = -1,
+              light_halo = -1, shadow_count = -1, shadow_texel = -1,
+              hand_shadow = -1, hand_pos = -1, hand_origin = -1,
+              hand_faces = -1, res = -1, grain = -1, materials = -1, clip = -1,
+              mist = -1, mist_height = -1, exposure = -1, tonemap = -1,
+              vignette = -1;
   } world_u_;
 };
 

@@ -187,8 +187,10 @@ int main(const int argc, char** const argv) {
   const int guide_model = renderer.UploadModel(guide.batches);
   renderer.SetInstancing(instancing);
   if (reflections) {
-    renderer.AddReflectionProbe(5.0, 1.2, 3.0);   // the first room
-    renderer.AddReflectionProbe(14.0, 1.2, 3.0);  // the back room
+    // One in the middle of each room, with the room's size so what a surface
+    // reflects is parallax corrected.
+    renderer.AddReflectionProbe(4.5, 1.25, 3.0, 3.5, 1.25, 2.0);   // first room
+    renderer.AddReflectionProbe(14.0, 1.25, 3.0, 4.0, 1.25, 2.0);  // back room
   }
   int chair_model = -1;
   if (const mythos::Model* chair = game.models().Find("chair")) {
