@@ -336,6 +336,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.view = world_program_.Uniform("uView");
   u.proj = world_program_.Uniform("uProj");
   u.cam = world_program_.Uniform("uCam");
+  u.view_pos = world_program_.Uniform("uViewPos");
   u.flash_dir = world_program_.Uniform("uFlashDir");
   u.flash_on = world_program_.Uniform("uFlashOn");
   u.lighter = world_program_.Uniform("uLighter");
@@ -724,7 +725,7 @@ bool SceneRenderer::CaptureReflectionProbe(const CameraState& cam,
   capturing_probe_ = true;
   for (int face = 0; face < 6; ++face) {
     Frame ff = f;
-    for (int i = 0; i < 3; ++i) ff.eye[i] = probe.pos[i];
+    for (int i = 0; i < 3; ++i) ff.eye[i] = ff.view_eye[i] = probe.pos[i];
     CubeFaceView(face, probe.pos, ff.view);
     Mat4Perspective(1.5707963f, 1.0f, kNearPlane, kFarPlane, ff.proj);
     float view_proj[16];
@@ -921,13 +922,23 @@ void SceneRenderer::DrawQuad() {
   DrawTris(0, 6);
 }
 
-void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
+void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f,
+                            const float* const mirror_normal) {
   Disable(kDepthTest);
   sky_program_.Use();
 
-  const ViewBasis basis = MakeViewBasis(
+  ViewBasis basis = MakeViewBasis(
       cam.yaw, cam.pitch,
       std::isfinite(cam.roll) ? Clampd(cam.roll, -1.0, 1.0) : 0.0);
+  if (mirror_normal) {
+    // Each axis of the view reflected about the glass plane.
+    for (double* axis : {basis.forward, basis.right, basis.up}) {
+      const double dot =
+          axis[0] * mirror_normal[0] + axis[2] * mirror_normal[2];
+      axis[0] -= 2 * dot * mirror_normal[0];
+      axis[2] -= 2 * dot * mirror_normal[2];
+    }
+  }
   sky_program_.Set("uFwd", static_cast<float>(basis.forward[0]),
                    static_cast<float>(basis.forward[1]),
                    static_cast<float>(basis.forward[2]));
@@ -1005,6 +1016,7 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   UniformMatrix4fv(u.view, 1, kFalse, f.view);
   UniformMatrix4fv(u.proj, 1, kFalse, f.proj);
   Uniform3f(u.cam, f.eye[0], f.eye[1], f.eye[2]);
+  Uniform3f(u.view_pos, f.view_eye[0], f.view_eye[1], f.view_eye[2]);
   Uniform3f(u.flash_dir, f.flash[0], f.flash[1], f.flash[2]);
   Uniform1f(u.flash_on, cam.flash_on ? 1.0f : 0.0f);
   Uniform1f(u.lighter, cam.lighter ? 1.0f : 0.0f);
@@ -1306,11 +1318,16 @@ void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
   fm.clip[2] = n[2];
   fm.clip[3] = -d - kMirrorClipOffset;
   fm.views = ModelInstance::kMirror;
+  // The eye as the mirror shows it: its reflection about the glass plane.
+  const float eye_side = n[0] * f.eye[0] + n[2] * f.eye[2] - d;
+  fm.view_eye[0] = f.eye[0] - 2 * eye_side * n[0];
+  fm.view_eye[2] = f.eye[2] - 2 * eye_side * n[2];
   mirror_target_.Bind();
   Viewport(0, 0, w, h);
   ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   Clear(kColorBufferBit | kDepthBufferBit);
   Disable(kBlend);
+  if (cam.outdoor) DrawSky(cam, fm, n);
   DrawWorld(cam, fm);
 }
 
@@ -1717,6 +1734,7 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   f.eye[0] = static_cast<float>(cam.x);
   f.eye[1] = static_cast<float>(cam.eye_height);
   f.eye[2] = static_cast<float>(cam.z);
+  for (int i = 0; i < 3; ++i) f.view_eye[i] = f.eye[i];
   f.dir[0] = static_cast<float>(std::cos(cam.yaw) * std::cos(cam.pitch));
   f.dir[1] = static_cast<float>(std::sin(cam.pitch));
   f.dir[2] = static_cast<float>(std::sin(cam.yaw) * std::cos(cam.pitch));

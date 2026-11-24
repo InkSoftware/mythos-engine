@@ -6,6 +6,7 @@ uniform sampler2D uTex;
 uniform sampler2D uNormalTex;
 uniform sampler2D uMaterialTex;  // R metal, G ambient occlusion
 uniform vec3 uCam;
+uniform vec3 uViewPos;  // where the picture is seen from (uCam, or its reflection in the mirror)
 uniform vec3 uFlashDir;
 uniform float uFlashOn;
 uniform float uLighter;
@@ -256,7 +257,7 @@ void main() {
     if (uAlphaTest == 1 && tex.a < 0.5) discard;
     vec3 albedo = tex.rgb;  // the texture is SRGB8_ALPHA8: sampling already gives linear
 
-    float dist = length(uCam - vWorld);
+    float dist = length(uViewPos - vWorld);
     vec3 col;
     if (uEmissive == 1) {
         col = albedo * 3.0;  // screens and eyes glow
@@ -272,7 +273,7 @@ void main() {
         gAo = mat.g;
         gRough = (gGloss < 0.02 && gMetal < 0.02) ? 1.0 : (gGloss < 0.02 ? 0.6 : clamp(1.0 - gGloss, 0.08, 1.0));
         gF0 = mix(vec3(0.04), albedo, gMetal);
-        vec3 toCam = normalize(uCam - vWorld);
+        vec3 toCam = normalize(uViewPos - vWorld);
         float facing = abs(dot(n, toCam));  // winding of models is arbitrary
 
         vec3 spec = vec3(0.0);
@@ -348,11 +349,11 @@ void main() {
 
     float fog = 1.0 - exp(-uFogDensity * dist);
     col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
-    col += airLight((vWorld - uCam) / max(dist, 0.001), dist);
+    col += airLight((vWorld - uViewPos) / max(dist, 0.001), dist);
     if (uMist > 0.0) {
         // Ground mist: thick near the floor, thinning with height (taken at the middle of the view ray), moving in
         // slow patches, and faintly lit by the sky. It swallows distance the way fog does.
-        float h = max(0.5 * (vWorld.y + uCam.y), 0.0);
+        float h = max(0.5 * (vWorld.y + uViewPos.y), 0.0);
         float cloud = 0.62 + 0.38 * sin(vWorld.x * 0.23 + uTime * 0.11) * sin(vWorld.z * 0.19 - uTime * 0.07)
                     + 0.18 * sin(vWorld.x * 0.61 - vWorld.z * 0.47 + uTime * 0.17);
         float dens = uMist * 0.12 * exp(-h / uMistHeight) * clamp(cloud, 0.25, 1.2);

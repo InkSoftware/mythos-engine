@@ -381,6 +381,9 @@ class SceneRenderer {
   // offset) and which instance views the pass draws.
   struct Frame {
     float eye[3], dir[3], flash[3], moon[3], fog[3];
+    // Where the picture is seen from for specular, fog and mist: the eye, or
+    // its reflection in the mirror (the lamps and the hand stay with `eye`).
+    float view_eye[3];
     SkyLook sky;
     float fog_density, fov_y, aspect, grain;
     int materials;
@@ -539,7 +542,9 @@ class SceneRenderer {
   // (Re)creates the cube maps when the shadow level changes.
   void EnsureShadowMaps(int level);
 
-  void DrawSky(const CameraState& cam, const Frame& f);
+  // `mirror_normal` (horizontal, unit) draws the sky as seen in the mirror.
+  void DrawSky(const CameraState& cam, const Frame& f,
+               const float* mirror_normal = nullptr);
 
   void DrawWorld(const CameraState& cam, const Frame& f);
 
@@ -629,10 +634,10 @@ class SceneRenderer {
 
   // Cached uniform locations of the world program.
   struct WorldUniforms {
-    gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
-              lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
-              sun_color = -1, probe = -1, sun_shadow = -1, sun_vp = -1,
-              env = -1, env_pos = -1, env_half = -1, env_pos2 = -1,
+    gl::GLint view = -1, proj = -1, cam = -1, view_pos = -1, flash_dir = -1,
+              flash_on = -1, lighter = -1, torch_warm = -1, outdoor = -1,
+              moon_dir = -1, sun_color = -1, probe = -1, sun_shadow = -1,
+              sun_vp = -1, env = -1, env_pos = -1, env_half = -1, env_pos2 = -1,
               env_half2 = -1, env_blend = -1, sun_texel = -1, sky_ambient = -1,
               fog_color = -1, fog_density = -1, time = -1, ambient_base = -1,
               ambient_near = -1, lightning = -1, zone_count = -1, zone_xz = -1,
