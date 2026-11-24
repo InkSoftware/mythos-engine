@@ -5377,6 +5377,130 @@ TEST(ai_noise_board_last_seen_and_smoothed_paths) {
   CHECK_EQ(mythos::SmoothPath(l, {{1, 1}}).size(), 1u);
 }
 
+namespace {
+// The JSON and the binary chunk of a glb.
+void SplitGlb(const std::string& glb, std::string* json, std::string* bin) {
+  size_t at = 12;
+  while (at + 8 <= glb.size()) {
+    uint32_t len = 0, type = 0;
+    std::memcpy(&len, glb.data() + at, 4);
+    std::memcpy(&type, glb.data() + at + 4, 4);
+    (type == 0x4E4F534A ? *json : *bin) = glb.substr(at + 8, len);
+    at += 8 + len;
+  }
+}
+
+std::string Base64(const std::string& in) {
+  static const char* kAlphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  size_t i = 0;
+  for (; i + 2 < in.size(); i += 3) {
+    const uint32_t v = (static_cast<uint8_t>(in[i]) << 16) |
+                       (static_cast<uint8_t>(in[i + 1]) << 8) |
+                       static_cast<uint8_t>(in[i + 2]);
+    for (int s = 18; s >= 0; s -= 6) out += kAlphabet[(v >> s) & 63];
+  }
+  if (i < in.size()) {
+    uint32_t v = static_cast<uint32_t>(static_cast<uint8_t>(in[i])) << 16;
+    if (i + 1 < in.size())
+      v |= static_cast<uint32_t>(static_cast<uint8_t>(in[i + 1])) << 8;
+    out += kAlphabet[(v >> 18) & 63];
+    out += kAlphabet[(v >> 12) & 63];
+    out += i + 1 < in.size() ? kAlphabet[(v >> 6) & 63] : '=';
+    out += '=';
+  }
+  return out;
+}
+}
+
+TEST(gltf_text_files_with_data_uri_external_and_sparse_buffers) {
+  std::string json_text, bin;
+  SplitGlb(TinyGlb(), &json_text, &bin);
+  mythos::json::Value j;
+  CHECK(mythos::json::Parse(json_text, j));
+  mythos::GltfModel reference;
+  CHECK(mythos::ParseGlb(TinyGlb(), reference));
+
+  // A base64 data URI buffer.
+  mythos::json::Value inline_doc = j;
+  inline_doc["buffers"] = {
+      {{"byteLength", bin.size()},
+       {"uri", "data:application/octet-stream;base64," + Base64(bin)}}};
+  mythos::GltfModel a;
+  std::string error;
+  CHECK(mythos::ParseGltf(inline_doc.dump(), ".", a, &error));
+  CHECK(error.empty());
+  CHECK(a.skeleton.Count() == 2 && a.batches[0].verts.size() == 3u);
+  CHECK(a.batches[0].verts[1].px == reference.batches[0].verts[1].px);
+
+  // An external .bin beside the .gltf, and two buffers (the bin split in two).
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "mythos_gltf_test";
+  fs::remove_all(dir);
+  fs::create_directories(dir);
+  CHECK(
+      mythos::WriteFileAtomic((dir / "first.bin").string(), bin.substr(0, 48)));
+  CHECK(mythos::WriteFileAtomic((dir / "second part.bin").string(),
+                                bin.substr(48)));
+  mythos::json::Value two = j;
+  two["buffers"] = {
+      {{"byteLength", 48}, {"uri", "first.bin"}},
+      {{"byteLength", bin.size() - 48}, {"uri", "second%20part.bin"}}};
+  // Views at 48 and beyond move to the second buffer.
+  for (auto& view : two["bufferViews"]) {
+    const size_t off = view["byteOffset"].get<size_t>();
+    if (off >= 48) {
+      view["buffer"] = 1;
+      view["byteOffset"] = off - 48;
+    }
+  }
+  CHECK(mythos::WriteFileAtomic((dir / "m.gltf").string(), two.dump()));
+  mythos::GltfModel b;
+  CHECK(mythos::LoadGltf((dir / "m.gltf").string(), b, &error));
+  CHECK(b.FindClip("lift") != nullptr);
+  CHECK(b.batches[0].skin[0].weights[0] ==
+        reference.batches[0].skin[0].weights[0]);
+  // A missing buffer file and a bad data URI are errors, not crashes.
+  mythos::json::Value broken = j;
+  broken["buffers"] = {{{"byteLength", 4}, {"uri", "nothere.bin"}}};
+  CHECK(!mythos::ParseGltf(broken.dump(), dir.string(), b, &error));
+  broken["buffers"] = {{{"byteLength", 4}, {"uri", "data:text/plain,hello"}}};
+  CHECK(!mythos::ParseGltf(broken.dump(), dir.string(), b, &error));
+  CHECK(!mythos::ParseGltf("{", dir.string(), b, &error));
+  CHECK(!mythos::LoadGltf((dir / "none.gltf").string(), b, &error));
+
+  // A sparse accessor: positions start at zero and three values are replaced.
+  std::string sparse_bin = bin;
+  const size_t indices_at = sparse_bin.size();
+  const uint8_t idx[3] = {0, 1, 2};  // unsigned bytes, padded to 4
+  sparse_bin.append(reinterpret_cast<const char*>(idx), 3);
+  sparse_bin.push_back('\0');
+  const size_t values_at = sparse_bin.size();
+  const float vals[9] = {0, 0, 0, 2, 0, 0, 0, 3, 0};  // x = 2 at 1, y = 3 at 2
+  sparse_bin.append(reinterpret_cast<const char*>(vals), sizeof(vals));
+  mythos::json::Value sparse_doc = j;
+  sparse_doc["buffers"] = {
+      {{"byteLength", sparse_bin.size()},
+       {"uri", "data:application/octet-stream;base64," + Base64(sparse_bin)}}};
+  sparse_doc["bufferViews"].push_back(
+      {{"buffer", 0}, {"byteOffset", indices_at}, {"byteLength", 3}});
+  sparse_doc["bufferViews"].push_back(
+      {{"buffer", 0}, {"byteOffset", values_at}, {"byteLength", sizeof(vals)}});
+  const size_t views = sparse_doc["bufferViews"].size();
+  mythos::json::Value& pos = sparse_doc["accessors"][0];
+  pos.erase("bufferView");
+  pos["sparse"] = {
+      {"count", 3},
+      {"indices", {{"bufferView", views - 2}, {"componentType", 5121}}},
+      {"values", {{"bufferView", views - 1}}}};
+  mythos::GltfModel sp;
+  CHECK(mythos::ParseGltf(sparse_doc.dump(), ".", sp, &error));
+  CHECK(sp.batches[0].verts[1].px == 2.0f && sp.batches[0].verts[2].py == 3.0f);
+  CHECK(sp.batches[0].verts[0].px == 0.0f);
+  fs::remove_all(dir);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

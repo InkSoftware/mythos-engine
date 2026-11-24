@@ -27,10 +27,63 @@ uint32_t ReadU32(const std::string& s, const size_t at) {
   return v;  // glTF is little-endian; so is every supported target.
 }
 
+float ReadComponent(const std::string& buf, const size_t at, const int type,
+                    const bool normalized) {
+  const char* p = buf.data() + at;
+  switch (type) {
+    case 5120: {
+      int8_t x;
+      std::memcpy(&x, p, 1);
+      return normalized ? std::max(x / 127.0f, -1.0f) : static_cast<float>(x);
+    }
+    case 5121: {
+      uint8_t x;
+      std::memcpy(&x, p, 1);
+      return normalized ? x / 255.0f : static_cast<float>(x);
+    }
+    case 5122: {
+      int16_t x;
+      std::memcpy(&x, p, 2);
+      return normalized ? std::max(x / 32767.0f, -1.0f) : static_cast<float>(x);
+    }
+    case 5123: {
+      uint16_t x;
+      std::memcpy(&x, p, 2);
+      return normalized ? x / 65535.0f : static_cast<float>(x);
+    }
+    case 5125: {
+      uint32_t x;
+      std::memcpy(&x, p, 4);
+      return static_cast<float>(x);
+    }
+    default: {
+      float v;
+      std::memcpy(&v, p, 4);
+      return v;
+    }
+  }
+}
+
+size_t ComponentSize(const int type) {
+  switch (type) {
+    case 5120:
+    case 5121:
+      return 1;
+    case 5122:
+    case 5123:
+      return 2;
+    case 5125:
+    case 5126:
+      return 4;
+    default:
+      Throw("unsupported component type " + std::to_string(type));
+  }
+}
+
 class Doc {
  public:
-  Doc(json::Value root, std::string bin)
-      : root_(std::move(root)), bin_(std::move(bin)) {}
+  Doc(json::Value root, std::vector<std::string> buffers)
+      : root_(std::move(root)), buffers_(std::move(buffers)) {}
 
   const json::Value& Root() const { return root_; }
 
@@ -44,10 +97,10 @@ class Doc {
   }
 
   // The values of an accessor as floats, `components` per element. Integer
-  // types are normalised when the accessor says so.
+  // types are normalised when the accessor says so. Sparse accessors (a few
+  // elements replaced over a base, or over zeros) are applied.
   std::vector<float> Read(const int accessor_index, int* components_out) const {
     const json::Value& a = Item("accessors", accessor_index);
-    if (a.contains("sparse")) Throw("sparse accessors are not supported");
     const int type = a.value("componentType", 0);
     const bool normalized = a.value("normalized", false);
     const size_t count = a.value("count", size_t{0});
@@ -56,87 +109,77 @@ class Doc {
         {"SCALAR", 1}, {"VEC2", 2}, {"VEC3", 3}, {"VEC4", 4}, {"MAT4", 16}};
     const auto comp = kComponents.find(kind);
     if (comp == kComponents.end()) Throw("unsupported accessor type " + kind);
-    const int n = comp->second;
-    if (components_out != nullptr) *components_out = n;
-    size_t size = 0;
-    switch (type) {
-      case 5120:
-      case 5121:
-        size = 1;
-        break;
-      case 5122:
-      case 5123:
-        size = 2;
-        break;
-      case 5125:
-      case 5126:
-        size = 4;
-        break;
-      default:
-        Throw("unsupported component type " + std::to_string(type));
-    }
-    if (!a.contains("bufferView")) Throw("accessor without a buffer view");
-    const json::Value& view = Item("bufferViews", a["bufferView"].get<int>());
-    if (view.value("buffer", 0) != 0) Throw("only one buffer is supported");
-    const size_t base =
-        view.value("byteOffset", size_t{0}) + a.value("byteOffset", size_t{0});
-    const size_t stride = view.value("byteStride", size_t{0}) != 0
-                              ? view["byteStride"].get<size_t>()
-                              : size * static_cast<size_t>(n);
-    std::vector<float> out;
-    out.reserve(count * static_cast<size_t>(n));
-    for (size_t i = 0; i < count; ++i) {
-      for (int c = 0; c < n; ++c) {
-        const size_t at = base + i * stride + static_cast<size_t>(c) * size;
-        if (at + size > bin_.size()) Throw("accessor reads past the buffer");
-        const char* p = bin_.data() + at;
-        float v = 0;
-        switch (type) {
-          case 5120: {
-            int8_t x;
-            std::memcpy(&x, p, 1);
-            v = normalized ? std::max(x / 127.0f, -1.0f)
-                           : static_cast<float>(x);
-            break;
-          }
-          case 5121: {
-            uint8_t x;
-            std::memcpy(&x, p, 1);
-            v = normalized ? x / 255.0f : static_cast<float>(x);
-            break;
-          }
-          case 5122: {
-            int16_t x;
-            std::memcpy(&x, p, 2);
-            v = normalized ? std::max(x / 32767.0f, -1.0f)
-                           : static_cast<float>(x);
-            break;
-          }
-          case 5123: {
-            uint16_t x;
-            std::memcpy(&x, p, 2);
-            v = normalized ? x / 65535.0f : static_cast<float>(x);
-            break;
-          }
-          case 5125: {
-            uint32_t x;
-            std::memcpy(&x, p, 4);
-            v = static_cast<float>(x);
-            break;
-          }
-          default:
-            std::memcpy(&v, p, 4);
-            break;
+    const auto n = static_cast<size_t>(comp->second);
+    if (components_out != nullptr) *components_out = comp->second;
+    const size_t size = ComponentSize(type);
+
+    std::vector<float> out(count * n, 0.0f);
+    if (a.contains("bufferView")) {
+      const json::Value& view = Item("bufferViews", a["bufferView"].get<int>());
+      const std::string& buf = Buffer(view.value("buffer", 0));
+      const size_t base = view.value("byteOffset", size_t{0}) +
+                          a.value("byteOffset", size_t{0});
+      const size_t stride = view.value("byteStride", size_t{0}) != 0
+                                ? view["byteStride"].get<size_t>()
+                                : size * n;
+      for (size_t i = 0; i < count; ++i) {
+        for (size_t c = 0; c < n; ++c) {
+          const size_t at = base + i * stride + c * size;
+          if (at + size > buf.size()) Throw("accessor reads past the buffer");
+          out[i * n + c] = ReadComponent(buf, at, type, normalized);
         }
-        out.push_back(v);
+      }
+    } else if (!a.contains("sparse")) {
+      Throw("accessor without a buffer view");
+    }
+    if (a.contains("sparse")) {
+      const json::Value& sp = a["sparse"];
+      const size_t sparse_count = sp.value("count", size_t{0});
+      const json::Value& idx = sp["indices"];
+      const json::Value& val = sp["values"];
+      const int idx_type = idx.value("componentType", 0);
+      if (idx_type != 5121 && idx_type != 5123 && idx_type != 5125) {
+        Throw("a sparse accessor with bad index type");
+      }
+      const size_t idx_size = ComponentSize(idx_type);
+      const json::Value& idx_view =
+          Item("bufferViews", idx["bufferView"].get<int>());
+      const json::Value& val_view =
+          Item("bufferViews", val["bufferView"].get<int>());
+      const std::string& idx_buf = Buffer(idx_view.value("buffer", 0));
+      const std::string& val_buf = Buffer(val_view.value("buffer", 0));
+      const size_t idx_base = idx_view.value("byteOffset", size_t{0}) +
+                              idx.value("byteOffset", size_t{0});
+      const size_t val_base = val_view.value("byteOffset", size_t{0}) +
+                              val.value("byteOffset", size_t{0});
+      for (size_t i = 0; i < sparse_count; ++i) {
+        const size_t at = idx_base + i * idx_size;
+        if (at + idx_size > idx_buf.size())
+          Throw("sparse indices past the buffer");
+        const auto target =
+            static_cast<size_t>(ReadComponent(idx_buf, at, idx_type, false));
+        if (target >= count) Throw("a sparse index past the accessor");
+        for (size_t c = 0; c < n; ++c) {
+          const size_t vat = val_base + (i * n + c) * size;
+          if (vat + size > val_buf.size())
+            Throw("sparse values past the buffer");
+          out[target * n + c] = ReadComponent(val_buf, vat, type, normalized);
+        }
       }
     }
     return out;
   }
 
  private:
+  const std::string& Buffer(const int index) const {
+    if (index < 0 || static_cast<size_t>(index) >= buffers_.size()) {
+      Throw("a buffer view names a missing buffer");
+    }
+    return buffers_[static_cast<size_t>(index)];
+  }
+
   json::Value root_;
-  std::string bin_;
+  std::vector<std::string> buffers_;
 };
 
 BoneTransform NodeTransform(const json::Value& node) {
@@ -492,7 +535,7 @@ bool ParseGlb(const std::string& bytes, GltfModel& out, std::string* error) {
       Throw("bad JSON chunk: " + parse_error);
     }
     GltfModel model;
-    Build(Doc(std::move(root), std::move(bin)), model);
+    Build(Doc(std::move(root), {std::move(bin)}), model);
     out = std::move(model);
     return true;
   } catch (const Fail& f) {
@@ -501,6 +544,101 @@ bool ParseGlb(const std::string& bytes, GltfModel& out, std::string* error) {
     if (error != nullptr) *error = std::string("malformed glTF: ") + e.what();
   }
   return false;
+}
+
+namespace {
+// Decodes standard base64 (padding optional, whitespace skipped); false on any
+// other character.
+bool DecodeBase64(const std::string& text, std::string* out) {
+  static const std::string kAlphabet =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  out->clear();
+  uint32_t acc = 0;
+  int bits = 0;
+  for (const char c : text) {
+    if (c == '=' || c == '\n' || c == '\r' || c == ' ') continue;
+    const size_t v = kAlphabet.find(c);
+    if (v == std::string::npos) return false;
+    acc = (acc << 6) | static_cast<uint32_t>(v);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out->push_back(static_cast<char>((acc >> bits) & 0xFF));
+    }
+  }
+  return true;
+}
+
+// Percent-escapes in a file uri ("my%20file.bin").
+std::string DecodeUri(const std::string& uri) {
+  std::string out;
+  for (size_t i = 0; i < uri.size(); ++i) {
+    if (uri[i] == '%' && i + 2 < uri.size()) {
+      const std::string hex = uri.substr(i + 1, 2);
+      char* end = nullptr;
+      const long v = std::strtol(hex.c_str(), &end, 16);
+      if (end == hex.c_str() + 2) {
+        out.push_back(static_cast<char>(v));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(uri[i]);
+  }
+  return out;
+}
+}
+
+bool ParseGltf(const std::string& json_text, const std::string& base_dir,
+               GltfModel& out, std::string* error) {
+  try {
+    json::Value root;
+    std::string parse_error;
+    if (!json::Parse(json_text, root, &parse_error)) {
+      Throw("bad JSON: " + parse_error);
+    }
+    std::vector<std::string> buffers;
+    if (const json::Value* list = json::Find(root, "buffers")) {
+      for (const auto& b : *list) {
+        const std::string uri = b.value("uri", std::string());
+        std::string data;
+        if (uri.empty()) {
+          Throw("a buffer without a uri (use LoadGlb for a .glb)");
+        } else if (uri.rfind("data:", 0) == 0) {
+          const size_t comma = uri.find(',');
+          if (comma == std::string::npos ||
+              uri.find(";base64") == std::string::npos ||
+              !DecodeBase64(uri.substr(comma + 1), &data)) {
+            Throw("a bad data uri buffer");
+          }
+        } else if (!vfs::ReadFile(base_dir + "/" + DecodeUri(uri), data)) {
+          Throw("cannot read the buffer " + uri);
+        }
+        buffers.push_back(std::move(data));
+      }
+    }
+    GltfModel model;
+    Build(Doc(std::move(root), std::move(buffers)), model);
+    out = std::move(model);
+    return true;
+  } catch (const Fail& f) {
+    if (error != nullptr) *error = f.what();
+  } catch (const std::exception& e) {
+    if (error != nullptr) *error = std::string("malformed glTF: ") + e.what();
+  }
+  return false;
+}
+
+bool LoadGltf(const std::string& path, GltfModel& out, std::string* error) {
+  std::string text;
+  if (!vfs::ReadFile(path, text)) {
+    if (error != nullptr) *error = "cannot read " + path;
+    return false;
+  }
+  const size_t slash = path.find_last_of("/\\");
+  return ParseGltf(text,
+                   slash == std::string::npos ? "." : path.substr(0, slash),
+                   out, error);
 }
 
 bool LoadGlb(const std::string& path, GltfModel& out, std::string* error) {

@@ -166,8 +166,9 @@ more than was built.
   glb (skeleton, skinned batches, every clip; CC0 stand-in
   `assets/characters/prototype_pete.glb`, KayKit, 30 clips). `gfx/anim_state.h` is the animation state machine
   (states, parameters, conditional and when-finished transitions with crossfades). `tools/mythos_models.py` keeps a rigged model with `Spec(skinned=True)` (one `.glb` in
-  `assets/characters/`, tested by `tools/test_mythos_models.py`). Not done: external-buffer `.gltf` in the loader, sparse
-  accessors, morph targets and textures on skinned models (the loader reads material colours).
+  `assets/characters/`, tested by `tools/test_mythos_models.py`). The loader reads a `.glb`, or a `.gltf` with external or base64
+  buffers (`LoadGltf`), and sparse accessors. Not done: morph targets, several skins and textures on skinned models
+  (the loader reads material colours).
 - **Why:** models are static OBJ, so no animated NPCs, creatures or doors.
 - **Where:** `gfx/skeleton.h` (bones, skin weights, clips, sampler, blend,
   crossfade, all CPU and tested), a glTF 2.0 loader for skins and clips
@@ -321,7 +322,7 @@ Gaps named in the Progress lines, by area:
   and reflection probes; HDR and parallax-corrected reflection probes, a probe per chunk, a real roughness filter;
   lightmaps and probes in 3D with direction; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
-- **Animation and AI:** glTF with external buffers, sparse accessors, morph targets and textures on skinned models;
+- **Animation and AI:** glTF morph targets, several skins and textures on skinned models;
   steering around moving obstacles and group behaviour for the AI.
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
 - **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs

@@ -19,7 +19,7 @@ listen to and pick up, menus, and a bit of procedural art.
   `lightning_zones`, the rooms that have a window), culled world
   geometry, cutscenes (`world/cutscene.h`: a timeline of camera, cues, values and animation), a distance cull, level of detail and GPU instancing for model instances (`gfx/lod.h`), SDF text, and hot reload of shaders and textures in development (`FileWatcher`, `SceneRenderer::ReloadShaders` / `ReloadTextures`).
 - **Life and logic** (headless, tested): skeletal animation (`gfx/skeleton.h`: bones, clips, blending, crossfade, `AnimStateMachine`;
-  `gfx/gltf.h` loads a skinned `.glb`; the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
+  `gfx/gltf.h` loads a skinned `.glb` or `.gltf`; the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
   perception (`world/ai.h`), A* (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned
   save files with slots (`data/save.h`, `world/save_state.h`) and rebindable input actions (`ui/input_map.h`, `ProbeBinding` / `ApplyActions` in `platform/input.h`) with a controls page to rebind them (`ui/controls_ui.h`).
 - **Everything around a game**: a settings system (pages, drawing, saving, applying), localisation with built-in
