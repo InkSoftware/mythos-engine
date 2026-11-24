@@ -16,7 +16,8 @@ set(_map
         kParticleFrag=fragment/particle.frag
         kOverlayFrag=fragment/overlay.frag
         kBloomBlurFrag=fragment/bloom_blur.frag
-        kSsaoFrag=fragment/ssao.frag)
+        kSsaoFrag=fragment/ssao.frag
+        kProbeFilterFrag=fragment/probe_filter.frag)
 set(_out "// Generated from src/engine/platform/gl/shaders/ by cmake/EmbedShaders.cmake. Do not edit.\n#include \"engine/platform/gl/scene_shaders.h\"\n\nnamespace mythos::shaders {\n")
 set(_table "")
 foreach (_e IN LISTS _map)

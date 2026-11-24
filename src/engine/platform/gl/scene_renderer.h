@@ -455,6 +455,7 @@ class SceneRenderer {
   bool capturing_probe_ = false;
   DepthBuffer reflection_depth_;
   void DrawReflectionProbes(const CameraState& cam, const Frame& f);
+  void FilterReflectionProbe(const ReflectionProbe& probe);
   bool CaptureReflectionProbe(const CameraState& cam, const Frame& f,
                               int index);
   // Three cascades: close (more detail near the viewer), wide and far.
@@ -564,6 +565,7 @@ class SceneRenderer {
   // The occlusion at half size, and its blur partner.
   RenderTarget ao_a_, ao_b_;
   GlProgram ssao_program_;
+  GlProgram probe_filter_program_;  // prefilters a probe capture per roughness
   bool BuildAo(const CameraState& cam, const Frame& f);
   RenderTarget mirror_target_;
   GlVertexArray mirror_vao_;

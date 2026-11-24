@@ -235,17 +235,24 @@ class ReflectionCube {
   // colour attachment and sets the viewport to the whole face.
   void BindFace(int face) const;
 
-  // Builds the mip chain after all six faces are drawn.
+  // Builds the mip chain of the capture after all six faces are drawn.
   void BuildMips() const;
 
-  [[nodiscard]] gl::GLuint Texture() const { return tex_; }
+  // Binds the framebuffer of the filtered map with face 0..5 of mip `level`
+  // as the colour attachment and sets the viewport to it.
+  void BindFilteredFace(int face, int level) const;
+
+  // The capture (RGBA16F, linear, with mips) and the filtered map (one mip
+  // level per roughness) the world shader reads.
+  [[nodiscard]] gl::GLuint CaptureTexture() const { return tex_; }
+  [[nodiscard]] gl::GLuint Texture() const { return filtered_; }
   [[nodiscard]] int Size() const { return size_; }
   [[nodiscard]] bool Valid() const { return fbo_ != 0; }
   // Number of mip levels (the highest level index is one less).
   [[nodiscard]] int Levels() const;
 
  private:
-  gl::GLuint tex_ = 0, fbo_ = 0;
+  gl::GLuint tex_ = 0, fbo_ = 0, filtered_ = 0, filter_fbo_ = 0;
   int size_ = 0;
 };
 

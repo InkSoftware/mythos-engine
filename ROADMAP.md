@@ -228,8 +228,8 @@ more than was built.
   each probe (redrawn only when the scene changes), mips as the roughness blur, read in the world shader's
   environment reflection; off by default and unchanged then. The template shows it with `--reflections` (a toolbox
   and a bucket stand in the first room). A probe can have a box for parallax correction, and the two nearest blend by distance. Not done: a probe per chunk (only
-  the two nearest the viewer are used), the sky and moving models in the capture, HDR capture (the cube holds tone-mapped colours) and
-  a proper roughness filter (the mip chain is a box filter).
+  the two nearest the viewer are used), the sky and moving models in the capture (the capture is linear HDR, RGBA16F, and
+  prefiltered with a GGX lobe per mip level).
 - **Where:** a probe is a cube capture of the scene at a position (reusing the
   shadow cube plumbing), filtered to a few roughness levels, assigned per
   chunk. The world shader replaces the analytic ambient term when one is
@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** ambient occlusion in the mirror (screen space, main picture only); HDR reflection probes, a probe per chunk, a real roughness filter;
+- **Rendering:** ambient occlusion in the mirror (screen space, main picture only); a probe per chunk;
   lightmaps and probes at several heights; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;

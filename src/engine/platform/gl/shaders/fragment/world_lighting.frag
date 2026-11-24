@@ -195,7 +195,7 @@ vec3 envSeen(samplerCube cube, vec3 pos, vec3 half_, vec3 refl, float rough) {
         float t = max(min(min(farHit.x, farHit.y), farHit.z), 0.0);
         look = vWorld + refl * t - pos;
     }
-    return textureLod(cube, look, rough * uEnv.y).rgb * 0.8;
+    return textureLod(cube, look, rough * uEnv.y).rgb;
 }
 
 // What a shiny surface reflects of the room: there are no probes, so the environment is the ambient light of the

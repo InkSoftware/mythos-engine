@@ -335,8 +335,8 @@ void ReflectionCube::Create(const int size, const DepthBuffer& depth) {
   GenTextures(1, &tex_);
   BindTexture(kTextureCubeMap, tex_);
   for (int face = 0; face < kCubeFaces; ++face) {
-    TexImage2D(kTextureCubeMapPositiveX + static_cast<GLenum>(face), 0, kRgba8,
-               size, size, 0, kRgba, kUnsignedByte, nullptr);
+    TexImage2D(kTextureCubeMapPositiveX + static_cast<GLenum>(face), 0,
+               gl::kRgba16f, size, size, 0, kRgba, gl::kFloat, nullptr);
   }
   TexParameteri(kTextureCubeMap, kTextureMinFilter, gl::kLinearMipmapLinear);
   TexParameteri(kTextureCubeMap, kTextureMagFilter, kLinear);
@@ -354,16 +354,44 @@ void ReflectionCube::Create(const int size, const DepthBuffer& depth) {
     Reset();
     return;
   }
+  // The filtered map: every mip level allocated, drawn into by
+  // BindFilteredFace.
+  GenTextures(1, &filtered_);
+  BindTexture(kTextureCubeMap, filtered_);
+  const int levels = Levels();
+  for (int level = 0; level < levels; ++level) {
+    const int side = std::max(1, size >> level);
+    for (int face = 0; face < kCubeFaces; ++face) {
+      TexImage2D(kTextureCubeMapPositiveX + static_cast<GLenum>(face), level,
+                 gl::kRgba16f, side, side, 0, kRgba, gl::kFloat, nullptr);
+    }
+  }
+  TexParameteri(kTextureCubeMap, kTextureMinFilter, gl::kLinearMipmapLinear);
+  TexParameteri(kTextureCubeMap, kTextureMagFilter, kLinear);
+  TexParameteri(kTextureCubeMap, kTextureWrapS, kClampToEdge);
+  TexParameteri(kTextureCubeMap, kTextureWrapT, kClampToEdge);
+  GenFramebuffers(1, &filter_fbo_);
   BindFramebuffer(kFramebuffer, 0);
 }
 
 void ReflectionCube::Reset() {
   if (gl::Loaded()) {
     if (fbo_) DeleteFramebuffers(1, &fbo_);
+    if (filter_fbo_) DeleteFramebuffers(1, &filter_fbo_);
     if (tex_) DeleteTextures(1, &tex_);
+    if (filtered_) DeleteTextures(1, &filtered_);
   }
-  tex_ = fbo_ = 0;
+  tex_ = fbo_ = filtered_ = filter_fbo_ = 0;
   size_ = 0;
+}
+
+void ReflectionCube::BindFilteredFace(const int face, const int level) const {
+  BindFramebuffer(kFramebuffer, filter_fbo_);
+  FramebufferTexture2D(kFramebuffer, kColorAttachment0,
+                       kTextureCubeMapPositiveX + static_cast<GLenum>(face),
+                       filtered_, level);
+  const int side = std::max(1, size_ >> level);
+  Viewport(0, 0, side, side);
 }
 
 void ReflectionCube::BindFace(const int face) const {

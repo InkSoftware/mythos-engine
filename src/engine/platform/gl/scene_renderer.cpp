@@ -258,6 +258,8 @@ bool SceneRenderer::BuildPrograms() {
         quad_attribs);
   build(ssao_program_, shaders::kFullscreenQuadVert, shaders::kSsaoFrag,
         quad_attribs);
+  build(probe_filter_program_, shaders::kFullscreenQuadVert,
+        shaders::kProbeFilterFrag, quad_attribs);
   if (world_program_.Valid()) LookUpWorldUniforms();
   return all;
 }
@@ -745,7 +747,35 @@ bool SceneRenderer::CaptureReflectionProbe(const CameraState& cam,
   }
   capturing_probe_ = false;
   probe.cube.BuildMips();
+  FilterReflectionProbe(probe);
   return true;
+}
+
+// Fills the probe's filtered cube: mip level l holds the capture blurred by the
+// GGX lobe of roughness l / (levels - 1) (level 0 is the capture itself).
+void SceneRenderer::FilterReflectionProbe(const ReflectionProbe& probe) {
+  if (!probe_filter_program_.Valid()) {
+    // No filter program: the capture's own box-filtered mips stand in.
+    return;
+  }
+  const int levels = probe.cube.Levels();
+  probe_filter_program_.Use();
+  probe_filter_program_.Set("uSrc", 0);
+  probe_filter_program_.Set("uSrcSize", static_cast<float>(probe.cube.Size()));
+  ActiveTexture(kTexture0);
+  BindTexture(gl::kTextureCubeMap, probe.cube.CaptureTexture());
+  Disable(kDepthTest);
+  Disable(kBlend);
+  for (int level = 0; level < levels; ++level) {
+    probe_filter_program_.Set(
+        "uRough", static_cast<float>(level) / static_cast<float>(levels - 1));
+    for (int face = 0; face < 6; ++face) {
+      probe_filter_program_.Set("uFace", face);
+      probe.cube.BindFilteredFace(face, level);
+      DrawQuad();
+    }
+  }
+  Enable(kDepthTest);
 }
 
 // Chooses the two probes nearest the viewer (the second blends in as the
@@ -1017,6 +1047,7 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   UniformMatrix4fv(u.proj, 1, kFalse, f.proj);
   Uniform3f(u.cam, f.eye[0], f.eye[1], f.eye[2]);
   Uniform3f(u.view_pos, f.view_eye[0], f.view_eye[1], f.view_eye[2]);
+  world_program_.Set("uHdr", capturing_probe_ ? 1 : 0);
   Uniform3f(u.flash_dir, f.flash[0], f.flash[1], f.flash[2]);
   Uniform1f(u.flash_on, cam.flash_on ? 1.0f : 0.0f);
   Uniform1f(u.lighter, cam.lighter ? 1.0f : 0.0f);
