@@ -160,9 +160,9 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   yet compared against a real character. `gfx/gltf.h` loads a skinned
   glb (skeleton, skinned batches, every clip; CC0 stand-in
   `assets/characters/prototype_pete.glb`, KayKit, 30 clips). `gfx/anim_state.h` is the animation state machine
-  (states, parameters, conditional and when-finished transitions with crossfades). Not done:
-  `mythos_models.py` keeping skins, external-buffer
-  `.gltf`, sparse accessors and morph targets.
+  (states, parameters, conditional and when-finished transitions with crossfades). `tools/mythos_models.py` keeps a rigged model with `Spec(skinned=True)` (one `.glb` in
+  `assets/characters/`, tested by `tools/test_mythos_models.py`). Not done: external-buffer `.gltf` in the loader, sparse
+  accessors, morph targets and textures on skinned models (the loader reads material colours).
 - **Why:** models are static OBJ, so no animated NPCs, creatures or doors.
 - **Where:** `gfx/skeleton.h` (bones, skin weights, clips, sampler, blend,
   crossfade, all CPU and tested), a glTF 2.0 loader for skins and clips

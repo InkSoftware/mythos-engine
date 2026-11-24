@@ -52,7 +52,8 @@ in `CMakeLists.txt` with a `GIT_REPOSITORY` and tag, as the engine's README show
    prefabs. A release of the editor has the engine's assets beside it; a build from source does not, so name them:
    `MYTHOS_ENGINE_ASSET_DIR=<engine>/assets ../build/MythosEditor --project .` (on macOS the binary is
    `MythosEditor.app/Contents/MacOS/MythosEditor`).
-3. Put your own models (OBJ) in `assets/models/`, textures (PNG, BMP) in `assets/` named after the texture
+3. Put your own models (OBJ) in `assets/models/` (a rigged, animated one is a `.glb`: the engine's `tools/mythos_models.py`
+   keeps it with `Spec(skinned=True)`, and `LoadGlb` reads it as `Game::Load` does for the guide), textures (PNG, BMP) in `assets/` named after the texture
    they replace; a file of the same name wins over the engine's.
 4. Replace the `message` and `set_flag` actions in `Game::RunEvents` with your own, and the guide's tree in `Game::Restart`.
 5. Add settings (`GameSettings`, `DrawSettingsPage`), sound (`LoadSoundBank`, `AudioEngine`) and menus from the engine
