@@ -22,6 +22,8 @@ uniform float uMist;      // ground mist, 0 off .. 1 thick
 uniform float uMistHeight;
 uniform int uOutdoor;
 uniform vec3 uMoonDir;
+uniform vec3 uSunColor;    // direct light outdoors (the moon's, unless a time of day is set)
+uniform vec3 uSkyAmbient;  // ambient light outdoors
 uniform vec3 uAmbientBase;
 uniform vec3 uAmbientNear;
 uniform float uLightning;  // a flash of lightning, 0..1
@@ -209,10 +211,10 @@ void main() {
         if (uOutdoor == 1) {
             // Cold moonlight plus a faint blue sky ambient.
             float ndl = abs(dot(n, uMoonDir));
-            vec3 moon = vec3(0.30, 0.38, 0.58) * 0.55;
+            vec3 moon = uSunColor;
             light = moon * ndl;
             spec += moon * specular(n, toCam, uMoonDir);
-            ambient = vec3(0.040, 0.052, 0.085);
+            ambient = uSkyAmbient;
         } else {
             // A dark interior: dim ambient, slightly stronger near the player (both per era).
             ambient = uAmbientBase + uAmbientNear * clamp(1.0 - dist / 3.5, 0.0, 1.0);

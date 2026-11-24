@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include "engine/audio/audio_math.h"
@@ -88,9 +89,17 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
+  // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
+  // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
-  for (int i = 1; i + 1 < argc; ++i) {
-    if (std::string(argv[i]) == "--screenshot") screenshot = argv[i + 1];
+  bool outdoor = false;
+  double hour = 20.0;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--outdoor") outdoor = true;
+    if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
+    if (i + 1 < argc && arg == "--hour")
+      hour = std::strtod(argv[i + 1], nullptr);
   }
 
   mythos::Translation en, el;
@@ -124,7 +133,8 @@ int main(const int argc, char** const argv) {
     std::fprintf(stderr, "the renderer could not start\n");
     return 1;
   }
-  renderer.UploadWorld(mythos::BuildSceneGeometry(game.level(), game.models()));
+  renderer.UploadWorld(
+      mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
   renderer.UploadDoorPanel(mythos::BuildDoorPanel());
   const int guide_model = renderer.UploadModel(guide.batches);
 
@@ -211,6 +221,9 @@ int main(const int argc, char** const argv) {
     cam.yaw = game.player().angle;
     cam.pitch = game.player().pitch;
     cam.time = clock.Seconds();
+    cam.outdoor = outdoor;
+    if (outdoor)
+      cam.time_of_day = std::fmod(hour + clock.Seconds() / 10.0, 24.0);
     for (const mythos::Vec3& p : game.LampPositions()) {
       mythos::PointLight lamp;
       lamp.x = p.x;

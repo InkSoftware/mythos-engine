@@ -20,6 +20,7 @@ cmake -S .. -B ../build && cmake --build ../build --parallel
 ../build/template-game/template_game          # on macOS: template_game.app/Contents/MacOS/template_game
 ctest --test-dir ../build                     # the engine's tests and this game's
 ../build/template-game/template_game --screenshot shot.ppm   # renders 90 frames, saves one, exits
+../build/template-game/template_game --outdoor --hour 18   # no roof, and a day that runs (10 seconds an hour)
 ```
 
 Standalone, from this folder: `cmake -S . -B build` (it takes the engine from the folder above;
@@ -31,7 +32,7 @@ in `CMakeLists.txt` with a `GIT_REPOSITORY` and tag, as the engine's README show
 | File | What it shows |
 | --- | --- |
 | `src/game.h`, `src/game.cpp` | The rules, with no SDL or GL (so they are tested headless): a `Level` from `assets/levels/hall.txt` and the tile legend `assets/data/tiles.json`, the `Player` and `PlayerWalker`, `RoomDoors` and using a door, the trigger and rule runtime (`EventGraphRuntime`) with the game's own action types (`set_flag`, `message`), a behaviour tree (`ai::`) with `CanSee` and A* patrol (`FindPath`) driving an `AnimStateMachine` (idle, walk, and a wave that plays once when she first sees you), and saving (`SaveSlots`, `PlayerToJson`, `ProgressToJson`); it raises sound cues (`TakeSounds`: footsteps, doors) that the front end plays. |
-| `src/main.cpp` | The front end: window, textures (`AddCommonMaterials`, model textures), `SceneRenderer`, input (`PollInput`, then `ActionTracker` and `ApplyActions` so keys are rebindable: F3 rebinds Use and saves `bindings.json`), the camera and lamps each frame, door panels, the skinned model instance (`ModelInstance::skin`) and a little text on the overlay, and sound: cues played, and a hum in the back room as a positional source (`PositionalGain`) muffled by the walls and the closed door between it and you (`CountSoundBlockers`, `ComputeOcclusion`, `SetSourceMuffle`): open the door and it clears. |
+| `src/main.cpp` | The front end: window, textures (`AddCommonMaterials`, model textures), `SceneRenderer`, input (`PollInput`, then `ActionTracker` and `ApplyActions` so keys are rebindable: F3 rebinds Use and saves `bindings.json`), the camera and lamps each frame, door panels, the skinned model instance (`ModelInstance::skin`) and a little text on the overlay, a day cycle (`--outdoor`: `CameraState::outdoor` and `time_of_day`), and sound: cues played, and a hum in the back room as a positional source (`PositionalGain`) muffled by the walls and the closed door between it and you (`CountSoundBlockers`, `ComputeOcclusion`, `SetSourceMuffle`): open the door and it clears. |
 | `assets/` | `levels/hall.txt` (`[map]`, `[furniture]`, `[triggers]`, `[rules]`), `data/tiles.json`, `data/en.json` and `el.json` (strings, looked up with `Tr`). The engine's own assets (models, textures, the character) are laid under it. |
 | `tests/game_test.cpp` | Headless tests of the rules: loading, walls, a door and its trigger, the patrol, saving. |
 

@@ -11,6 +11,7 @@
 #include "engine/gfx/particles.h"
 #include "engine/gfx/render_stats.h"
 #include "engine/gfx/skeleton.h"
+#include "engine/gfx/sky.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -147,6 +148,11 @@ struct CameraState {
   // Seconds on the tape counter, shown by the tape look. `torch_tint` (0..1)
   // warms the hand light toward a flame color.
   double tape_time = 0;
+
+  // Time of day in hours (0..24) for an `outdoor` scene: the sun, the sky's
+  // colours, the light and the haze follow it (see gfx/sky.h). Negative (the
+  // default) is the engine's fixed night, exactly as before.
+  double time_of_day = -1;
   double torch_tint = 0;
 
   // The hand light (torch or lighter). `hand_yaw` and `hand_pitch` offset its
@@ -289,6 +295,7 @@ class SceneRenderer {
   // offset) and which instance views the pass draws.
   struct Frame {
     float eye[3], dir[3], flash[3], moon[3], fog[3];
+    SkyLook sky;
     float fog_density, fov_y, aspect, grain;
     int materials;
     ColorGrade grade;
@@ -492,9 +499,10 @@ class SceneRenderer {
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
-              fog_color = -1, fog_density = -1, time = -1, ambient_base = -1,
-              ambient_near = -1, lightning = -1, zone_count = -1, zone_xz = -1,
-              zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
+              sun_color = -1, sky_ambient = -1, fog_color = -1,
+              fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
+              lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
+              light_count = -1, light_pos = -1, light_color = -1,
               light_radius = -1, light_halo = -1, shadow_count = -1,
               shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
               hand_origin = -1, hand_faces = -1, res = -1, grain = -1,

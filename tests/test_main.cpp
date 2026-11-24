@@ -55,6 +55,7 @@
 #include "engine/gfx/pbr.h"
 #include "engine/gfx/render_stats.h"
 #include "engine/gfx/skeleton.h"
+#include "engine/gfx/sky.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -4528,6 +4529,38 @@ TEST(sound_path_counts_walls_and_closed_doors) {
   // Across the middle wall into the far room: still one wall.
   b = mythos::CountSoundBlockers(l, {1.5, 1.5}, {7.5, 1.5});
   CHECK_EQ(b.walls, 1);
+}
+
+TEST(sky_follows_the_day_and_matches_the_old_night) {
+  const mythos::SkyLook night = mythos::NightLook();
+  const mythos::SkyLook midnight = mythos::SkyAt(0);
+  CHECK(midnight.light_color == night.light_color);
+  CHECK(midnight.ambient == night.ambient && midnight.zenith == night.zenith);
+  CHECK(midnight.sun == 0 && midnight.stars == 1);
+  const mythos::SkyLook noon = mythos::SkyAt(12);
+  CHECK(noon.sun == 1 && noon.stars == 0);
+  CHECK(noon.light_dir[1] > 0.9f);
+  CHECK(noon.light_color[0] > 2.0f && noon.zenith[2] > 0.5f);
+  // Morning and evening are warm: more red than blue in the light.
+  const mythos::SkyLook dawn = mythos::SkyAt(6.5);
+  CHECK(dawn.light_color[0] > dawn.light_color[2] * 2.0f);
+  CHECK(mythos::SkyAt(7).light_dir[1] < noon.light_dir[1]);
+  // The sun is in the east in the morning and the west in the evening.
+  CHECK(mythos::SkyAt(8).light_dir[0] > 0 &&
+        mythos::SkyAt(16).light_dir[0] < 0);
+  // Wraps, and every direction is a unit vector.
+  CHECK(mythos::SkyAt(25).light_color == mythos::SkyAt(1).light_color);
+  CHECK(mythos::SkyAt(-1).light_color == mythos::SkyAt(23).light_color);
+  for (double h = 0; h < 24; h += 0.25) {
+    const auto d = mythos::SkyAt(h).light_dir;
+    CHECK(std::fabs(d[0] * d[0] + d[1] * d[1] + d[2] * d[2] - 1.0f) < 1e-3f);
+  }
+  // Continuous: no frame-to-frame jump in light across the whole day.
+  for (double h = 0; h < 24; h += 0.01) {
+    const auto a = mythos::SkyAt(h).light_color;
+    const auto b = mythos::SkyAt(h + 0.01).light_color;
+    for (size_t i = 0; i < 3; ++i) CHECK(std::fabs(a[i] - b[i]) < 0.05f);
+  }
 }
 
 }

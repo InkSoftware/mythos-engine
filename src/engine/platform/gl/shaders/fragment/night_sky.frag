@@ -8,6 +8,12 @@ uniform float uTime;
 uniform vec3 uMoonDir;
 uniform float uLightning;
 uniform vec3 uFogColor;
+uniform vec3 uZenith;     // sky colours; the night's unless a time of day is set
+uniform vec3 uHorizon;
+uniform vec3 uSunLight;
+uniform float uStars;     // 1 night .. 0 day
+uniform float uSun;       // 0 the moon is the disc, 1 the sun
+uniform float uCloudLight;
 out vec4 outColor;
 
 vec3 finishPixel(vec3 linearCol, float t);
@@ -37,21 +43,21 @@ void main() {
     float up = clamp(dir.y, -0.05, 1.0);
 
     // Gradient: a deep blue horizon fading into near-black overhead.
-    vec3 col = mix(vec3(0.030, 0.045, 0.085), vec3(0.004, 0.006, 0.016), smoothstep(0.0, 0.6, up));
+    vec3 col = mix(uHorizon, uZenith, smoothstep(0.0, 0.6, up));
 
     // Stars: tiny cells, a few of them lit, twinkling slowly.
     vec2 cell = dir.xz / (dir.y + 0.25) * 90.0;
     float star = step(0.9965, hash2(floor(cell)));
     float tw = 0.6 + 0.4 * sin(uTime * (1.5 + 3.0 * hash2(floor(cell) + 7.0)) + hash2(floor(cell) + 3.0) * 6.28);
-    float starVis = star * tw * smoothstep(0.02, 0.15, dir.y);
+    float starVis = star * tw * smoothstep(0.02, 0.15, dir.y) * uStars;
 
     // The moon: a bright disc with craters, a shaded limb and a wide halo.
     float md = dot(dir, uMoonDir);
     float disc = smoothstep(0.9982, 0.9987, md);
     float crater = 0.80 + 0.20 * fbm(dir.xz * 160.0 + 31.0);
     float limb = 0.70 + 0.30 * smoothstep(0.9982, 0.9995, md);
-    vec3 moonCol = vec3(0.95, 0.93, 0.85) * 2.2 * crater * limb;
-    float halo = pow(clamp(md, 0.0, 1.0), 300.0) * 0.6 + pow(clamp(md, 0.0, 1.0), 30.0) * 0.10;
+    vec3 moonCol = mix(vec3(0.95, 0.93, 0.85) * 2.2 * crater * limb, uSunLight * 3.0, uSun);
+    float halo = (pow(clamp(md, 0.0, 1.0), 300.0) * 0.6 + pow(clamp(md, 0.0, 1.0), 30.0) * 0.10) * (1.0 + uSun * 3.0);
 
     // Clouds: slow fbm sheets, faintly lit from the moon's side of the sky.
     float cloud = 0.0;
@@ -61,10 +67,10 @@ void main() {
         cloud = smoothstep(0.52, 0.78, f) * smoothstep(0.01, 0.12, dir.y);
     }
     float moonGlow = clamp(md * 0.5 + 0.5, 0.0, 1.0);
-    vec3 cloudCol = mix(vec3(0.020, 0.026, 0.042), vec3(0.075, 0.085, 0.110), moonGlow);
+    vec3 cloudCol = mix(vec3(0.020, 0.026, 0.042), vec3(0.075, 0.085, 0.110), moonGlow) * uCloudLight;
 
     col += vec3(0.75, 0.78, 0.85) * starVis * (1.0 - cloud);
-    col += vec3(0.55, 0.60, 0.72) * halo * (1.0 - cloud * 0.7);
+    col += mix(vec3(0.55, 0.60, 0.72), uSunLight * 0.5, uSun) * halo * (1.0 - cloud * 0.7);
     col = mix(col, moonCol, disc * (1.0 - cloud * 0.85));
     col = mix(col, cloudCol, cloud);
 

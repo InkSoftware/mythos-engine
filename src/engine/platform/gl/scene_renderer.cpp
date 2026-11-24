@@ -122,9 +122,6 @@ constexpr int kMirrorScaleNum = 3, kMirrorScaleDen = 4;
 // Largest smear, as a fraction of the screen, at motion blur strength 1.
 constexpr double kMotionBlurCap = 0.08;
 
-// Direction toward the moon (unit vector) used for outdoor light and sky.
-constexpr float kMoonDir[3] = {0.148f, 0.417f, -0.897f};
-
 // Strength of normal maps made from texture brightness.
 constexpr float kNormalStrength = 2.5f;
 // Chunk edge in world units for culling.
@@ -288,6 +285,8 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.torch_warm = world_program_.Uniform("uTorchWarm");
   u.outdoor = world_program_.Uniform("uOutdoor");
   u.moon_dir = world_program_.Uniform("uMoonDir");
+  u.sun_color = world_program_.Uniform("uSunColor");
+  u.sky_ambient = world_program_.Uniform("uSkyAmbient");
   u.fog_color = world_program_.Uniform("uFogColor");
   u.fog_density = world_program_.Uniform("uFogDensity");
   u.time = world_program_.Uniform("uTime");
@@ -662,6 +661,15 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
   sky_program_.Set("uLightning", static_cast<float>(cam.lightning));
   sky_program_.Set("uMoonDir", f.moon[0], f.moon[1], f.moon[2]);
   sky_program_.Set("uFogColor", f.fog[0], f.fog[1], f.fog[2]);
+  sky_program_.Set("uZenith", f.sky.zenith[0], f.sky.zenith[1],
+                   f.sky.zenith[2]);
+  sky_program_.Set("uHorizon", f.sky.horizon[0], f.sky.horizon[1],
+                   f.sky.horizon[2]);
+  sky_program_.Set("uSunLight", f.sky.light_color[0], f.sky.light_color[1],
+                   f.sky.light_color[2]);
+  sky_program_.Set("uStars", f.sky.stars);
+  sky_program_.Set("uSun", f.sky.sun);
+  sky_program_.Set("uCloudLight", f.sky.cloud_light);
   sky_program_.Set("uRes", static_cast<float>(target_.Width()),
                    static_cast<float>(target_.Height()));
   sky_program_.Set("uGrain", f.grain);
@@ -722,6 +730,10 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
             static_cast<float>(std::clamp(cam.torch_tint, 0.0, 1.0)));
   Uniform1i(u.outdoor, cam.outdoor ? 1 : 0);
   Uniform3f(u.moon_dir, f.moon[0], f.moon[1], f.moon[2]);
+  Uniform3f(u.sun_color, f.sky.light_color[0], f.sky.light_color[1],
+            f.sky.light_color[2]);
+  Uniform3f(u.sky_ambient, f.sky.ambient[0], f.sky.ambient[1],
+            f.sky.ambient[2]);
   Uniform3f(u.fog_color, f.fog[0], f.fog[1], f.fog[2]);
   Uniform1f(u.fog_density, f.fog_density);
   Uniform1f(u.time, static_cast<float>(cam.time));
@@ -1274,11 +1286,14 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
     f.flash[2] =
         static_cast<float>(std::sin(flash_yaw) * std::cos(flash_pitch));
   }
-  std::ranges::copy(kMoonDir, f.moon);
+  f.sky = cam.outdoor && cam.time_of_day >= 0 && std::isfinite(cam.time_of_day)
+              ? SkyAt(cam.time_of_day)
+              : NightLook();
+  std::ranges::copy(f.sky.light_dir, f.moon);
 
-  f.fog[0] = cam.outdoor ? 0.012f : 0.006f;
-  f.fog[1] = cam.outdoor ? 0.018f : 0.005f;
-  f.fog[2] = cam.outdoor ? 0.034f : 0.005f;
+  f.fog[0] = cam.outdoor ? f.sky.fog[0] : 0.006f;
+  f.fog[1] = cam.outdoor ? f.sky.fog[1] : 0.005f;
+  f.fog[2] = cam.outdoor ? f.sky.fog[2] : 0.005f;
   f.fog_density = cam.outdoor ? kOutdoorFogDensity : kRoomFogDensity;
   f.fov_y = kFovY * static_cast<float>(std::isfinite(cam.fov_scale)
                                            ? Clampd(cam.fov_scale, 0.5, 1.5)
