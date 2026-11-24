@@ -205,8 +205,9 @@ more than was built.
   `MixerGroups` (volume and ducking); `world/sound_path.h` counts walls and closed doors between a source and the
   listener; `AudioEngine::SetSourceMuffle` low-passes a positional source (the template's hum in the back room is
   muffled by its walls and closed door); `audio/reverb.h` is the reverb and `AudioEngine::SetReverb` applies it, the
-  template sets it from the size of the room the player is in (`RoomDoors::RegionSize`). The mixer uses `MixerGroups` (`SetGroupVolume`, `AddGroupDuck`, a group per sound). Not done: a layered music
-  crossfade; the reverb is one room-wide send on the whole mix (no per-sound send).
+  template sets it from the size of the room the player is in (`RoomDoors::RegionSize`). The mixer uses `MixerGroups` (`SetGroupVolume`, `AddGroupDuck`, a group per sound). Layered music (`audio/music.h`: `LayerFader`, `AudioEngine::StartMusic` / `SetMusicLayer` /
+  `CrossfadeMusic` / `StopMusic`). Not done: the reverb is one room-wide send on the whole mix (no per-sound send), and
+  no tempo or beat-synchronised transitions.
 - **Where:** `audio/audio_math.h` gets cell-based occlusion (walls between
   source and listener, doors open or closed, a low-pass amount) and reverb
   zones from room size (`RoomDoors` regions). Mixer groups with volume and
@@ -320,7 +321,7 @@ Gaps named in the Progress lines, by area:
   the ambient term inside the world shader.
 - **Animation and AI:** glTF with external buffers, sparse accessors, morph targets and textures on skinned models;
   noise events, memory of last-seen positions and path smoothing for the AI.
-- **Audio:** a layered music crossfade and a per-sound reverb send.
+- **Audio:** a per-sound reverb send and beat-synchronised music transitions.
 - **Editor:** a cutscene timeline panel, picking the prefab area or cell and a camera key with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
 - **Tools and data:** a bake command in `tools/` for light probes, bindings saved in `settings.txt`, door and `Level`

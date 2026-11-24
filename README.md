@@ -23,7 +23,7 @@ listen to and pick up, menus, and a bit of procedural art.
   perception (`world/ai.h`), A* (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned
   save files with slots (`data/save.h`, `world/save_state.h`) and rebindable input actions (`ui/input_map.h`, `ProbeBinding` / `ApplyActions` in `platform/input.h`) with a controls page to rebind them (`ui/controls_ui.h`).
 - **Everything around a game**: a settings system (pages, drawing, saving, applying), localisation with built-in
-  English and Greek strings, JSON loaders for sounds, translations, achievements and credits, positional audio with occlusion (`audio/spatial.h`), packed
+  English and Greek strings, JSON loaders for sounds, translations, achievements and credits, positional audio with occlusion and room reverb (`audio/spatial.h`, `audio/reverb.h`), layered music (`audio/music.h`), packed
   assets, and procedural textures.
 
 | Target | Needs | Holds |

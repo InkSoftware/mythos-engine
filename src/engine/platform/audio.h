@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/audio/music.h"
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/reverb.h"
 #include "engine/audio/spatial.h"
@@ -80,6 +81,16 @@ class AudioEngine {
   // Length of a loaded clip in seconds, or 0 if unknown.
   [[nodiscard]] double ClipSeconds(const std::string& name) const;
 
+  // Layered music (audio/music.h): `StartMusic` starts the layers (loops of the
+  // same length) together and silent, so they stay in step; `SetMusicLayer`
+  // fades one in or out, `CrossfadeMusic` moves to another set of layers,
+  // `StopMusic` fades everything out and ends it. Music is in the "music"
+  // group and follows the ambience volume. Starting music again replaces it.
+  void StartMusic(const std::vector<std::string>& layers);
+  void SetMusicLayer(const std::string& layer, float gain, float seconds);
+  void CrossfadeMusic(const std::vector<std::string>& layers, float seconds);
+  void StopMusic(float seconds = 1.0f);
+
   // Mixer groups (audio/spatial.h `MixerGroups`). Every sound belongs to one:
   // one-shots to "effects", loops and positional sources to "ambience", spoken
   // lines to "voice" (`Play` and `AddSource` take another name, "music" say).
@@ -113,6 +124,8 @@ class AudioEngine {
     float gain = 1.0f;
     bool loop = false;
     bool voice = false;
+    bool music = false;  // a layer of the music (see StartMusic)
+    std::string layer;   // its name, for the fader
     std::string group = "effects";
     float fade = 1.0f;
     float fade_rate = 0.0f;
@@ -158,6 +171,8 @@ class AudioEngine {
   [[nodiscard]] const Clip* FindClip(const std::string& name) const;
 
   MixerGroups groups_;
+  LayerFader music_;
+  bool music_stopping_ = false;
   Reverb reverb_;
   SDL_AudioStream* stream_ = nullptr;
   int rate_ = 44100;

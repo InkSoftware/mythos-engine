@@ -229,6 +229,55 @@ void AudioEngine::SetSource(const int id, const float left, const float right) {
   SDL_UnlockAudioStream(stream_);
 }
 
+void AudioEngine::StartMusic(const std::vector<std::string>& layers) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  for (auto& v : voices_) {
+    if (v.music) {
+      v.fade_rate = -PerSample(kAmbienceCrossfadeSeconds, rate_);
+    }
+  }
+  music_.Clear();
+  music_stopping_ = false;
+  for (const std::string& name : layers) {
+    const Clip* clip = FindClip(name);
+    if (clip == nullptr || voices_.size() >= kMaxVoices) continue;
+    Voice v;
+    v.clip = clip;
+    v.loop = true;
+    v.music = true;
+    v.layer = name;
+    v.group = "music";
+    voices_.push_back(v);
+    music_.Fade(name, 0.0, 0.0);
+  }
+  SDL_UnlockAudioStream(stream_);
+}
+
+void AudioEngine::SetMusicLayer(const std::string& layer, const float gain,
+                                const float seconds) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  music_.Fade(layer, static_cast<double>(gain), static_cast<double>(seconds));
+  SDL_UnlockAudioStream(stream_);
+}
+
+void AudioEngine::CrossfadeMusic(const std::vector<std::string>& layers,
+                                 const float seconds) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  music_.Crossfade(layers, static_cast<double>(seconds));
+  SDL_UnlockAudioStream(stream_);
+}
+
+void AudioEngine::StopMusic(const float seconds) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  music_.Crossfade({}, static_cast<double>(seconds));
+  music_stopping_ = true;
+  SDL_UnlockAudioStream(stream_);
+}
+
 void AudioEngine::SetGroupVolume(const std::string& group, const float volume) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);
@@ -276,7 +325,7 @@ void AudioEngine::PlayLoop(const std::string& name, const float gain) {
   const float fade_per_sample = PerSample(kAmbienceCrossfadeSeconds, rate_);
   SDL_LockAudioStream(stream_);
   for (auto& v : voices_) {
-    if (v.loop) v.fade_rate = -fade_per_sample;
+    if (v.loop && !v.music) v.fade_rate = -fade_per_sample;
   }
   const Clip* clip = FindClip(name);
   if (clip && voices_.size() < kMaxVoices) {
@@ -319,6 +368,14 @@ void AudioEngine::Mix(float* const out, const int frames) {
   }
   for (const auto& s : sources_) groups_.SetActive(s.group, true);
   groups_.Update(static_cast<double>(frames) / static_cast<double>(rate_));
+  music_.Update(static_cast<double>(frames) / static_cast<double>(rate_));
+  // Music that was stopped and has faded out is retired.
+  if (music_stopping_ && music_.Silent()) {
+    for (auto& v : voices_) {
+      if (v.music) v.fade_rate = -1.0f;
+    }
+    music_stopping_ = false;
+  }
   MixVoices(out, frames, duck_start, duck_level_);
   MixSources(out, frames);
   RemoveFinishedVoices();
@@ -356,7 +413,9 @@ void AudioEngine::MixVoices(float* const out, const int frames,
       continue;
     }
     const auto& samples = v.clip->samples;
-    const auto group_gain = static_cast<float>(groups_.Gain(v.group));
+    const auto group_gain =
+        static_cast<float>(groups_.Gain(v.group)) *
+        (v.music ? static_cast<float>(music_.Gain(v.layer)) : 1.0f);
     for (int i = 0; i < frames; ++i) {
       if (v.pos >= static_cast<double>(samples.size())) {
         if (!v.loop) break;

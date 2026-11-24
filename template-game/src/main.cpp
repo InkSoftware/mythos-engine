@@ -217,8 +217,12 @@ int main(const int argc, char** const argv) {
   if (audio.Init()) {
     audio.LoadDir(EngineAssets() + "/sounds",
                   {"step_wood1", "step_wood2", "step_wood3", "door_open",
-                   "door_close", "wind"});
+                   "door_close", "wind", "tick"});
     hum = audio.AddSource("wind");  // the "ambience" group
+    // Layered music: two loops that start together, a layer fading in when
+    // the player reaches the back room (stand-ins for real music stems).
+    audio.StartMusic({"tick"});
+    audio.SetMusicLayer("tick", 0.0f, 0.0f);
     // Door and step sounds ("effects") dip the ambience a little.
     audio.AddGroupDuck("ambience", "effects", 0.6f, 0.05f, 0.8f);
   }
@@ -281,7 +285,7 @@ int main(const int argc, char** const argv) {
   }
   mythos::FrameClock clock;
   mythos::Surface overlay(640, 360, 0);
-  bool f5_was = false, f9_was = false;
+  bool f5_was = false, f9_was = false, was_in_back_room = false;
 
   for (int frame = 0;; ++frame) {
     mythos::MoveInput move;
@@ -486,6 +490,12 @@ int main(const int argc, char** const argv) {
     }
 
     for (const std::string& cue : game.TakeSounds()) audio.Play(cue);
+    // The back room brings the music layer in, leaving takes it out.
+    if (const bool in_back_room = game.player().pos.x > 9.0;
+        in_back_room != was_in_back_room) {
+      was_in_back_room = in_back_room;
+      audio.SetMusicLayer("tick", in_back_room ? 0.35f : 0.0f, 1.5f);
+    }
     // The room's reverb: the bigger the room the player stands in (the cells
     // reachable without a door), the longer the tail.
     const mythos::ReverbSend room =

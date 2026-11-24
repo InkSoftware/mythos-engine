@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "engine/audio/audio_math.h"
+#include "engine/audio/music.h"
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/reverb.h"
 #include "engine/audio/sound_bank.h"
@@ -5213,6 +5214,39 @@ TEST(settings_menu_opens_the_controls_page_only_when_the_game_has_one) {
   CHECK(index != kSetControls);
   CHECK(!Tr("settings.controls").empty() &&
         Tr("settings.controls") != "settings.controls");
+}
+
+TEST(music_layers_fade_crossfade_and_go_silent) {
+  mythos::LayerFader f;
+  CHECK(f.Silent());
+  CHECK_EQ(f.Gain("drums"), 0.0);
+  f.Fade("pad", 1.0, 2.0);
+  f.Update(1.0);
+  CHECK(std::fabs(f.Gain("pad") - 0.5) < 1e-9);
+  CHECK(f.Wanted("pad") && !f.Silent());
+  f.Update(5.0);
+  CHECK_EQ(f.Gain("pad"), 1.0);  // stops at the target
+  f.Fade("drums", 0.6, 0.0);     // at once
+  CHECK_EQ(f.Gain("drums"), 0.6);
+  // A crossfade to a new set: the named layers up, the others down.
+  f.Crossfade({"pad", "strings"}, 1.0);
+  f.Update(0.5);
+  CHECK(std::fabs(f.Gain("drums") - 0.3) < 1e-9);
+  CHECK(std::fabs(f.Gain("strings") - 0.5) < 1e-9);
+  CHECK_EQ(f.Gain("pad"), 1.0);
+  f.Update(1.0);
+  CHECK_EQ(f.Gain("drums"), 0.0);
+  CHECK(!f.Wanted("drums") && f.Wanted("strings"));
+  // Everything out: silent. Fades never overshoot or go negative.
+  f.Crossfade({}, 0.5);
+  f.Update(10.0);
+  CHECK(f.Silent());
+  CHECK_EQ(f.Gain("pad"), 0.0);
+  f.Fade("pad", 5.0, 1.0);  // out of range is clamped
+  f.Update(10.0);
+  CHECK_EQ(f.Gain("pad"), 1.0);
+  f.Clear();
+  CHECK(f.Silent());
 }
 
 }
