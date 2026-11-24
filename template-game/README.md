@@ -8,7 +8,7 @@ character, a skinned glTF model) patrols the first room, stopping to face you wh
 room fires a level trigger whose rule shows a line of text. F5 saves, F9 loads.
 
 ```
-WASD walk   mouse look   Shift run   E use a door   F5 save   F9 load   Esc quit
+WASD walk   mouse look   Shift run   E use a door   F3 rebind Use   F5 save   F9 load   Esc quit
 ```
 
 ## Build and run
@@ -31,7 +31,7 @@ in `CMakeLists.txt` with a `GIT_REPOSITORY` and tag, as the engine's README show
 | File | What it shows |
 | --- | --- |
 | `src/game.h`, `src/game.cpp` | The rules, with no SDL or GL (so they are tested headless): a `Level` from `assets/levels/hall.txt` and the tile legend `assets/data/tiles.json`, the `Player` and `PlayerWalker`, `RoomDoors` and using a door, the trigger and rule runtime (`EventGraphRuntime`) with the game's own action types (`set_flag`, `message`), a behaviour tree (`ai::`) with `CanSee` and A* patrol (`FindPath`) driving an `AnimStateMachine` (idle, walk, and a wave that plays once when she first sees you), and saving (`SaveSlots`, `PlayerToJson`, `ProgressToJson`). |
-| `src/main.cpp` | The front end: window, textures (`AddCommonMaterials`, model textures), `SceneRenderer`, input (`PollInput`), the camera and lamps each frame, door panels, the skinned model instance (`ModelInstance::skin`) and a little text on the overlay. |
+| `src/main.cpp` | The front end: window, textures (`AddCommonMaterials`, model textures), `SceneRenderer`, input (`PollInput`, then `ActionTracker` and `ApplyActions` so keys are rebindable: F3 rebinds Use and saves `bindings.json`), the camera and lamps each frame, door panels, the skinned model instance (`ModelInstance::skin`) and a little text on the overlay. |
 | `assets/` | `levels/hall.txt` (`[map]`, `[furniture]`, `[triggers]`, `[rules]`), `data/tiles.json`, `data/en.json` and `el.json` (strings, looked up with `Tr`). The engine's own assets (models, textures, the character) are laid under it. |
 | `tests/game_test.cpp` | Headless tests of the rules: loading, walls, a door and its trigger, the patrol, saving. |
 
