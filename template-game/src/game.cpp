@@ -294,6 +294,13 @@ void Game::Act(const mythos::EventAction& action) {
   }
 }
 
+void Game::SkipCutscene() {
+  cutscene_player_.Skip([this](const mythos::EventAction& a) { Act(a); },
+                        [this](const mythos::AnimKey& k) {
+                          if (k.actor == "guide") cutscene_wave_ = true;
+                        });
+}
+
 bool Game::StartCutscene(const std::string& name, std::string* error) {
   const std::string path =
       Join(game_assets_, "cutscenes/" + name + ".cutscene");

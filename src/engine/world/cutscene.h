@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "engine/core/cvar.h"
 #include "engine/core/events.h"
 #include "engine/core/math.h"
 #include "engine/core/tween.h"
@@ -116,6 +117,22 @@ bool SampleCutsceneCamera(const Cutscene& scene, double t, CameraSample* out);
 // A value track at time `t`, or `fallback` when there is none by that name.
 double SampleCutsceneValue(const Cutscene& scene, const std::string& name,
                            double t, double fallback = 0);
+
+// What the console's cutscene commands do, supplied by the game.
+struct CutsceneHooks {
+  // Starts the cutscene called `name`; false (with a reason) when there is no
+  // such one.
+  std::function<bool(const std::string& name, std::string* error)> start;
+  std::function<void()> skip;
+  std::function<void()> stop;
+  // The names of the cutscenes there are.
+  std::function<std::vector<std::string>()> list;
+};
+
+// Registers `cutscene.play <name>`, `cutscene.skip`, `cutscene.stop` and
+// `cutscene.list` on a cvar registry (the debug console), so a cutscene can
+// be run and tested by hand. A missing hook makes its command report that.
+void RegisterCutsceneCommands(CvarRegistry& reg, CutsceneHooks hooks);
 
 using CueCallback = std::function<void(const EventAction&)>;
 using AnimCallback = std::function<void(const AnimKey&)>;

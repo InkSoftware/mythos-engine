@@ -289,7 +289,7 @@ more than was built.
   `Skip`, tested); the template plays `assets/cutscenes/intro.cutscene` (camera glide, a fade, text, the guide's wave).
   The editor has a Cutscene panel (a timeline with a playhead and a camera preview, tables of keys, a key from the
   viewport camera, problems, save). Not done: dragging keys on the timeline, sound and tween-callback tracks beyond cues and
-  values, and a cutscene runner that other systems (the cvar console) can drive.
+  values. The debug console can run cutscenes (`cutscene.play`, `.skip`, `.stop`, `.list`).
 - Timeline of camera, tween, sound, event and animation tracks, built on 1.4,
   2.1 and 3.1. Editor timeline panel.
 

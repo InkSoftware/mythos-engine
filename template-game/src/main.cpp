@@ -11,6 +11,7 @@
 
 #include "engine/audio/audio_math.h"
 #include "engine/audio/spatial.h"
+#include "engine/core/cvar.h"
 #include "engine/core/file_watch.h"
 #include "engine/core/fileio.h"
 #include "engine/core/json.h"
@@ -25,8 +26,10 @@
 #include "engine/platform/input.h"
 #include "engine/platform/window.h"
 #include "engine/ui/controls_ui.h"
+#include "engine/ui/debug_overlay.h"
 #include "engine/ui/input_map.h"
 #include "engine/ui/settings.h"
+#include "engine/ui/settings_cvars.h"
 #include "engine/world/sound_path.h"
 #include "game.h"
 
@@ -99,6 +102,7 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
+  // `--debug` opens the debug console with the frame stats and graph on.
   // `--menu` opens the settings menu at the start.
   // `--controls` opens the menu on the controls page at the start (for a
   // screenshot).
@@ -122,6 +126,7 @@ int main(const int argc, char** const argv) {
   bool instancing = true;
   bool start_controls = false;
   bool start_menu = false;
+  bool start_debug = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -135,6 +140,7 @@ int main(const int argc, char** const argv) {
       crowd = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (arg == "--controls") start_controls = true;
     if (arg == "--menu") start_menu = true;
+    if (arg == "--debug") start_debug = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
       hour = std::strtod(argv[i + 1], nullptr);
@@ -276,6 +282,41 @@ int main(const int argc, char** const argv) {
   theme.row_pitch = 22.0f;
   mythos::ControlsState controls;
   mythos::TextLayer text_layer;
+
+  // The debug console (the ` key or F12): every setting is a variable
+  // (`shadowMaps 3`), `debug.stats` and `debug.graph` show the frame cost, and
+  // `cutscene.play intro` runs a cutscene. `help` lists everything.
+  mythos::CvarRegistry cvars;
+  mythos::RegisterSettingsCvars(cvars, settings);
+  mythos::DebugOverlayOptions debug;
+  mythos::RegisterDebugCvars(cvars, debug);
+  mythos::CutsceneHooks hooks;
+  hooks.start = [&](const std::string& name, std::string* why) {
+    return game.StartCutscene(name, why);
+  };
+  hooks.skip = [&] { game.SkipCutscene(); };
+  hooks.stop = [&] { game.StopCutscene(); };
+  hooks.list = [&] {
+    std::vector<std::string> names;
+    for (const auto& entry :
+         std::filesystem::directory_iterator(GameAssets() + "/cutscenes")) {
+      if (entry.path().extension() == ".cutscene") {
+        names.push_back(entry.path().stem().string());
+      }
+    }
+    std::ranges::sort(names);
+    return names;
+  };
+  mythos::RegisterCutsceneCommands(cvars, hooks);
+  mythos::DebugConsole console(cvars);
+  if (start_debug) {  // the console open, with the frame stats and graph on
+    debug.stats = debug.graph = true;
+    console.Show();
+    console.Log("try: help, list, cutscene.play intro, debug.fly 1");
+  }
+  mythos::FrameHistory frames;
+  mythos::DebugOverlayTheme debug_theme;
+  debug_theme.text = theme.hint.Recolored(0xFFE6DCC8);
   // The settings menu (Esc) and, from its Controls row or F3, the controls
   // page. The game pauses while either is open.
   bool menu_open = start_controls || start_menu, f3_was = false;
@@ -314,6 +355,23 @@ int main(const int argc, char** const argv) {
     const mythos::InputPoll poll =
         mythos::PollInput(move, ui, act, true, nullptr);
     if (poll.quit) break;
+
+    // The console: typing and editing keys while it is open.
+    const mythos::ConsoleInput& typed = poll.console;
+    if (typed.toggle) {
+      console.Toggle();
+      mythos::SetConsoleCapture(window, console.Visible());
+    }
+    if (console.Visible()) {
+      if (!typed.text.empty()) console.Type(typed.text);
+      if (typed.backspace) console.Backspace();
+      if (typed.submit) console.Submit();
+      if (typed.up) console.HistoryUp();
+      if (typed.down) console.HistoryDown();
+      if (typed.complete) console.Complete();
+      if (typed.page_up) console.Scroll(5);
+      if (typed.page_down) console.Scroll(-5);
+    }
 
     // The menu: Esc opens the settings, F3 goes straight to the controls.
     const bool* keys = SDL_GetKeyboardState(nullptr);
@@ -492,6 +550,7 @@ int main(const int argc, char** const argv) {
     mythos::DrawText(overlay, 8, 8, mythos::Tr("template.help"),
                      mythos::Rgba(255, 255, 255));
     text_layer.Clear();
+    frames.Add(dt);
     if (menu_open) {
       mythos::UiCanvas canvas{overlay, text_layer, nullptr};
       if (page == mythos::SettingsPage::kControls) {
@@ -511,6 +570,11 @@ int main(const int argc, char** const argv) {
 
     // Each sound has its own share of the room reverb: footsteps stay dry,
     // a door rings through the room.
+    {
+      mythos::UiCanvas debug_canvas{overlay, text_layer, nullptr};
+      mythos::DrawDebugOverlay(debug_canvas, debug, debug_theme, frames,
+                               renderer.Stats(), &console, clock.Seconds());
+    }
     for (const std::string& cue : game.TakeSounds()) {
       audio.Play(cue, 1.0f, 1.0f, "effects",
                  cue.starts_with("door") ? 1.5f : 0.4f);

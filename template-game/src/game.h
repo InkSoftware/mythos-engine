@@ -50,6 +50,9 @@ class Game {
   // the guide's wave come from the file. Interact skips it (its cues still
   // run, so the flags are set). The player cannot move meanwhile.
   bool StartCutscene(const std::string& name, std::string* error);
+  // Jump to the end (its remaining cues run) or drop it (they do not).
+  void SkipCutscene();
+  void StopCutscene() { cutscene_player_.Stop(); }
   [[nodiscard]] bool CutsceneActive() const {
     return cutscene_player_.Playing();
   }

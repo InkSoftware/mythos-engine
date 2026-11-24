@@ -5671,6 +5671,41 @@ TEST(cutscene_samples_without_playing) {
   CHECK(!mythos::SampleCutsceneCamera(empty, 1.0, &c));
 }
 
+TEST(cutscene_console_commands_run_the_hooks) {
+  mythos::CvarRegistry reg;
+  std::string started;
+  int skips = 0, stops = 0;
+  mythos::CutsceneHooks hooks;
+  hooks.start = [&](const std::string& name, std::string* error) {
+    if (name != "intro") {
+      *error = "no cutscene called " + name;
+      return false;
+    }
+    started = name;
+    return true;
+  };
+  hooks.skip = [&] { ++skips; };
+  hooks.stop = [&] { ++stops; };
+  hooks.list = [] { return std::vector<std::string>{"intro", "outro"}; };
+  mythos::RegisterCutsceneCommands(reg, hooks);
+  CHECK(reg.Has("cutscene.play") && reg.Has("cutscene.skip"));
+  auto r = reg.Execute("cutscene.play intro");
+  CHECK(r.ok && started == "intro");
+  r = reg.Execute("cutscene.play nope");
+  CHECK(!r.ok && r.text.find("nope") != std::string::npos);
+  CHECK(!reg.Execute("cutscene.play").ok);
+  CHECK(reg.Execute("cutscene.skip").ok && skips == 1);
+  CHECK(reg.Execute("cutscene.stop").ok && stops == 1);
+  r = reg.Execute("cutscene.list");
+  CHECK(r.ok && r.text == "intro\noutro");
+  // With no hooks the commands say so instead of crashing.
+  mythos::CvarRegistry bare;
+  mythos::RegisterCutsceneCommands(bare, {});
+  CHECK(!bare.Execute("cutscene.skip").ok);
+  CHECK(!bare.Execute("cutscene.play intro").ok);
+  CHECK(!bare.Execute("cutscene.list").ok);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

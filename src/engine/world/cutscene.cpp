@@ -286,6 +286,51 @@ double SampleCutsceneValue(const Cutscene& scene, const std::string& name,
   return player.Value(name, fallback);
 }
 
+void RegisterCutsceneCommands(CvarRegistry& reg, CutsceneHooks hooks) {
+  const auto missing = [] { return CvarResult{false, "not available here"}; };
+  reg.AddCommand(
+      "cutscene.play",
+      [hooks](const CvarRegistry::Args& args) {
+        if (!hooks.start) return CvarResult{false, "not available here"};
+        if (args.empty())
+          return CvarResult{false, "usage: cutscene.play <name>"};
+        std::string error;
+        if (!hooks.start(args[0], &error)) {
+          return CvarResult{false, error.empty() ? "no such cutscene" : error};
+        }
+        return CvarResult{true, "playing " + args[0]};
+      },
+      "play a cutscene by name");
+  reg.AddCommand(
+      "cutscene.skip",
+      [hooks, missing](const CvarRegistry::Args&) {
+        if (!hooks.skip) return missing();
+        hooks.skip();
+        return CvarResult{true, "skipped"};
+      },
+      "jump to the end of the cutscene, running its remaining cues");
+  reg.AddCommand(
+      "cutscene.stop",
+      [hooks, missing](const CvarRegistry::Args&) {
+        if (!hooks.stop) return missing();
+        hooks.stop();
+        return CvarResult{true, "stopped"};
+      },
+      "stop the cutscene without running its remaining cues");
+  reg.AddCommand(
+      "cutscene.list",
+      [hooks, missing](const CvarRegistry::Args&) {
+        if (!hooks.list) return missing();
+        std::string text;
+        for (const std::string& name : hooks.list()) {
+          if (!text.empty()) text += "\n";
+          text += name;
+        }
+        return CvarResult{true, text.empty() ? "(none)" : text};
+      },
+      "list the cutscenes");
+}
+
 void CutscenePlayer::Start(const Cutscene* const scene) {
   scene_ = scene;
   time_ = 0;
