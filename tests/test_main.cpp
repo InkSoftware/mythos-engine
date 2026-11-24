@@ -5342,6 +5342,37 @@ TEST(nav_flock_steer_separates_aligns_and_gathers) {
   CHECK_EQ(mythos::FlockSteer(pair, 5).x, 0.0);
 }
 
+TEST(model_bounding_box_replaces_batches_with_boxes) {
+  mythos::Model m;
+  m.name = "thing";
+  mythos::Batch solid;
+  solid.texture = "wood";
+  for (int i = 0; i < 3; ++i) {
+    solid.verts.push_back(
+        {0.0f + static_cast<float>(i), 0.0f, 0.0f, 0, 1, 0, 0, 0});
+  }
+  solid.verts.push_back({0.5f, 2.0f, -1.0f, 0, 1, 0, 0, 0});
+  mythos::Batch glass = solid;
+  glass.opacity = 0.5f;
+  m.batches = {solid, glass};
+  const mythos::Model box = mythos::BoundingBoxModel(m);
+  CHECK(box.name == "thing");
+  CHECK_EQ(box.batches.size(), 1u);  // the blended batch is dropped
+  CHECK_EQ(box.batches[0].verts.size(), 36u);
+  CHECK(box.batches[0].texture == "wood");
+  float hi_y = -1e9f, lo_z = 1e9f;
+  for (const auto& v : box.batches[0].verts) {
+    hi_y = std::max(hi_y, v.py);
+    lo_z = std::min(lo_z, v.pz);
+  }
+  CHECK(hi_y == 2.0f && lo_z == -1.0f);
+  mythos::ModelLibrary lib;
+  lib.Set(m);
+  const mythos::ModelLibrary boxes = lib.BoundingBoxes();
+  CHECK(boxes.Find("thing") != nullptr);
+  CHECK_EQ(boxes.Find("thing")->batches.size(), 1u);
+}
+
 TEST(music_tempo_map_finds_bar_and_phrase_ends) {
   // 120 bpm 4/4 (2 s bars) for 6 s, then 60 bpm 4/4 (4 s bars).
   const std::vector<mythos::TempoSection> map = {{0.0, 120, 4}, {6.0, 60, 4}};

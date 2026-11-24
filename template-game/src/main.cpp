@@ -124,6 +124,7 @@ int main(const int argc, char** const argv) {
   bool reflections = false;
   int crowd = 0;
   int clones = 0;
+  double world_lod = 0;  // --lod D: furniture is boxes beyond D metres
   bool instancing = true;
   bool start_controls = false;
   bool start_menu = false;
@@ -137,6 +138,8 @@ int main(const int argc, char** const argv) {
     if (arg == "--sun-shadow") sun_shadow = true;
     if (arg == "--reflections") reflections = true;
     if (arg == "--no-instancing") instancing = false;
+    if (i + 1 < argc && arg == "--lod")
+      world_lod = std::strtod(argv[i + 1], nullptr);
     if (i + 1 < argc && arg == "--clones")
       clones = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (i + 1 < argc && arg == "--crowd")
@@ -184,8 +187,19 @@ int main(const int argc, char** const argv) {
     std::fprintf(stderr, "the renderer could not start\n");
     return 1;
   }
-  renderer.UploadWorld(
-      mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
+  // The world, and with `--lod D` the same level built again from boxes for
+  // the furniture, drawn for the columns of cells farther than D metres.
+  const auto upload_world = [&] {
+    renderer.UploadWorld(
+        mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
+    if (world_lod > 0) {
+      renderer.UploadWorldLod(
+          mythos::BuildSceneGeometry(game.level(),
+                                     game.models().BoundingBoxes(), outdoor),
+          world_lod);
+    }
+  };
+  upload_world();
   renderer.UploadDoorPanel(mythos::BuildDoorPanel());
   const int guide_model = renderer.UploadModel(guide.batches);
   renderer.SetInstancing(instancing);
@@ -475,8 +489,7 @@ int main(const int argc, char** const argv) {
       }
       if (level_changed && baked) bake();
       if (level_changed || textures_changed || models_changed) {
-        renderer.UploadWorld(
-            mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
+        upload_world();
       }
       std::fprintf(
           stderr, "hot reload:%s%s%s%s%s%s\n", level_changed ? " level" : "",

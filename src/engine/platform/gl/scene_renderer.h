@@ -261,6 +261,14 @@ class SceneRenderer {
   // upload invalidates the cached shadow maps.
   void UploadWorld(const SceneGeometry& geometry);
 
+  // World LOD: `far_geometry` is the same level built again with cheaper
+  // furniture (for instance with `ModelLibrary::BoundingBoxes()`). Each 8 x 8
+  // cell column of the world is drawn from the first set within `distance`
+  // metres of the eye and from this one beyond it (shadow passes always use
+  // the full one). Call after UploadWorld; ClearWorldLod switches it off.
+  void UploadWorldLod(const SceneGeometry& far_geometry, double distance);
+  void ClearWorldLod();
+
   // Replaces the extra fixed geometry drawn without the scroll offset (world
   // and props of `geometry` together).
   void UploadCab(const SceneGeometry& geometry);
@@ -357,6 +365,7 @@ class SceneRenderer {
   // bounding box for frustum culling.
   struct GpuChunk {
     int first = 0, count = 0;
+    int cx = 0, cz = 0;  // which 8 x 8 cell column (floor(x / 8), floor(z / 8))
     float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
   };
 
@@ -491,8 +500,11 @@ class SceneRenderer {
 
   // Draws batches with the given model matrix, culling against `cull` when
   // given (`offset_z` shifts the boxes to match a scrolled model matrix).
+  // `band` (eye x, eye z, from, to), when given, draws only the chunks whose
+  // cell column centre is from..to metres away from the eye (world LOD).
   void DrawBatches(const BatchList& batches, const float* model,
-                   const Frustum* cull = nullptr, float offset_z = 0.0f);
+                   const Frustum* cull = nullptr, float offset_z = 0.0f,
+                   const float* band = nullptr);
 
   // Draws the fullscreen quad.
   void DrawQuad();
@@ -624,6 +636,9 @@ class SceneRenderer {
   std::vector<std::pair<std::string, GlTexture>> normal_maps_;
   std::vector<std::pair<std::string, GlTexture>> material_maps_;
   GlTexture default_material_;
+  BatchList world_far_;  // the world again, cheaper, for UploadWorldLod
+  double world_lod_distance_ = 0.0;
+  float lod_eye_[3] = {0, 0, 0};  // where the picture being drawn is seen from
   BatchList world_, props_, cab_, door_, decals_, cab_decals_;
 
   // The texture and flag state currently bound, to skip redundant GL calls;

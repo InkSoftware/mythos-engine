@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
 #include <numbers>
 #include <utility>
@@ -570,6 +571,8 @@ void SceneRenderer::UploadBatches(BatchList& dst,
       GpuChunk c;
       c.first = static_cast<int>(all.size());
       c.count = static_cast<int>(verts.size());
+      c.cx = key.first;
+      c.cz = key.second;
       ResetBounds(c.bmin, c.bmax);
       for (const Vertex& v : verts) {
         const float p[3] = {v.px, v.py, v.pz};
@@ -874,6 +877,20 @@ void SceneRenderer::UploadWorld(const SceneGeometry& geometry) {
   UploadBatches(decals_, geometry.decals);
 }
 
+void SceneRenderer::UploadWorldLod(const SceneGeometry& far_geometry,
+                                   const double distance) {
+  ++scene_revision_;
+  world_far_.clear();
+  UploadBatches(world_far_, far_geometry.world);
+  world_lod_distance_ = world_far_.empty() ? 0.0 : std::max(0.0, distance);
+}
+
+void SceneRenderer::ClearWorldLod() {
+  ++scene_revision_;
+  world_far_.clear();
+  world_lod_distance_ = 0.0;
+}
+
 void SceneRenderer::UploadCab(const SceneGeometry& geometry) {
   ++scene_revision_;
   cab_.clear();
@@ -952,8 +969,8 @@ void SceneRenderer::SetInstanceLayout() {
 
 void SceneRenderer::DrawBatches(const BatchList& batches,
                                 const float* const model,
-                                const Frustum* const cull,
-                                const float offset_z) {
+                                const Frustum* const cull, const float offset_z,
+                                const float* const band) {
   UniformMatrix4fv(u_model_, 1, kFalse, model);
   for (const auto& b : batches) {
     if ((b.opacity < 1.0f) != blend_pass_) continue;  // solid or blended pass
@@ -969,6 +986,16 @@ void SceneRenderer::DrawBatches(const BatchList& batches,
       if (cull && !BoxInFrustum(*cull, c.bmin, c.bmax, offset_z)) {
         flush();
         continue;
+      }
+      if (band) {
+        const float dx = (static_cast<float>(c.cx) + 0.5f) * kChunk - band[0];
+        const float dz =
+            (static_cast<float>(c.cz) + 0.5f) * kChunk + offset_z - band[1];
+        const float d = std::hypot(dx, dz);
+        if (d < band[2] || d >= band[3]) {
+          flush();
+          continue;
+        }
       }
       if (!bound) {
         bound = true;
@@ -1198,6 +1225,7 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform4f(u.clip, f.clip[0], f.clip[1], f.clip[2], f.clip[3]);
   ActiveTexture(kTexture0);
   draw_state_ = DrawState{};
+  std::copy_n(f.eye, 3, lod_eye_);
 
   DrawScene(cam, f.planes, f.views);
 }
@@ -1209,7 +1237,19 @@ void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
     Mat4Identity(model);
     DrawBatches(cab_, model, &cull);
     model[14] = static_cast<float>(cam.scroll_z);
-    DrawBatches(world_, model, &cull, static_cast<float>(cam.scroll_z));
+    if (!world_far_.empty() && bind_normals_) {
+      // World LOD: each cell column from the near set or the far one.
+      const float inf = std::numeric_limits<float>::max();
+      const auto d = static_cast<float>(world_lod_distance_);
+      const float near_band[4] = {lod_eye_[0], lod_eye_[2], 0.0f, d};
+      const float far_band[4] = {lod_eye_[0], lod_eye_[2], d, inf};
+      DrawBatches(world_, model, &cull, static_cast<float>(cam.scroll_z),
+                  near_band);
+      DrawBatches(world_far_, model, &cull, static_cast<float>(cam.scroll_z),
+                  far_band);
+    } else {
+      DrawBatches(world_, model, &cull, static_cast<float>(cam.scroll_z));
+    }
     DrawBatches(props_, model, &cull, static_cast<float>(cam.scroll_z));
     DrawDoors(cam, cull, model);
     if (views != 0) DrawInstances(cam, views);

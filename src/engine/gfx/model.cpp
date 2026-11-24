@@ -12,6 +12,58 @@
 #include "engine/core/vfs.h"
 
 namespace mythos {
+Model BoundingBoxModel(const Model& model) {
+  Model out;
+  out.name = model.name;
+  for (const Batch& b : model.batches) {
+    if (b.opacity < 1.0f || !b.skin.empty() || b.verts.empty()) continue;
+    float lo[3] = {b.verts[0].px, b.verts[0].py, b.verts[0].pz};
+    float hi[3] = {lo[0], lo[1], lo[2]};
+    for (const Vertex& v : b.verts) {
+      const float p[3] = {v.px, v.py, v.pz};
+      for (int i = 0; i < 3; ++i) {
+        lo[i] = std::min(lo[i], p[i]);
+        hi[i] = std::max(hi[i], p[i]);
+      }
+    }
+    Batch box;
+    box.texture = b.texture;
+    box.emissive = b.emissive;
+    box.alpha_test = false;
+    const auto quad = [&](const float a[3], const float c[3], const float d[3],
+                          const float e[3], const float nx, const float ny,
+                          const float nz) {
+      const float* corners[4] = {a, c, d, e};
+      const float uv[4][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+      const int order[6] = {0, 1, 2, 0, 2, 3};
+      for (const int k : order) {
+        box.verts.push_back({corners[k][0], corners[k][1], corners[k][2], nx,
+                             ny, nz, uv[k][0], uv[k][1]});
+      }
+    };
+    const float x0 = lo[0], y0 = lo[1], z0 = lo[2];
+    const float x1 = hi[0], y1 = hi[1], z1 = hi[2];
+    const float c000[3] = {x0, y0, z0}, c100[3] = {x1, y0, z0},
+                c110[3] = {x1, y1, z0}, c010[3] = {x0, y1, z0},
+                c001[3] = {x0, y0, z1}, c101[3] = {x1, y0, z1},
+                c111[3] = {x1, y1, z1}, c011[3] = {x0, y1, z1};
+    quad(c001, c101, c111, c011, 0, 0, 1);   // front (+z)
+    quad(c100, c000, c010, c110, 0, 0, -1);  // back
+    quad(c101, c100, c110, c111, 1, 0, 0);   // +x
+    quad(c000, c001, c011, c010, -1, 0, 0);  // -x
+    quad(c011, c111, c110, c010, 0, 1, 0);   // top
+    quad(c000, c100, c101, c001, 0, -1, 0);  // bottom
+    out.batches.push_back(std::move(box));
+  }
+  return out;
+}
+
+ModelLibrary ModelLibrary::BoundingBoxes() const {
+  ModelLibrary out;
+  for (const auto& [name, model] : models_) out.Set(BoundingBoxModel(model));
+  return out;
+}
+
 namespace {
 struct Pos {
   float x, y, z;

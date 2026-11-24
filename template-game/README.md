@@ -38,6 +38,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--ssao` | ambient occlusion (also the Ambient occlusion setting) | `CameraState::ssao` |
 | `--baked` | the lamps baked into light probes instead of live lamps | `BakeProbes`, `UploadProbes` |
 | `--reflections` | a reflection probe in each room, with the room's box for parallax correction (the toolbox and bucket are shiny; the two nearest blend as you cross between rooms) | `AddReflectionProbe` |
+| `--lod D` | the furniture in cell columns farther than D metres is drawn as boxes (the baked world has a far version) | `UploadWorldLod`, `ModelLibrary::BoundingBoxes` |
 | `--clones N` | N more copies of the guide (skinned model instances): one instanced draw per batch, `--no-instancing` draws them one by one | skinned GPU instancing (bones in a texture) |
 | `--crowd N` | N chairs as model instances; `--no-instancing` draws them one by one | GPU instancing |
 | `--debug` | opens the debug console (the ` key or F12 anywhere) with the frame stats and graph on: every setting is a variable, `cutscene.play intro` runs a cutscene, `help` lists it all | `CvarRegistry`, `DebugConsole`, `DrawDebugOverlay`, `RegisterCutsceneCommands` |

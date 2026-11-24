@@ -28,6 +28,13 @@ struct Model {
 bool ParseObj(const std::string& text, std::vector<Batch>& out,
               std::string* error = nullptr);
 
+// A far version of a model: each solid, static batch becomes the box around
+// its vertices (12 triangles, same texture; the texture coordinates span the
+// texture once per face, so a plain texture reads as itself), blended and
+// skinned batches are dropped. A cheap stand-in for a model seen from far
+// away (see SceneRenderer::UploadWorldLod and ModelLods).
+Model BoundingBoxModel(const Model& model);
+
 // The models of an asset folder, looked up by name.
 class ModelLibrary {
  public:
@@ -48,6 +55,12 @@ class ModelLibrary {
   [[nodiscard]] const Model* Find(const std::string& name) const;
 
   [[nodiscard]] size_t Size() const { return models_.size(); }
+
+  // Adds or replaces a model (by its `name`).
+  void Set(const Model& model) { models_[model.name] = model; }
+
+  // A library of the same names with every model made by BoundingBoxModel.
+  [[nodiscard]] ModelLibrary BoundingBoxes() const;
 
  private:
   std::map<std::string, Model> models_;
