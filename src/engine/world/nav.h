@@ -237,6 +237,53 @@ inline uint64_t Distance(const NavCell a, const NavCell b) {
   }
   return out;
 }
+
+// Something to steer around: a mover (another agent, a rolling prop) with its
+// position, velocity (cells per second) and radius.
+struct Obstacle {
+  Vec2 pos;
+  Vec2 vel;
+  double radius = 0.3;
+};
+
+// Local avoidance: the unit direction an agent at `pos` with `radius` should
+// walk to go `desired` (a direction; need not be unit) while keeping clear of
+// `obstacles`. Each obstacle whose path, from now to `horizon` seconds ahead,
+// brings it within the two radii of the agent walking at `speed` pushes the
+// direction sideways from where it would meet, harder the closer and sooner.
+// Pure arithmetic: the game still collides with the level. With nothing in the
+// way it is `desired` normalised; a zero `desired` gives zero.
+[[nodiscard]] inline Vec2 SteerAround(const Vec2 pos, const Vec2 desired,
+                                      const double radius, const double speed,
+                                      const std::vector<Obstacle>& obstacles,
+                                      const double horizon = 1.5) {
+  const double len = std::hypot(desired.x, desired.y);
+  if (len < 1e-9) return {0, 0};
+  const Vec2 dir{desired.x / len, desired.y / len};
+  Vec2 push{0, 0};
+  for (const Obstacle& o : obstacles) {
+    // Relative motion: the obstacle as seen from the agent walking `dir`.
+    const Vec2 rel{o.pos.x - pos.x, o.pos.y - pos.y};
+    const Vec2 rv{o.vel.x - dir.x * speed, o.vel.y - dir.y * speed};
+    const double rv2 = rv.x * rv.x + rv.y * rv.y;
+    double t = rv2 > 1e-9 ? -(rel.x * rv.x + rel.y * rv.y) / rv2 : 0.0;
+    t = std::clamp(t, 0.0, horizon);
+    const Vec2 meet{rel.x + rv.x * t, rel.y + rv.y * t};
+    const double gap = std::hypot(meet.x, meet.y);
+    const double need = radius + o.radius;
+    if (gap >= need) continue;
+    // Away from where they meet; dead centre: to the agent's left.
+    Vec2 away =
+        gap > 1e-6 ? Vec2{-meet.x / gap, -meet.y / gap} : Vec2{-dir.y, dir.x};
+    const double weight = (need - gap) / need * (1.0 - t / (horizon + 1e-9));
+    push.x += away.x * weight;
+    push.y += away.y * weight;
+  }
+  Vec2 out{dir.x + push.x * 2.0, dir.y + push.y * 2.0};
+  const double n = std::hypot(out.x, out.y);
+  if (n < 1e-9) return dir;
+  return {out.x / n, out.y / n};
+}
 }  // namespace mythos
 
 #endif  // MYTHOS_ENGINE_WORLD_NAV_H_

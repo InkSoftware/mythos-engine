@@ -234,9 +234,19 @@ Game::Walk Game::WalkTo(const mythos::NavCell& goal, const double dt,
     guide_pos_ = target;
     ++route_step_;
   } else {
-    guide_pos_.x += dx / dist * step;
-    guide_pos_.y += dy / dist * step;
-    guide_angle_ = std::atan2(dy, dx);
+    // Bend around the player when she is in the way (SteerAround), but never
+    // into a wall: if the bent step is blocked she walks the straight one.
+    const mythos::Obstacle player_body{player_.pos, {0, 0}, 0.3};
+    mythos::Vec2 dir = mythos::SteerAround(guide_pos_, {dx, dy}, 0.25,
+                                           kGuideSpeed, {player_body});
+    const auto blocked = [&](const mythos::Vec2& d) {
+      const double x = guide_pos_.x + d.x * step, y = guide_pos_.y + d.y * step;
+      return level_.BoxBlocked(x - 0.25, y - 0.25, x + 0.25, y + 0.25);
+    };
+    if (blocked(dir)) dir = {dx / dist, dy / dist};
+    guide_pos_.x += dir.x * step;
+    guide_pos_.y += dir.y * step;
+    guide_angle_ = std::atan2(dir.y, dir.x);
   }
   guide_moving_ = true;
   if (route_step_ >= route_.size()) {

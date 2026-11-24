@@ -5300,6 +5300,28 @@ TEST(save_state_level_diff_records_and_restores_changed_cells) {
   CHECK(fresh.At(1, 1) == 'x');
 }
 
+TEST(nav_steer_around_bends_the_way_from_a_mover_in_the_path) {
+  const mythos::Vec2 pos{0, 0};
+  const mythos::Vec2 east{1, 0};
+  // Nothing in the way: straight on.
+  mythos::Vec2 d = mythos::SteerAround(pos, {5, 0}, 0.3, 1.5, {});
+  CHECK(std::fabs(d.x - 1.0) < 1e-9 && std::fabs(d.y) < 1e-9);
+  // Something far off to the side does nothing.
+  d = mythos::SteerAround(pos, east, 0.3, 1.5, {{{2, 3}, {0, 0}, 0.3}});
+  CHECK(std::fabs(d.y) < 1e-9);
+  // A stopper just ahead and slightly north: bend south.
+  d = mythos::SteerAround(pos, east, 0.3, 1.5, {{{1.5, 0.2}, {0, 0}, 0.3}});
+  CHECK(d.y < -0.05 && d.x > 0);
+  // The same one slightly south: bend north.
+  d = mythos::SteerAround(pos, east, 0.3, 1.5, {{{1.5, -0.2}, {0, 0}, 0.3}});
+  CHECK(d.y > 0.05);
+  // Coming head on, dead centre: still bends (to the left), unit length.
+  d = mythos::SteerAround(pos, east, 0.3, 1.5, {{{3, 0}, {-1.5, 0}, 0.3}});
+  CHECK(std::fabs(d.y) > 0.05);
+  CHECK(std::fabs(std::hypot(d.x, d.y) - 1.0) < 1e-9);
+  CHECK_EQ(mythos::SteerAround(pos, {0, 0}, 0.3, 1.5, {}).x, 0.0);
+}
+
 TEST(music_tempo_map_finds_bar_and_phrase_ends) {
   // 120 bpm 4/4 (2 s bars) for 6 s, then 60 bpm 4/4 (4 s bars).
   const std::vector<mythos::TempoSection> map = {{0.0, 120, 4}, {6.0, 60, 4}};
