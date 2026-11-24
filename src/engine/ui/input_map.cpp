@@ -112,7 +112,7 @@ std::string InputMap::Resolve(const std::string& context,
                               const Binding& b) const {
   for (const auto& a : actions_) {
     if (a.context != context) continue;
-    if (std::find(a.current.begin(), a.current.end(), b) != a.current.end()) {
+    if (std::ranges::find(a.current, b) != a.current.end()) {
       return a.name;
     }
   }
@@ -125,7 +125,7 @@ std::string InputMap::FindConflict(const std::string& action,
   if (self == nullptr) return {};
   for (const auto& a : actions_) {
     if (a.context != self->context || a.name == action) continue;
-    if (std::find(a.current.begin(), a.current.end(), b) != a.current.end()) {
+    if (std::ranges::find(a.current, b) != a.current.end()) {
       return a.name;
     }
   }
@@ -136,15 +136,14 @@ std::string InputMap::Rebind(const std::string& action, const size_t slot,
                              const Binding& b, const bool steal) {
   Action* a = Find(action);
   if (a == nullptr || slot >= kSlots) return {};
-  const std::string other = FindConflict(action, b);
+  std::string other = FindConflict(action, b);
   if (!other.empty()) {
     if (!steal) return other;
     auto& list = Find(other)->current;
-    list.erase(std::remove(list.begin(), list.end(), b), list.end());
+    std::erase(list, b);
   }
   // The same input twice on one action is a wasted slot.
-  a->current.erase(std::remove(a->current.begin(), a->current.end(), b),
-                   a->current.end());
+  std::erase(a->current, b);
   if (a->current.size() < slot) a->current.resize(slot);
   if (a->current.size() == slot) {
     a->current.push_back(b);
@@ -193,7 +192,7 @@ bool InputMap::FromJson(const json::Value& v) {
       if (!item.is_string()) continue;
       const auto b = ParseBinding(item.get<std::string>());
       if (b && bindings.size() < kSlots &&
-          std::find(bindings.begin(), bindings.end(), *b) == bindings.end()) {
+          std::ranges::find(bindings, *b) == bindings.end()) {
         bindings.push_back(*b);
       }
     }

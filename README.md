@@ -18,6 +18,10 @@ listen to and pick up, menus, and a bit of procedural art.
   lines, a night sky, a flash of lightning (`CameraState::lightning` lights the world and the sky; with `lightning_zoned` only inside
   `lightning_zones`, the rooms that have a window), culled world
   geometry, SDF text.
+- **Life and logic** (headless, tested): skeletal animation (`gfx/skeleton.h`: bones, clips, blending, crossfade;
+  `gfx/gltf.h` loads a skinned `.glb`; the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
+  perception (`world/ai.h`), A* (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned
+  save files with slots (`data/save.h`, `world/save_state.h`) and rebindable input actions (`ui/input_map.h`).
 - **Everything around a game**: a settings system (pages, drawing, saving, applying), localisation with built-in
   English and Greek strings, JSON loaders for sounds, translations, achievements and credits, positional audio, packed
   assets, and procedural textures.
@@ -33,6 +37,11 @@ listen to and pick up, menus, and a bit of procedural art.
 `mythos::engine` knows nothing about SDL, OpenGL or any game, so every rule built on it can be tested
 headless.
 
+## Starting a game
+
+`template-game/` is a small complete game on the engine (walk, doors, a patrolling animated guide, triggers and rules,
+saving) with its own README: copy it to start a new one. It is built and tested with the engine.
+
 ## Layout
 
 ```
@@ -40,6 +49,7 @@ src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures, and the basic house and office models, that games share
 tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, editor/ (MythosEditor), pack/ (mythos_pack)
 tests/        test_main.cpp
+template-game/  a small game to copy when starting a new one
 third_party/  stb_truetype, stb_image
 ```
 

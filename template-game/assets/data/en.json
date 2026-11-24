@@ -1,0 +1,14 @@
+{
+  "language": "en",
+  "name": "English",
+  "strings": {
+    "template": {
+      "title": "Template game",
+      "help": "WASD walk, mouse look, E use a door, F5 save, F9 load, Esc quit",
+      "east_room": "The back room. Somebody left the lamp on.",
+      "saved": "Saved.",
+      "loaded": "Loaded.",
+      "no_save": "Nothing saved yet."
+    }
+  }
+}

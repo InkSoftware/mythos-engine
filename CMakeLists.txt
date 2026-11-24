@@ -35,6 +35,7 @@ endif()
 
 option(MYTHOS_BUILD_PLATFORM "Build the SDL3 platform layer (mythos::engine_platform)" ON)
 option(MYTHOS_BUILD_EDITOR   "Build the level editor (mythos::editor, and MythosEditor when top level; fetches Dear ImGui)" ${PROJECT_IS_TOP_LEVEL})
+option(MYTHOS_BUILD_TEMPLATE_GAME "Build template-game/, the starting point for a new game (it keeps the engine's API honest)" ${PROJECT_IS_TOP_LEVEL})
 option(MYTHOS_BUILD_TESTS "Build the engine's unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(MYTHOS_FETCH_SDL      "Download SDL3 when no installed copy is found" ON)
 option(MYTHOS_LTO            "Link-time optimization for Release builds of the engine libraries, when the compiler supports it" ON)
@@ -331,4 +332,12 @@ if(MYTHOS_BUILD_TESTS)
     mythos_engine_warnings(mythos_engine_tests)
     target_compile_definitions(mythos_engine_tests PRIVATE MYTHOS_TEST_ASSET_DIR="${MYTHOS_ENGINE_ASSET_DIR}")
     add_test(NAME engine COMMAND mythos_engine_tests)
+endif()
+
+# ---------------------------------------------------------------- template game
+# A small game on the engine, the starting point for new ones. Built with the
+# engine so a change that breaks it is seen at once (see CLAUDE.md).
+if(MYTHOS_BUILD_TEMPLATE_GAME)
+    enable_testing()
+    add_subdirectory(template-game)
 endif()

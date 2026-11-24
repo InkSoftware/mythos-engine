@@ -74,11 +74,11 @@ Mat4f Multiply(const Mat4f& a, const Mat4f& b) {
 Mat4f InvertTrs(const Mat4f& m) {
   Mat4f r{};
   // Each column of the 3x3 part has length s; the inverse is R^T / s.
-  for (int c = 0; c < 3; ++c) {
+  for (size_t c = 0; c < 3; ++c) {
     const float len2 = m[c * 4] * m[c * 4] + m[c * 4 + 1] * m[c * 4 + 1] +
                        m[c * 4 + 2] * m[c * 4 + 2];
     const float inv = len2 > 1e-20f ? 1.0f / len2 : 0.0f;
-    for (int row = 0; row < 3; ++row) r[row * 4 + c] = m[c * 4 + row] * inv;
+    for (size_t row = 0; row < 3; ++row) r[row * 4 + c] = m[c * 4 + row] * inv;
   }
   for (int row = 0; row < 3; ++row) {
     r[12 + row] = -(r[row] * m[12] + r[4 + row] * m[13] + r[8 + row] * m[14]);
@@ -139,7 +139,7 @@ double ClipTime(const Clip& clip, const double time) {
 bool Skeleton::Set(std::vector<Bone> bones) {
   if (bones.size() > static_cast<size_t>(kMaxBones)) return false;
   for (size_t i = 0; i < bones.size(); ++i) {
-    if (bones[i].parent >= static_cast<int>(i) || bones[i].parent < -1) {
+    if (bones[i].parent < -1 || std::cmp_greater_equal(bones[i].parent, i)) {
       return false;
     }
   }

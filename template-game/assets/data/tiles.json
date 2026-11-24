@@ -1,0 +1,13 @@
+{
+  "defaultWall": "brick",
+  "defaultFloor": "wood",
+  "tiles": {
+    "#": { "solid": true },
+    "N": { "solid": true, "door": "closed", "wall": "door" },
+    "n": { "door": "open" },
+    "@": {},
+    "L": {},
+    "w": {},
+    ".": {}
+  }
+}

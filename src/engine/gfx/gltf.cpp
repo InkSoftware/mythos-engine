@@ -6,6 +6,7 @@
 #include <cstring>
 #include <functional>
 #include <map>
+#include <stdexcept>
 #include <utility>
 
 #include "engine/core/json.h"
@@ -14,11 +15,11 @@
 
 namespace mythos {
 namespace {
-struct Fail {
-  std::string message;
+struct Fail : std::runtime_error {
+  explicit Fail(const std::string& message) : std::runtime_error(message) {}
 };
 
-[[noreturn]] void Throw(std::string message) { throw Fail{std::move(message)}; }
+[[noreturn]] void Throw(const std::string& message) { throw Fail(message); }
 
 uint32_t ReadU32(const std::string& s, const size_t at) {
   uint32_t v = 0;
@@ -145,7 +146,7 @@ BoneTransform NodeTransform(const json::Value& node) {
     std::array<double, 16> m{};
     for (size_t i = 0; i < 16; ++i) m[i] = node["matrix"][i].get<double>();
     t.t = {m[12], m[13], m[14]};
-    const auto len = [&](int c) {
+    const auto len = [&](size_t c) {
       return std::sqrt(m[c * 4] * m[c * 4] + m[c * 4 + 1] * m[c * 4 + 1] +
                        m[c * 4 + 2] * m[c * 4 + 2]);
     };
@@ -426,7 +427,7 @@ void Build(const Doc& doc, GltfModel& out) {
             sampler.value("interpolation", std::string("LINEAR"));
         const std::string path = target.value("path", std::string());
         const size_t stride_vals = interp == "CUBICSPLINE" ? 3 : 1;
-        const size_t comps = static_cast<size_t>(cout);
+        const auto comps = static_cast<size_t>(cout);
         if (vals.size() < times.size() * comps * stride_vals) {
           Throw("an animation sampler with too few values");
         }
@@ -495,7 +496,7 @@ bool ParseGlb(const std::string& bytes, GltfModel& out, std::string* error) {
     out = std::move(model);
     return true;
   } catch (const Fail& f) {
-    if (error != nullptr) *error = f.message;
+    if (error != nullptr) *error = f.what();
   } catch (const std::exception& e) {
     if (error != nullptr) *error = std::string("malformed glTF: ") + e.what();
   }

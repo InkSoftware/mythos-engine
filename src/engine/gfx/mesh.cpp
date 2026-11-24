@@ -240,10 +240,9 @@ class SceneBuilder {
       const bool cur_in = lower ? coord(cur) >= bound : coord(cur) <= bound;
       if (cur_in != prev_in) {
         const double t = (bound - coord(prev)) / (coord(cur) - coord(prev));
-        out.push_back({prev.x + t * (cur.x - prev.x),
-                       prev.y + t * (cur.y - prev.y),
-                       prev.u + t * (cur.u - prev.u),
-                       prev.v + t * (cur.v - prev.v)});
+        out.push_back(
+            {prev.x + t * (cur.x - prev.x), prev.y + t * (cur.y - prev.y),
+             prev.u + t * (cur.u - prev.u), prev.v + t * (cur.v - prev.v)});
       }
       if (cur_in) out.push_back(cur);
       prev = cur;
@@ -288,7 +287,8 @@ class SceneBuilder {
     if (!level_.InBounds(d.x, d.y)) return;
     const char glyph = level_.At(d.x, d.y);
     if (tiles_[glyph].empty || tiles_.IsDoor(glyph) || !tiles_.Solid(glyph) ||
-        !tiles_.Thin(glyph) || !tiles_[glyph].window) return;
+        !tiles_.Thin(glyph) || !tiles_[glyph].window)
+      return;
 
     const bool north = d.face == DecalFace::kGlassNorth;
     const bool south = d.face == DecalFace::kGlassSouth;
@@ -296,19 +296,20 @@ class SceneBuilder {
     const bool horizontal = north || south;
     if (horizontal != ((level_.ThinArms(d.x, d.y) & 12u) != 0)) return;
     const double sign = (south || west) ? -1 : 1;
-    const P3 normal = north ? P3{0, 0, -1} : south ? P3{0, 0, 1} :
-                      west ? P3{-1, 0, 0} : P3{1, 0, 0};
+    const P3 normal = north   ? P3{0, 0, -1}
+                      : south ? P3{0, 0, 1}
+                      : west  ? P3{-1, 0, 0}
+                              : P3{1, 0, 0};
     const double angle = d.rotation * std::numbers::pi / 180.0;
     const double c = std::cos(angle), s = std::sin(angle);
     const auto corner = [&](const double a, const double b, const double u,
                             const double v) {
-      return DecalPoint{d.offset_u + a * c - b * s,
-                        d.offset_v + a * s + b * c, u, v};
+      return DecalPoint{d.offset_u + a * c - b * s, d.offset_v + a * s + b * c,
+                        u, v};
     };
     const double w = d.width / 2, h = d.height / 2;
-    std::vector<DecalPoint> poly = {
-        corner(-w, -h, 0, 0), corner(w, -h, 1, 0),
-        corner(w, h, 1, 1), corner(-w, h, 0, 1)};
+    std::vector<DecalPoint> poly = {corner(-w, -h, 0, 0), corner(w, -h, 1, 0),
+                                    corner(w, h, 1, 1), corner(-w, h, 0, 1)};
     ClipDecal(poly, true, kWindowJamb - 0.5, true);
     ClipDecal(poly, true, 0.5 - kWindowJamb, false);
     ClipDecal(poly, false, kWindowSill - kWallHeight / 2, true);
@@ -340,24 +341,29 @@ class SceneBuilder {
     if (!level_.InBounds(d.x, d.y)) return;
     const char glyph = level_.At(d.x, d.y);
     if (tiles_[glyph].empty || tiles_.IsDoor(glyph) || !tiles_.Solid(glyph) ||
-        !tiles_.Thin(glyph)) return;
+        !tiles_.Thin(glyph))
+      return;
 
     const bool north = d.face == DecalFace::kThinNorth;
     const bool south = d.face == DecalFace::kThinSouth;
     const bool west = d.face == DecalFace::kThinWest;
     const bool horizontal = north || south;
-    const unsigned face = north ? kFaceNegZ : south ? kFacePosZ :
-                          west ? kFaceNegX : kFacePosX;
-    const P3 normal = north ? P3{0, 0, -1} : south ? P3{0, 0, 1} :
-                      west ? P3{-1, 0, 0} : P3{1, 0, 0};
+    const unsigned face = north   ? kFaceNegZ
+                          : south ? kFacePosZ
+                          : west  ? kFaceNegX
+                                  : kFacePosX;
+    const P3 normal = north   ? P3{0, 0, -1}
+                      : south ? P3{0, 0, 1}
+                      : west  ? P3{-1, 0, 0}
+                              : P3{1, 0, 0};
     const double sign = (south || west) ? -1 : 1;
     using Point = DecalPoint;
     const double angle = d.rotation * std::numbers::pi / 180.0;
     const double c = std::cos(angle), s = std::sin(angle);
     const auto corner = [&](const double a, const double b, const double u,
                             const double v) {
-      return Point{d.offset_u + a * c - b * s,
-                   d.offset_v + a * s + b * c, u, v};
+      return Point{d.offset_u + a * c - b * s, d.offset_v + a * s + b * c, u,
+                   v};
     };
     const double w = d.width / 2, h = d.height / 2;
     const std::vector<Point> quad = {corner(-w, -h, 0, 0), corner(w, -h, 1, 0),
@@ -487,7 +493,8 @@ class SceneBuilder {
     if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
   }
 
-  char ThinQuarterRoom(const int x, const int y, const int dx, const int dy) const {
+  char ThinQuarterRoom(const int x, const int y, const int dx,
+                       const int dy) const {
     const auto open = [&](const char c) {
       return !tiles_.Solid(c) && !tiles_[c].empty;
     };
@@ -500,8 +507,9 @@ class SceneBuilder {
 
   void AddDecals() {
     for (const Decal& d : level_.Decals()) {
-      if (d.face == DecalFace::kGlassNorth || d.face == DecalFace::kGlassSouth ||
-          d.face == DecalFace::kGlassWest || d.face == DecalFace::kGlassEast) {
+      if (d.face == DecalFace::kGlassNorth ||
+          d.face == DecalFace::kGlassSouth || d.face == DecalFace::kGlassWest ||
+          d.face == DecalFace::kGlassEast) {
         AddGlassDecal(d);
         continue;
       }
@@ -514,11 +522,13 @@ class SceneBuilder {
         const char glyph = level_.At(d.x, d.y);
         const TileInfo& tile = tiles_[glyph];
         if (tile.empty || (tiles_.Solid(glyph) && !tiles_.Thin(glyph) &&
-                           !tiles_.IsDoor(glyph))) continue;
+                           !tiles_.IsDoor(glyph)))
+          continue;
         if (d.face == DecalFace::kCeiling && outdoor_) continue;
         if (!tiles_.Solid(glyph) && !tiles_.IsDoor(glyph) &&
             ((d.face == DecalFace::kFloor && tile.open_floor) ||
-             (d.face == DecalFace::kCeiling && tile.open_ceiling))) continue;
+             (d.face == DecalFace::kCeiling && tile.open_ceiling)))
+          continue;
       } else {
         int nx = d.x, ny = d.y;
         if (d.face == DecalFace::kNorth) --ny;
@@ -528,7 +538,8 @@ class SceneBuilder {
         const char receiver = level_.At(nx, ny);
         if (!level_.InBounds(nx, ny) || tiles_[receiver].empty ||
             !tiles_.Solid(receiver) || tiles_.Thin(receiver) ||
-            tiles_.IsDoor(receiver) || !WallFaceOpen(nx, ny, d.x, d.y)) continue;
+            tiles_.IsDoor(receiver) || !WallFaceOpen(nx, ny, d.x, d.y))
+          continue;
       }
       const float x = static_cast<float>(d.x), z = static_cast<float>(d.y);
       P3 center{}, u{}, v{}, normal{};
@@ -589,9 +600,10 @@ class SceneBuilder {
       const double w = d.width / 2, h = d.height / 2;
       std::vector<DecalPoint> poly = {point(-w, -h, 0, 0), point(w, -h, 1, 0),
                                       point(w, h, 1, 1), point(-w, h, 0, 1)};
-      const double vertical = d.face == DecalFace::kFloor ||
-                                      d.face == DecalFace::kCeiling
-                                  ? 0.5 : kWallHeight / 2;
+      const double vertical =
+          d.face == DecalFace::kFloor || d.face == DecalFace::kCeiling
+              ? 0.5
+              : kWallHeight / 2;
       ClipDecal(poly, true, -0.5, true);
       ClipDecal(poly, true, 0.5, false);
       ClipDecal(poly, false, -vertical, true);
@@ -600,11 +612,12 @@ class SceneBuilder {
       batch.texture = d.texture;
       const auto push = [&](const DecalPoint& p) {
         const float du = static_cast<float>(p.x), dv = static_cast<float>(p.y);
-        PushVertex(batch, {center.x + u.x * du + v.x * dv,
-                           center.y + u.y * du + v.y * dv,
-                           center.z + u.z * du + v.z * dv},
-                   normal.x, normal.y, normal.z, static_cast<float>(p.u),
-                   static_cast<float>(p.v));
+        PushVertex(
+            batch,
+            {center.x + u.x * du + v.x * dv, center.y + u.y * du + v.y * dv,
+             center.z + u.z * du + v.z * dv},
+            normal.x, normal.y, normal.z, static_cast<float>(p.u),
+            static_cast<float>(p.v));
       };
       const auto emit = [&](const std::vector<DecalPoint>& p) {
         for (size_t i = 1; i + 1 < p.size(); ++i) {
@@ -620,15 +633,16 @@ class SceneBuilder {
       const char glyph = level_.At(d.x, d.y);
       if ((d.face == DecalFace::kFloor || d.face == DecalFace::kCeiling) &&
           tiles_.Solid(glyph) && tiles_.Thin(glyph) && !tiles_.IsDoor(glyph)) {
-        for (int dz : {-1, 1}) for (int dx : {-1, 1}) {
-          if (!ThinQuarterRoom(d.x, d.y, dx, dz)) continue;
-          auto quarter = poly;
-          ClipDecal(quarter, true, dx < 0 ? -0.5 : 0, true);
-          ClipDecal(quarter, true, dx < 0 ? 0 : 0.5, false);
-          ClipDecal(quarter, false, dz < 0 ? -0.5 : 0, true);
-          ClipDecal(quarter, false, dz < 0 ? 0 : 0.5, false);
-          emit(quarter);
-        }
+        for (int dz : {-1, 1})
+          for (int dx : {-1, 1}) {
+            if (!ThinQuarterRoom(d.x, d.y, dx, dz)) continue;
+            auto quarter = poly;
+            ClipDecal(quarter, true, dx < 0 ? -0.5 : 0, true);
+            ClipDecal(quarter, true, dx < 0 ? 0 : 0.5, false);
+            ClipDecal(quarter, false, dz < 0 ? -0.5 : 0, true);
+            ClipDecal(quarter, false, dz < 0 ? 0 : 0.5, false);
+            emit(quarter);
+          }
       } else {
         emit(poly);
       }
@@ -784,7 +798,8 @@ class SceneBuilder {
         AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kH, fz + bx.z1,
                bx.skip);
     } else {
-      constexpr float kSill = kWindowSill, kHead = kWindowHead, kJamb = kWindowJamb;
+      constexpr float kSill = kWindowSill, kHead = kWindowHead,
+                      kJamb = kWindowJamb;
       for (const ThinBox& bx : boxes) {
         AddBox(wall, fx + bx.x0, 0, fz + bx.z0, fx + bx.x1, kSill, fz + bx.z1,
                bx.skip);
@@ -834,8 +849,7 @@ class SceneBuilder {
       int dx, dy;
     };
     const Quarter quarters[4] = {
-        {0, 0, -1, -1}, {0.5f, 0, 1, -1},
-        {0, 0.5f, -1, 1}, {0.5f, 0.5f, 1, 1}};
+        {0, 0, -1, -1}, {0.5f, 0, 1, -1}, {0, 0.5f, -1, 1}, {0.5f, 0.5f, 1, 1}};
     for (const Quarter& q : quarters) {
       const char open_glyph = ThinQuarterRoom(x, y, q.dx, q.dy);
       if (open_glyph == '\0') continue;
@@ -960,7 +974,8 @@ std::optional<Batch> BuildModelDecal(const Placement& placement,
       !std::isfinite(cx) || !std::isfinite(cz) ||
       !std::isfinite(placement.lift) || std::abs(cx) > limit ||
       std::abs(cz) > limit || std::abs(placement.lift) > limit ||
-      !std::isfinite(placement.yaw_deg * std::numbers::pi)) return std::nullopt;
+      !std::isfinite(placement.yaw_deg * std::numbers::pi))
+    return std::nullopt;
 
   using Vec = std::array<double, 3>;
   const auto dot = [](const Vec& a, const Vec& b) {
@@ -982,8 +997,8 @@ std::optional<Batch> BuildModelDecal(const Placement& placement,
   if (projected_length <= 1e-6) return std::nullopt;
   for (double& v : t) v /= projected_length;
   const Vec b = cross(n, t);
-  const double angle = std::remainder(decal.rotation_deg, 360.0) *
-                       std::numbers::pi / 180.0;
+  const double angle =
+      std::remainder(decal.rotation_deg, 360.0) * std::numbers::pi / 180.0;
   const double c = std::cos(angle), s = std::sin(angle);
   Vec u{}, v{};
   for (int i = 0; i < 3; ++i) {
@@ -1014,7 +1029,8 @@ std::optional<Batch> BuildModelDecal(const Placement& placement,
   const auto& vertices = result[0].verts;
   for (const auto& vertex : vertices) {
     if (!std::isfinite(vertex.px) || !std::isfinite(vertex.py) ||
-        !std::isfinite(vertex.pz)) return std::nullopt;
+        !std::isfinite(vertex.pz))
+      return std::nullopt;
   }
   // Both triangles must survive rounding to world-space vertex precision.
   for (int i : {0, 3}) {

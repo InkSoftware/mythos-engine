@@ -1,0 +1,23 @@
+; The hall: two rooms joined by a door.
+; '@' player start, 'L' a lamp, 'w' a waypoint for the guide, 'N' a closed door.
+[map]
+####################
+#........#.........#
+#..w..L..#..L......#
+#........N.........#
+#..w...w.#.........#
+#.@......#.........#
+####################
+
+[furniture]
+11 1 bookshelf 0
+15 3 table 0
+14 3 chair 270
+17 5 crate 0
+3 1 bench 180
+
+[triggers]
+visit_east cell enter 1 12 3 0
+
+[rules]
+rule1 x666f756e645f65617374 trigger x76697369745f65617374 x656e746572 0 1 x7365656e5f65617374 0 2 x7365745f666c6167 x7365656e5f65617374 x6d657373616765 x74656d706c6174652e656173745f726f6f6d

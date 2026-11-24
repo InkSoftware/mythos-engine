@@ -15,6 +15,8 @@ library. This is a plan, not a promise: each item is meant to ship on its own.
 - New `.cpp` files are listed in `CMakeLists.txt`. Code is clang-format and
   clang-tidy clean, with `-Werror` in CI, MSVC-safe (see the MSVC rules).
 - Assets added must be CC0/OFL and recorded in `CREDITS.md`.
+- Every item updates the Markdown files (`CLAUDE.md`, `README.md`, this roadmap, `CREDITS.md`) and `template-game/`
+  (`CLAUDE.md` has the rule): what a new game would want from the item is shown there.
 - A feature that changes how the world looks must leave existing scenes
   pixel-identical when its setting is off (as the PBR work did).
 - The engine supplies mechanisms, games supply meaning: no story strings, no

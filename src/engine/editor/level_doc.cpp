@@ -186,8 +186,8 @@ bool RenameTrigger(LevelDoc& doc, const std::string& from,
                    const std::string& to, int* const rules_updated) {
   if (rules_updated != nullptr) *rules_updated = 0;
   const auto has = [&](const std::string& id) {
-    return std::any_of(doc.triggers.begin(), doc.triggers.end(),
-                       [&](const Trigger& t) { return t.id == id; });
+    return std::ranges::any_of(doc.triggers,
+                               [&](const Trigger& t) { return t.id == id; });
   };
   if (to.empty() || !has(from)) return false;
   if (from == to) return true;
@@ -207,8 +207,8 @@ bool RenameTrigger(LevelDoc& doc, const std::string& from,
 }
 
 int RemoveTrigger(LevelDoc& doc, const std::string& id) {
-  const auto it = std::find_if(doc.triggers.begin(), doc.triggers.end(),
-                               [&](const Trigger& t) { return t.id == id; });
+  const auto it = std::ranges::find_if(
+      doc.triggers, [&](const Trigger& t) { return t.id == id; });
   if (it == doc.triggers.end()) return -1;
   doc.triggers.erase(it);
   const size_t before = doc.rules.size();
@@ -221,8 +221,8 @@ int RemoveTrigger(LevelDoc& doc, const std::string& id) {
 std::string NewRuleId(const LevelDoc& doc) {
   for (size_t n = 1;; ++n) {
     const std::string id = "rule_" + std::to_string(n);
-    if (std::none_of(doc.rules.begin(), doc.rules.end(),
-                     [&](const EventRule& r) { return r.id == id; })) {
+    if (std::ranges::none_of(doc.rules,
+                             [&](const EventRule& r) { return r.id == id; })) {
       return id;
     }
   }
