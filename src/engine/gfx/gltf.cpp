@@ -12,9 +12,12 @@
 #include "engine/core/json.h"
 #include "engine/core/mat4.h"
 #include "engine/core/vfs.h"
+#include "engine/gfx/textures.h"
 
 namespace mythos {
 namespace {
+bool DecodeBase64(const std::string& text, std::string* out);
+std::string DecodeUri(const std::string& uri);
 struct Fail : std::runtime_error {
   explicit Fail(const std::string& message) : std::runtime_error(message) {}
 };
@@ -82,8 +85,15 @@ size_t ComponentSize(const int type) {
 
 class Doc {
  public:
-  Doc(json::Value root, std::vector<std::string> buffers)
-      : root_(std::move(root)), buffers_(std::move(buffers)) {}
+  Doc(json::Value root, std::vector<std::string> buffers,
+      std::string base_dir = "")
+      : root_(std::move(root)),
+        buffers_(std::move(buffers)),
+        base_dir_(std::move(base_dir)) {}
+
+  // The encoded bytes of image `index` (from its buffer view, a data URI or a
+  // file beside the model); false when they cannot be found.
+  bool ImageBytes(const int index, std::string* out) const;
 
   const json::Value& Root() const { return root_; }
 
@@ -180,6 +190,7 @@ class Doc {
 
   json::Value root_;
   std::vector<std::string> buffers_;
+  std::string base_dir_;
 };
 
 BoneTransform NodeTransform(const json::Value& node) {
@@ -402,6 +413,20 @@ void Build(const Doc& doc, GltfModel& out) {
             f != nullptr && f->size() == 4) {
           for (size_t i = 0; i < 4; ++i) color[i] = (*f)[i].get<float>();
         }
+        // The colour texture, decoded once per material name.
+        if (const json::Value* t = json::Find(*pbr, "baseColorTexture");
+            t != nullptr && t->contains("index") && !name.empty() &&
+            !out.textures.contains(name)) {
+          const json::Value& tex =
+              doc.Item("textures", (*t)["index"].get<int>());
+          std::string bytes;
+          Surface image;
+          if (tex.contains("source") &&
+              doc.ImageBytes(tex["source"].get<int>(), &bytes) &&
+              DecodeImage(bytes, image)) {
+            out.textures[name] = std::move(image);
+          }
+        }
       }
     }
     for (size_t i = 0; i + 2 < index.size(); i += 3) {
@@ -421,7 +446,7 @@ void Build(const Doc& doc, GltfModel& out) {
         }
         if (!uv.empty()) {
           vert.u = uv[v * 2];
-          vert.v = uv[v * 2 + 1];
+          vert.v = 1.0f - uv[v * 2 + 1];  // glTF's v runs down, the engine's up
         }
         batch.verts.push_back(vert);
         SkinWeights w;
@@ -589,6 +614,28 @@ std::string DecodeUri(const std::string& uri) {
 }
 }
 
+bool Doc::ImageBytes(const int index, std::string* const out) const {
+  const json::Value& image = Item("images", index);
+  if (image.contains("bufferView")) {
+    const json::Value& view =
+        Item("bufferViews", image["bufferView"].get<int>());
+    const std::string& buf = Buffer(view.value("buffer", 0));
+    const size_t at = view.value("byteOffset", size_t{0});
+    const size_t len = view.value("byteLength", size_t{0});
+    if (at + len > buf.size()) return false;
+    *out = buf.substr(at, len);
+    return true;
+  }
+  const std::string uri = image.value("uri", std::string());
+  if (uri.rfind("data:", 0) == 0) {
+    const size_t comma = uri.find(',');
+    return comma != std::string::npos &&
+           DecodeBase64(uri.substr(comma + 1), out);
+  }
+  return !uri.empty() && !base_dir_.empty() &&
+         vfs::ReadFile(base_dir_ + "/" + DecodeUri(uri), *out);
+}
+
 bool ParseGltf(const std::string& json_text, const std::string& base_dir,
                GltfModel& out, std::string* error) {
   try {
@@ -618,7 +665,7 @@ bool ParseGltf(const std::string& json_text, const std::string& base_dir,
       }
     }
     GltfModel model;
-    Build(Doc(std::move(root), std::move(buffers)), model);
+    Build(Doc(std::move(root), std::move(buffers), base_dir), model);
     out = std::move(model);
     return true;
   } catch (const Fail& f) {

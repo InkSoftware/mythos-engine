@@ -163,7 +163,11 @@ int main(const int argc, char** const argv) {
   mythos::editor::RegisterModelTextures(textures, EngineAssets() + "/modeltex");
   const mythos::GltfModel& guide = game.guide_model();
   for (size_t i = 0; i < guide.batches.size(); ++i) {
-    textures.Add(guide.batches[i].texture, FlatColor(guide.base_colors[i]));
+    // The model's own colour texture when it has one, else a flat colour.
+    const auto own = guide.textures.find(guide.batches[i].texture);
+    textures.Add(guide.batches[i].texture,
+                 own != guide.textures.end() ? own->second
+                                             : FlatColor(guide.base_colors[i]));
   }
 
   mythos::SceneRenderer renderer;

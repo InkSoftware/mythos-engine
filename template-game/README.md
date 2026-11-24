@@ -66,8 +66,9 @@ the same name here wins.
    `MYTHOS_ENGINE_ASSET_DIR=<engine>/assets ../build/MythosEditor --project .` (on macOS the binary is
    `MythosEditor.app/Contents/MacOS/MythosEditor`).
 3. Put your own models (OBJ) in `assets/models/` and textures (PNG, BMP) in `assets/` named after the texture they
-   replace; a file of the same name wins over the engine's. A rigged, animated model is a `.glb`: the engine's
-   `tools/mythos_models.py` keeps it with `Spec(skinned=True)`, and `LoadGlb` reads it as `Game::Load` does for the guide.
+   replace; a file of the same name wins over the engine's. A rigged, animated model is a `.glb` (or `.gltf`): the engine's
+   `tools/mythos_models.py` keeps it with `Spec(skinned=True)`, and `LoadGlb` reads it as `Game::Load` does for the guide;
+   its colour textures come with it (`GltfModel::textures`, which `main.cpp` registers).
 4. Replace the `message` and `set_flag` actions in `Game::Act` with your own, and the guide's tree in `Game::Restart`.
 5. Add what you need from the engine's README: more settings pages, a sound bank (`LoadSoundBank`), achievements,
    particles, a mirror, decals.

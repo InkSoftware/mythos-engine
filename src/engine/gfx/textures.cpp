@@ -75,6 +75,11 @@ const Surface& TextureLibrary::Get(const std::string& name) const {
 bool LoadImage(const std::string& path, Surface& out) {
   std::string bytes;
   if (!vfs::ReadFile(path, bytes) || bytes.empty()) return false;
+  return DecodeImage(bytes, out);
+}
+
+bool DecodeImage(const std::string& bytes, Surface& out) {
+  if (bytes.empty()) return false;
   int width = 0, height = 0, channels = 0;
   // Always asks for four channels, so gray and RGB images arrive with opaque
   // alpha.

@@ -29,18 +29,21 @@ def read_glb(data):
 
 
 class PackGlb(unittest.TestCase):
-    def test_joins_buffers_and_drops_textures(self):
+    def test_joins_buffers_keeps_colour_textures_and_drops_other_maps(self):
         with tempfile.TemporaryDirectory() as d:
             open(os.path.join(d, "a.bin"), "wb").write(struct.pack("<3f", 1, 2, 3) + b"xyz")  # 15 bytes: needs padding
             open(os.path.join(d, "b.bin"), "wb").write(struct.pack("<2f", 4, 5))
+            open(os.path.join(d, "colour.png"), "wb").write(b"\x89PNG-colour")
+            open(os.path.join(d, "normal.png"), "wb").write(b"\x89PNG-normal")
             gltf = {
                 "asset": {"version": "2.0"},
                 "buffers": [{"uri": "a.bin", "byteLength": 15}, {"uri": "b.bin", "byteLength": 8}],
                 "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 12},
                                 {"buffer": 1, "byteOffset": 0, "byteLength": 8}],
-                "images": [{"uri": "x.jpg"}], "textures": [{"source": 0}], "samplers": [{}],
+                "images": [{"uri": "normal.png"}, {"uri": "colour.png"}],
+                "textures": [{"source": 0}, {"source": 1}], "samplers": [{}],
                 "materials": [{"name": "skin", "pbrMetallicRoughness": {
-                    "baseColorFactor": [1, 0.5, 0.25, 1], "baseColorTexture": {"index": 0}},
+                    "baseColorFactor": [1, 0.5, 0.25, 1], "baseColorTexture": {"index": 1}},
                     "normalTexture": {"index": 0}}],
             }
             path = os.path.join(d, "m.gltf")
@@ -53,12 +56,30 @@ class PackGlb(unittest.TestCase):
             self.assertEqual(struct.unpack_from("<3f", binary, views[0]["byteOffset"]), (1, 2, 3))
             self.assertEqual(struct.unpack_from("<2f", binary, views[1]["byteOffset"]), (4, 5))
             self.assertEqual(views[1]["byteOffset"] % 4, 0)
-            for key in ("images", "textures", "samplers"):
-                self.assertNotIn(key, out)
+            # Only the colour image is kept, inside the binary, and the texture list points at it.
+            self.assertEqual(len(out["images"]), 1)
+            image_view = views[out["images"][0]["bufferView"]]
+            self.assertEqual(binary[image_view["byteOffset"]:image_view["byteOffset"] + image_view["byteLength"]],
+                             b"\x89PNG-colour")
+            self.assertEqual(out["textures"], [{"source": 0}])
+            self.assertNotIn("samplers", out)
             material = out["materials"][0]
             self.assertNotIn("normalTexture", material)
-            self.assertNotIn("baseColorTexture", material["pbrMetallicRoughness"])
+            self.assertEqual(material["pbrMetallicRoughness"]["baseColorTexture"], {"index": 0})
             self.assertEqual(material["pbrMetallicRoughness"]["baseColorFactor"], [1, 0.5, 0.25, 1])
+
+    def test_no_colour_texture_means_no_images_at_all(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "a.bin"), "wb").write(b"\0" * 8)
+            gltf = {"asset": {"version": "2.0"}, "buffers": [{"uri": "a.bin", "byteLength": 8}],
+                    "bufferViews": [{"buffer": 0, "byteLength": 8}],
+                    "images": [{"uri": "x.png"}], "textures": [{"source": 0}],
+                    "materials": [{"pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, 1]}}]}
+            path = os.path.join(d, "m.gltf")
+            json.dump(gltf, open(path, "w"))
+            out, _ = read_glb(mm.pack_glb(path))
+            for key in ("images", "textures", "samplers"):
+                self.assertNotIn(key, out)
 
     @unittest.skipUnless(os.path.exists(PETE), "the shipped character is missing")
     def test_a_real_character_survives_unpack_and_repack(self):

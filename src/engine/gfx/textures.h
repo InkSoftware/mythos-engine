@@ -51,6 +51,10 @@ class TextureLibrary {
   std::set<std::string> placeholders_;
 };
 
+// Decodes the bytes of an image (PNG, BMP, TGA, JPG...) into `out`; false on
+// any problem.
+bool DecodeImage(const std::string& bytes, Surface& out);
+
 // Decodes an image file (stb_image: PNG, BMP, TGA, JPG and more) read through
 // the vfs into `out`. Returns false on any problem.
 bool LoadImage(const std::string& path, Surface& out);

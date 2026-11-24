@@ -13,7 +13,7 @@ Wavefront OBJ whose material names are texture names, so for each model this too
   4. records the sources in CREDITS.md and in the credits data.
 
 A rigged, animated model is not baked to OBJ (that drops the skin): give its Spec `skinned=True` and the tool keeps it as
-one binary glTF, assets/characters/<name>.glb, for the engine's `LoadGlb` (see `pack_glb`; the tests are
+one binary glTF, assets/characters/<name>.glb, for the engine's `LoadGlb` (see `pack_glb`, which keeps the colour textures; the tests are
 tools/test_mythos_models.py).
 
 Two callers use it: the engine's own tools/fetch_cc0_models.py (the basic models of houses and offices, shipped in
@@ -94,7 +94,7 @@ class Spec:
     skinned True keeps a rigged, animated model as it is: instead of an OBJ it writes assets/characters/<name>.glb (one
             binary glTF with its skin and animations, for the engine's `LoadGlb`). Nothing is rotated, scaled or
             baked (scale, yaw, ... are ignored): what the author made is what the game gets. The loader reads the
-            material colours, not the textures, so the images are left out; `size`, `art`, `glass` and `cutout` do nothing
+            material colours and their colour textures (embedded in the .glb); other maps are left out; `size`, `art`, `glass` and `cutout` do nothing
     """
 
     def __init__(self, ph, scale=None, fit=(CELL, CELL), height=None, yaw=0, stretch=1.35, what="", local=None,
@@ -145,8 +145,9 @@ def download(ph, cache):
 
 def pack_glb(gltf_path):
     """A .gltf with its external buffers as the bytes of one binary glTF (.glb), keeping the skins and animations.
-    The buffers are joined into a single one (the buffer views are moved to match) and the images, textures and
-    samplers are dropped, with the material references to them: the engine's loader reads base colours only."""
+    The buffers are joined into a single one (the buffer views are moved to match). The colour (base colour)
+    textures are kept, their images embedded in the binary; every other texture is dropped with its material
+    reference (the engine's loader reads base colours and their textures only)."""
     with open(gltf_path, encoding="utf-8") as f:
         gltf = json.load(f)
     folder = os.path.dirname(gltf_path)
@@ -171,14 +172,58 @@ def pack_glb(gltf_path):
     for view in gltf.get("bufferViews", []):
         view["byteOffset"] = view.get("byteOffset", 0) + starts[view.get("buffer", 0)]
         view["buffer"] = 0
+    # Images the colour textures use go into the binary as buffer views (the engine decodes them); the others
+    # (normal, roughness...) are not read, so the textures that name them go.
+    used = set()
+    for mat in gltf.get("materials", []):
+        bct = mat.get("pbrMetallicRoughness", {}).get("baseColorTexture")
+        if bct is not None:
+            used.add(bct["index"])
+    images = gltf.get("images", [])
+    textures = gltf.get("textures", [])
+    keep_images, new_images = {}, []
+    for ti in sorted(used):
+        source = textures[ti].get("source")
+        if source is None or source in keep_images:
+            continue
+        image = images[source]
+        if "uri" in image and not image["uri"].startswith("data:"):
+            with open(os.path.join(folder, urllib.request.url2pathname(image["uri"])), "rb") as f:
+                data = f.read()
+        elif "uri" in image:
+            import base64
+            data = base64.b64decode(image["uri"].split(",", 1)[1])
+        else:
+            continue  # already in a buffer view
+        while len(binary) % 4:
+            binary.append(0)
+        gltf.setdefault("bufferViews", []).append({"buffer": 0, "byteOffset": len(binary), "byteLength": len(data)})
+        binary += data
+        keep_images[source] = len(new_images)
+        new_images.append({"bufferView": len(gltf["bufferViews"]) - 1,
+                           "mimeType": "image/png" if data[:4] == b"\x89PNG" else "image/jpeg"})
+    new_textures, texture_map = [], {}
+    for ti in sorted(used):
+        source = textures[ti].get("source")
+        if source in keep_images:
+            texture_map[ti] = len(new_textures)
+            new_textures.append({"source": keep_images[source]})
+    while len(binary) % 4:
+        binary.append(0)
     gltf["buffers"] = [{"byteLength": len(binary)}]
-    for key in ("images", "textures", "samplers"):
-        gltf.pop(key, None)
+    gltf.pop("images", None)
+    gltf.pop("textures", None)
+    gltf.pop("samplers", None)
+    if new_images:
+        gltf["images"], gltf["textures"] = new_images, new_textures
 
     def strip(node):
         if isinstance(node, dict):
             for key in [k for k in node if k.endswith("Texture")]:
-                del node[key]
+                if key == "baseColorTexture" and node[key].get("index") in texture_map:
+                    node[key] = {"index": texture_map[node[key]["index"]]}
+                else:
+                    del node[key]
             for value in node.values():
                 strip(value)
         elif isinstance(node, list):

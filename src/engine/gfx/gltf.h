@@ -14,11 +14,13 @@
 #define MYTHOS_ENGINE_GFX_GLTF_H_
 
 #include <array>
+#include <map>
 #include <string>
 #include <vector>
 
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/skeleton.h"
+#include "engine/gfx/surface.h"
 
 namespace mythos {
 struct GltfModel {
@@ -28,6 +30,12 @@ struct GltfModel {
   // The linear base colour (RGBA) of each batch's material, for a game that
   // makes a flat texture of it.
   std::vector<std::array<float, 4>> base_colors;
+  // The colour textures of the materials, by material name (the same string
+  // as a batch's `texture`): decoded from the file's images (a buffer view, a
+  // data URI or a file beside a `.gltf`). A material with no texture, or one
+  // that could not be decoded, is not here: use `base_colors`. Texture
+  // coordinates are in the engine's convention (v up).
+  std::map<std::string, Surface> textures;
   Skeleton skeleton;
   std::vector<Clip> clips;
 
@@ -41,8 +49,8 @@ bool ParseGlb(const std::string& bytes, GltfModel& out,
               std::string* error = nullptr);
 
 // A text `.gltf`: `json_text` with its buffers read from files next to it
-// (`base_dir`, through the vfs) or from base64 data URIs. Images and textures
-// are ignored. Errors as ParseGlb.
+// (`base_dir`, through the vfs) or from base64 data URIs. Colour textures
+// are decoded into `GltfModel::textures`. Errors as ParseGlb.
 bool ParseGltf(const std::string& json_text, const std::string& base_dir,
                GltfModel& out, std::string* error = nullptr);
 

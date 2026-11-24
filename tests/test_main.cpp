@@ -5501,6 +5501,101 @@ TEST(gltf_text_files_with_data_uri_external_and_sparse_buffers) {
   fs::remove_all(dir);
 }
 
+TEST(gltf_decodes_material_textures_and_flips_v) {
+  std::string json_text, bin;
+  SplitGlb(TinyGlb(), &json_text, &bin);
+  mythos::json::Value j;
+  CHECK(mythos::json::Parse(json_text, j));
+  // A 2 x 2 24-bit BMP: bottom row red, green; top row blue, white.
+  std::string bmp = "BM";
+  const auto le32 = [&](uint32_t v) {
+    bmp.append(reinterpret_cast<const char*>(&v), 4);
+  };
+  const auto le16 = [&](uint16_t v) {
+    bmp.append(reinterpret_cast<const char*>(&v), 2);
+  };
+  le32(54 + 16);
+  le32(0);
+  le32(54);
+  le32(40);
+  le32(2);
+  le32(2);
+  le16(1);
+  le16(24);
+  le32(0);
+  le32(16);
+  le32(2835);
+  le32(2835);
+  le32(0);
+  le32(0);
+  const unsigned char rows[16] = {
+      0,   0, 255, 0,   255, 0,   0, 0,   // red, green (BGR)
+      255, 0, 0,   255, 255, 255, 0, 0};  // blue, white
+  bmp.append(reinterpret_cast<const char*>(rows), 16);
+  const size_t bmp_at = bin.size();
+  bin += bmp;
+  while (bin.size() % 4) bin.push_back('\0');
+  const size_t uv_at = bin.size();
+  const float uvs[6] = {0, 0, 1, 0, 0, 0.25f};
+  bin.append(reinterpret_cast<const char*>(uvs), sizeof(uvs));
+  j["buffers"] = {{{"byteLength", bin.size()}}};
+  j["bufferViews"].push_back(
+      {{"buffer", 0}, {"byteOffset", bmp_at}, {"byteLength", bmp.size()}});
+  j["bufferViews"].push_back(
+      {{"buffer", 0}, {"byteOffset", uv_at}, {"byteLength", sizeof(uvs)}});
+  const size_t views = j["bufferViews"].size();
+  j["images"] = {{{"bufferView", views - 2}, {"mimeType", "image/bmp"}}};
+  j["textures"] = {{{"source", 0}}};
+  j["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"] = {
+      {"index", 0}};
+  j["accessors"].push_back({{"bufferView", views - 1},
+                            {"componentType", 5126},
+                            {"count", 3},
+                            {"type", "VEC2"}});
+  j["meshes"][0]["primitives"][0]["attributes"]["TEXCOORD_0"] =
+      j["accessors"].size() - 1;
+  std::string text = j.dump();
+  while (text.size() % 4) text += ' ';
+  std::string glb = "glTF";
+  const auto u32 = [&](uint32_t v) {
+    glb.append(reinterpret_cast<const char*>(&v), 4);
+  };
+  u32(2);
+  u32(static_cast<uint32_t>(12 + 8 + text.size() + 8 + bin.size()));
+  u32(static_cast<uint32_t>(text.size()));
+  u32(0x4E4F534A);
+  glb += text;
+  u32(static_cast<uint32_t>(bin.size()));
+  u32(0x004E4942);
+  glb += bin;
+
+  mythos::GltfModel m;
+  std::string error;
+  CHECK(mythos::ParseGlb(glb, m, &error));
+  CHECK(error.empty());
+  CHECK_EQ(m.textures.size(), 1u);
+  const auto it = m.textures.find("skin");
+  CHECK(it != m.textures.end());
+  if (it != m.textures.end()) {
+    const mythos::Surface& s = it->second;
+    CHECK(s.w == 2 && s.h == 2);
+    // Surfaces are stored top row first.
+    CHECK(s.At(0, 0) == mythos::Rgba(0, 0, 255) &&
+          s.At(1, 0) == mythos::Rgba(255, 255, 255));
+    CHECK(s.At(0, 1) == mythos::Rgba(255, 0, 0) &&
+          s.At(1, 1) == mythos::Rgba(0, 255, 0));
+  }
+  // Texture coordinates come out with v flipped (the engine's v runs up).
+  CHECK(m.batches[0].verts[2].v == 0.75f && m.batches[0].verts[0].v == 1.0f);
+  CHECK(m.batches[0].verts[1].u == 1.0f);
+  // The shipped character has no textures: only colours.
+  mythos::GltfModel pete;
+  CHECK(mythos::LoadGlb(
+      std::string(MYTHOS_TEST_ASSET_DIR) + "/characters/prototype_pete.glb",
+      pete));
+  CHECK(pete.textures.empty());
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);
