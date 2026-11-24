@@ -63,6 +63,12 @@ bool HasProject(const std::string& dir) {
 // empty if none.
 std::string BundledAssets() {
   namespace fs = std::filesystem;
+  // A development build has no assets beside it: MYTHOS_ENGINE_ASSET_DIR names
+  // the engine's assets folder instead.
+  if (const char* env = SDL_getenv("MYTHOS_ENGINE_ASSET_DIR")) {
+    std::error_code ec;
+    if (fs::is_directory(fs::path(env) / "models", ec)) return env;
+  }
   if (const char* base = SDL_GetBasePath()) {
     for (const char* rel : {"assets", "../../../assets", "../assets"}) {
       const fs::path p = (fs::path(base) / rel).lexically_normal();

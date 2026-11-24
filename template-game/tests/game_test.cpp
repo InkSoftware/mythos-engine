@@ -7,6 +7,9 @@
 #include <filesystem>
 #include <string>
 
+#include "engine/core/fileio.h"
+#include "engine/editor/level_doc.h"
+#include "engine/editor/prefab.h"
 #include "engine/world/save_state.h"
 
 namespace {
@@ -125,6 +128,28 @@ void TestGuideWavesWhenSheSeesYou() {
   CHECK(game.guide_state() != "wave");
 }
 
+void TestPrefabPlacesIntoTheHall() {
+  // The dining prefab (a table, two chairs, a bowl) placed in the back room,
+  // turned a quarter: what the editor's Prefabs panel does.
+  mythos::editor::Prefab prefab;
+  std::string error;
+  CHECK(mythos::editor::ParsePrefab(
+      mythos::ReadTextFile(std::string(TEMPLATE_GAME_ASSETS) +
+                           "/prefabs/dining.prefab"),
+      &prefab, &error));
+  mythos::editor::LevelDoc doc;
+  CHECK(mythos::editor::ParseLevelDoc(
+      mythos::ReadTextFile(std::string(TEMPLATE_GAME_ASSETS) +
+                           "/levels/hall.txt"),
+      &doc, &error));
+  const size_t before = doc.furniture.size();
+  const auto wall = [](const char c) { return c == '#'; };
+  const mythos::editor::PlaceResult placed =
+      mythos::editor::PlacePrefab(doc, prefab, 15, 1, 1, wall);
+  CHECK(placed.furniture == 3 && placed.decor == 1 && placed.skipped == 0);
+  CHECK(doc.furniture.size() == before + 3);
+}
+
 void TestSaveRoundTrip() {
   template_game::Game game;
   if (!LoadGame(game)) return ++g_failures, void();
@@ -151,6 +176,7 @@ int main() {
   TestDoorOpensAndTheTriggerSpeaks();
   TestGuidePatrolsAndAnimates();
   TestGuideWavesWhenSheSeesYou();
+  TestPrefabPlacesIntoTheHall();
   TestSaveRoundTrip();
   std::printf("%d failure(s)\n", g_failures);
   return g_failures == 0 ? 0 : 1;

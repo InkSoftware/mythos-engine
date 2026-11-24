@@ -42,6 +42,7 @@
 #include "engine/editor/adapter.h"
 #include "engine/editor/history.h"
 #include "engine/editor/level_doc.h"
+#include "engine/editor/prefab.h"
 #include "engine/editor/project.h"
 #include "engine/gfx/anim_state.h"
 #include "engine/gfx/flicker.h"
@@ -4634,6 +4635,102 @@ TEST(file_watcher_reports_added_changed_and_removed) {
   CHECK(slow.Poll(0.4).empty());
   CHECK_EQ(slow.Poll(0.7).size(), 1u);
   fs::remove_all(dir);
+}
+
+namespace {
+mythos::editor::Item MakeItem(int x, int y, const std::string& model,
+                              double yaw = 0, double ox = 0, double oz = 0) {
+  mythos::editor::Item i;
+  i.x = x;
+  i.y = y;
+  i.model = model;
+  i.yaw = yaw;
+  i.off_x = ox;
+  i.off_z = oz;
+  return i;
+}
+}
+
+TEST(prefab_round_trips_through_its_file_format) {
+  mythos::editor::Prefab p;
+  p.name = "dining";
+  p.width = 3;
+  p.height = 2;
+  p.furniture = {MakeItem(1, 0, "table"),
+                 MakeItem(0, 1, "chair", 90, 0.1, -0.2)};
+  p.decor = {MakeItem(2, 1, "vase", 45, 0.25, 0.0)};
+  const std::string text = mythos::editor::SerializePrefab(p);
+  mythos::editor::Prefab back;
+  std::string error;
+  CHECK(mythos::editor::ParsePrefab(text, &back, &error));
+  back.name = "dining";
+  CHECK(back == p);
+  // No [size]: taken from the items. Bad input is refused and changes nothing.
+  CHECK(
+      mythos::editor::ParsePrefab("[furniture]\n2 1 table 0\n", &back, &error));
+  CHECK(back.width == 3 && back.height == 2);
+  mythos::editor::Prefab kept = back;
+  CHECK(!mythos::editor::ParsePrefab("[furniture]\nx y\n", &back, &error));
+  CHECK(!mythos::editor::ParsePrefab("[size]\n1 1\n[decor]\n0 0 vase 0\n",
+                                     &back, &error));
+  CHECK(!mythos::editor::ParsePrefab("[size]\n1 1\n[furniture]\n5 0 table 0\n",
+                                     &back, &error));
+  CHECK(!mythos::editor::ParsePrefab("[map]\n#\n", &back, &error));
+  CHECK(back == kept);
+}
+
+TEST(prefab_rotates_cells_yaw_and_offsets) {
+  mythos::editor::Prefab p;
+  p.width = 3;
+  p.height = 2;
+  p.furniture = {MakeItem(0, 0, "a", 0, 0.1, 0.2)};  // top-left, facing south
+  const mythos::editor::Prefab r1 = mythos::editor::Rotated(p, 1);
+  CHECK(r1.width == 2 && r1.height == 3);
+  // The top-left cell goes to the top-right after a clockwise quarter turn;
+  // south-facing now faces west (yaw 270); offsets turn with it.
+  CHECK(r1.furniture[0].x == 1 && r1.furniture[0].y == 0);
+  CHECK(r1.furniture[0].yaw == 270);
+  CHECK(std::fabs(r1.furniture[0].off_x + 0.2) < 1e-9 &&
+        std::fabs(r1.furniture[0].off_z - 0.1) < 1e-9);
+  // Four turns are the identity; turning back is the inverse.
+  CHECK(mythos::editor::Rotated(p, 4) == p);
+  CHECK(mythos::editor::Rotated(mythos::editor::Rotated(p, 1), -1) == p);
+  CHECK(mythos::editor::Rotated(p, 5) == r1);
+  const mythos::editor::Prefab r2 = mythos::editor::Rotated(p, 2);
+  CHECK(r2.width == 3 && r2.furniture[0].x == 2 && r2.furniture[0].y == 1);
+  CHECK(r2.furniture[0].yaw == 180);
+}
+
+TEST(prefab_captures_and_places_with_checks) {
+  mythos::editor::LevelDoc doc;
+  doc.rows = {"#####", "#...#", "#...#", "#####"};
+  doc.furniture = {MakeItem(1, 1, "table"), MakeItem(2, 1, "chair", 90)};
+  doc.decor = {MakeItem(1, 2, "vase", 0, 0.1, 0)};
+  // Corners in any order; the rectangle is clamped to the map.
+  mythos::editor::Prefab p =
+      mythos::editor::CapturePrefab(doc, 2, 2, 1, 1, "set");
+  CHECK(p.width == 2 && p.height == 2 && p.name == "set");
+  CHECK(p.furniture.size() == 2 && p.decor.size() == 1);
+  CHECK(p.furniture[0].x == 0 && p.furniture[0].y == 0);
+  CHECK(mythos::editor::CapturePrefab(doc, 50, 50, 60, 60, "x")
+            .furniture.empty());
+
+  // Place it in the other half of the room, over the walls and on top of
+  // existing furniture.
+  const auto wall = [](char c) { return c == '#'; };
+  mythos::editor::PlaceResult r =
+      mythos::editor::PlacePrefab(doc, p, 3, 2, 0, wall);
+  // (3,2) is floor, (4,2) a wall, (3,3) and (4,3) wall/outside: the table goes
+  // in, the chair (4,2) is refused; the vase at (3,3) is inside the map.
+  CHECK(r.furniture == 1 && r.decor == 1 && r.skipped == 1);
+  // The same spot twice: the table's cell is taken now.
+  r = mythos::editor::PlacePrefab(doc, p, 3, 2, 0, wall);
+  CHECK(r.furniture == 0);
+  // Off the map entirely.
+  r = mythos::editor::PlacePrefab(doc, p, 40, 40);
+  CHECK(r.furniture == 0 && r.decor == 0 && r.skipped == 3);
+  CHECK(mythos::editor::SafePrefabName("my set/1") == "my_set_1");
+  CHECK(mythos::editor::SafePrefabName("") == "prefab");
 }
 
 }

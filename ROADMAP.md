@@ -250,6 +250,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   only; the shader embed step needs a loose-file mode.
 
 ### 5.4 Editor prefabs (M)
+- **Progress:** `editor/prefab.h` (a `.prefab` file in the level's own line format, capture, quarter turns and placement with
+  checks, tested) and a Prefabs section in the Inspector (save an area, place at a cell with a turn). Not done:
+  picking the area or the cell with the mouse in the viewport, a ghost preview, prefabs that keep a link to their file
+  (an update that reaches the placed copies), and prefabs holding triggers or decals.
 - Reusable groups of furniture and decor, saved as a file, placed and
   overridden in the editor. Mirrors the level format so games need no code.
 

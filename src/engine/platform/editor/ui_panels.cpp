@@ -4,8 +4,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <map>
+#include <string>
+#include <system_error>
+#include <vector>
 
+#include "engine/core/fileio.h"
+#include "engine/editor/prefab.h"
 #include "engine/platform/editor/editor_app.h"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -641,6 +647,84 @@ void EditorApp::DrawTriggers(LevelDoc& doc) {
   }
 }
 
+// Prefabs: groups of furniture and decor saved as
+// `assets/prefabs/<name>.prefab` (the level file's own lines, see
+// editor/prefab.h) and placed anywhere. A placed prefab is ordinary level
+// items, so editing them afterwards overrides it.
+void EditorApp::DrawPrefabs(LevelDoc& doc) {
+  if (!ImGui::CollapsingHeader("Prefabs")) return;
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::path(project_.AssetDir()) / "prefabs";
+
+  ImGui::SeparatorText("Save an area");
+  ImGui::DragInt2("From cell X / Y", &prefab_rect_[0], 0.2f);
+  ImGui::DragInt2("To cell X / Y", &prefab_rect_[2], 0.2f);
+  InputStr("Name", &prefab_name_);
+  if (ImGui::Button("Save area as prefab")) {
+    const Prefab p =
+        CapturePrefab(doc, prefab_rect_[0], prefab_rect_[1], prefab_rect_[2],
+                      prefab_rect_[3], SafePrefabName(prefab_name_));
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    const std::string path = (dir / (p.name + ".prefab")).string();
+    if (p.furniture.empty() && p.decor.empty()) {
+      prefab_status_ = "Nothing in that area.";
+    } else if (!WriteFileAtomic(path, SerializePrefab(p))) {
+      prefab_status_ = "Could not write " + path;
+    } else {
+      prefab_status_ = "Saved " + std::to_string(p.furniture.size()) +
+                       " furniture and " + std::to_string(p.decor.size()) +
+                       " decor to " + p.name + ".prefab";
+      prefab_sel_ = p.name;
+    }
+  }
+
+  ImGui::SeparatorText("Place");
+  std::vector<std::string> names;
+  std::error_code ec;
+  for (fs::directory_iterator it(dir, ec), end; !ec && it != end;
+       it.increment(ec)) {
+    if (it->path().extension() == ".prefab") {
+      names.push_back(it->path().stem().string());
+    }
+  }
+  std::ranges::sort(names);
+  if (ImGui::BeginCombo("Prefab",
+                        prefab_sel_.empty() ? "(none)" : prefab_sel_.c_str())) {
+    for (const std::string& n : names) {
+      if (ImGui::Selectable(n.c_str(), n == prefab_sel_)) prefab_sel_ = n;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::DragInt2("Top-left cell X / Y", prefab_at_, 0.2f);
+  ImGui::Combo("Turn", &prefab_turns_,
+               "0 degrees\0"
+               "90 clockwise\0"
+               "180\0"
+               "90 counter-clockwise\0");
+  ImGui::BeginDisabled(prefab_sel_.empty());
+  if (ImGui::Button("Place prefab")) {
+    Prefab p;
+    std::string error;
+    const std::string path = (dir / (prefab_sel_ + ".prefab")).string();
+    if (!ParsePrefab(ReadTextFile(path), &p, &error)) {
+      prefab_status_ = "Cannot read " + prefab_sel_ + ": " + error;
+    } else {
+      const TileSet& tiles = project_.Tiles();
+      const PlaceResult r =
+          PlacePrefab(doc, p, prefab_at_[0], prefab_at_[1], prefab_turns_,
+                      [&](const char glyph) { return tiles.Solid(glyph); });
+      if (r.furniture + r.decor > 0) project_.Touch(level_);
+      prefab_status_ = "Placed " + std::to_string(r.furniture) +
+                       " furniture and " + std::to_string(r.decor) + " decor" +
+                       (r.skipped > 0 ? ", skipped " + std::to_string(r.skipped)
+                                      : std::string());
+    }
+  }
+  ImGui::EndDisabled();
+  if (!prefab_status_.empty()) ImGui::TextWrapped("%s", prefab_status_.c_str());
+}
+
 // Event rules: when <trigger|flag|timer> and <flag conditions>, do <actions>.
 // Edited as a draft and applied, like triggers, so a half-typed rule never
 // reaches the level file.
@@ -769,6 +853,7 @@ void EditorApp::DrawInspector() {
 
   if (doc) DrawTriggers(*doc);
   if (doc) DrawRules(*doc);
+  if (doc) DrawPrefabs(*doc);
 
   Pose pose;
   if (has_sel_ && SelectedPose(&pose)) {

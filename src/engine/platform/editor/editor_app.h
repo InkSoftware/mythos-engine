@@ -220,6 +220,8 @@ class EditorApp {
 
   void DrawRules(LevelDoc& doc);
 
+  void DrawPrefabs(LevelDoc& doc);
+
   void DrawPalette();
 
   void DrawAssets();
@@ -258,6 +260,14 @@ class EditorApp {
   bool has_sel_ = false;
   std::string trigger_sel_;
   Trigger trigger_draft_;
+  // Prefabs panel: the rectangle to save, the name, the cell and turns to
+  // place.
+  int prefab_rect_[4] = {0, 0, 1, 1};
+  std::string prefab_name_ = "group";
+  std::string prefab_sel_;
+  int prefab_at_[2] = {0, 0};
+  int prefab_turns_ = 0;
+  std::string prefab_status_;
   std::string rule_sel_;
   EventRule rule_draft_;
   bool show_triggers_ = true;
