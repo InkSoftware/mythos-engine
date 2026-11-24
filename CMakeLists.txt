@@ -73,6 +73,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/lod.cpp
     src/engine/gfx/materials.cpp
     src/engine/gfx/mesh.cpp
+    src/engine/gfx/probes.cpp
     src/engine/gfx/skeleton.cpp
     src/engine/gfx/sky.cpp
     src/engine/gfx/model.cpp

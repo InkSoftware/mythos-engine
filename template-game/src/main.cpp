@@ -99,18 +99,22 @@ int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
   // `--controls` opens the controls page at the start (for a screenshot).
+  // `--baked` bakes the lamps into light probes instead of lighting with them
+  // live (no shadows from them, no 32-lamp limit).
   // `--ssao` turns on ambient occlusion (the Ambient occlusion setting).
   // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
   bool outdoor = false;
   bool ssao = false;
+  bool baked = false;
   bool start_controls = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--outdoor") outdoor = true;
     if (arg == "--ssao") ssao = true;
+    if (arg == "--baked") baked = true;
     if (arg == "--controls") start_controls = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
@@ -152,6 +156,17 @@ int main(const int argc, char** const argv) {
       mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
   renderer.UploadDoorPanel(mythos::BuildDoorPanel());
   const int guide_model = renderer.UploadModel(guide.batches);
+
+  // Baked light: the static lamps of the level become a probe grid, and are
+  // then left out of the frame's live lights.
+  const auto bake = [&] {
+    std::vector<mythos::ProbeLamp> lamps;
+    for (const mythos::Vec3& p : game.LampPositions()) {
+      lamps.push_back({p.x, p.y, p.z, 1.0, 0.78, 0.5, 7.0});
+    }
+    renderer.UploadProbes(mythos::BakeProbes(game.level(), lamps));
+  };
+  if (baked) bake();
 
   const mythos::UserFiles files("mythos", "template-game");
   const std::string save_dir = files.Path("saves");
@@ -308,6 +323,7 @@ int main(const int argc, char** const argv) {
           ok = false;
         }
       }
+      if (level_changed && baked) bake();
       if (level_changed || textures_changed || models_changed) {
         renderer.UploadWorld(
             mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
@@ -341,7 +357,8 @@ int main(const int argc, char** const argv) {
     cam.outdoor = outdoor;
     if (outdoor)
       cam.time_of_day = std::fmod(hour + clock.Seconds() / 10.0, 24.0);
-    for (const mythos::Vec3& p : game.LampPositions()) {
+    for (const mythos::Vec3& p :
+         baked ? std::vector<mythos::Vec3>{} : game.LampPositions()) {
       mythos::PointLight lamp;
       lamp.x = p.x;
       lamp.y = p.y;

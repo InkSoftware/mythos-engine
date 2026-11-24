@@ -333,6 +333,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.outdoor = world_program_.Uniform("uOutdoor");
   u.moon_dir = world_program_.Uniform("uMoonDir");
   u.sun_color = world_program_.Uniform("uSunColor");
+  u.probe = world_program_.Uniform("uProbe");
   u.sky_ambient = world_program_.Uniform("uSkyAmbient");
   u.fog_color = world_program_.Uniform("uFogColor");
   u.fog_density = world_program_.Uniform("uFogDensity");
@@ -370,6 +371,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uShadowHand", 5);
   world_program_.Set("uNormalTex", 6);
   world_program_.Set("uMaterialTex", 7);
+  world_program_.Set("uProbeTex", 8);
 }
 
 void SceneRenderer::BuildFullscreenQuad() {
@@ -602,6 +604,32 @@ int SceneRenderer::UploadModel(const std::vector<Batch>& batches) {
   return static_cast<int>(models_.size()) - 1;
 }
 
+void SceneRenderer::UploadProbes(const ProbeGrid& grid) {
+  ++scene_revision_;
+  if (grid.Empty()) {
+    probe_scale_[0] = probe_scale_[1] = 0.0f;
+    probe_tex_.Reset();
+    return;
+  }
+  std::vector<float> rgba;
+  rgba.reserve(static_cast<size_t>(grid.width) *
+               static_cast<size_t>(grid.depth) * 4);
+  for (int j = 0; j < grid.depth; ++j) {
+    for (int i = 0; i < grid.width; ++i) {
+      const auto v = grid.At(i, j);
+      rgba.insert(rgba.end(), {v[0], v[1], v[2], 1.0f});
+    }
+  }
+  probe_tex_.Reset();
+  probe_tex_.Create();
+  probe_tex_.Bind();
+  TexImage2D(kTexture2D, 0, static_cast<gl::GLint>(gl::kRgba16f), grid.width,
+             grid.depth, 0, gl::kRgba, kFloat, rgba.data());
+  probe_tex_.SetParams(kLinear, kLinear, kClampToEdge);
+  probe_scale_[0] = static_cast<float>(1.0 / (grid.width * grid.spacing));
+  probe_scale_[1] = static_cast<float>(1.0 / (grid.depth * grid.spacing));
+}
+
 bool SceneRenderer::ReplaceModel(const int id,
                                  const std::vector<Batch>& batches) {
   if (id < 0 || std::cmp_greater_equal(id, models_.size())) return false;
@@ -806,6 +834,18 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
             static_cast<float>(std::clamp(cam.torch_tint, 0.0, 1.0)));
   Uniform1i(u.outdoor, cam.outdoor ? 1 : 0);
   Uniform3f(u.moon_dir, f.moon[0], f.moon[1], f.moon[2]);
+  {
+    const bool probes = probe_scale_[0] > 0.0f && cam.baked_light > 0.0;
+    Uniform3f(
+        u.probe, probes ? probe_scale_[0] : 0.0f,
+        probes ? probe_scale_[1] : 0.0f,
+        probes ? static_cast<float>(std::min(cam.baked_light, 4.0)) : 0.0f);
+    if (probes) {
+      ActiveTexture(kTexture0 + 8);
+      probe_tex_.Bind();
+      ActiveTexture(kTexture0);
+    }
+  }
   Uniform3f(u.sun_color, f.sky.light_color[0], f.sky.light_color[1],
             f.sky.light_color[2]);
   Uniform3f(u.sky_ambient, f.sky.ambient[0], f.sky.ambient[1],

@@ -22,6 +22,8 @@ uniform float uMist;      // ground mist, 0 off .. 1 thick
 uniform float uMistHeight;
 uniform int uOutdoor;
 uniform vec3 uMoonDir;
+uniform sampler2D uProbeTex;  // baked light over the floor plan (RGB)
+uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
 uniform vec3 uSunColor;    // direct light outdoors (the moon's, unless a time of day is set)
 uniform vec3 uSkyAmbient;  // ambient light outdoors
 uniform vec3 uAmbientBase;
@@ -232,6 +234,9 @@ void main() {
             flash *= inside;
         }
         ambient += flash * vec3(0.50, 0.57, 0.80);
+
+        // Baked light: the colour of the probes under this point (static lamps, no shadow).
+        if (uProbe.z > 0.0) light += uProbe.z * texture(uProbeTex, vWorld.xz * uProbe.xy).rgb;
 
         // Lamps: small positional lights, fading out smoothly at their radius.
         for (int i = 0; i < uLightCount; ++i) {

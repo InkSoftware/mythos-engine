@@ -11,6 +11,7 @@
 #include "engine/gfx/lod.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/particles.h"
+#include "engine/gfx/probes.h"
 #include "engine/gfx/render_stats.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/gfx/sky.h"
@@ -153,6 +154,10 @@ struct CameraState {
   // ambient term only).
   double ssao = 0;
 
+  // How much of the uploaded baked light (`SceneRenderer::UploadProbes`) is
+  // added, 0 (none) to 1 (as baked); without an upload it does nothing.
+  double baked_light = 1;
+
   // Camcorder tape look, drawn in the composite pass (HUD included).
   bool tape = false;
 
@@ -253,6 +258,12 @@ class SceneRenderer {
   // instances of `id` draw the new one from the next frame. Returns false for
   // an id that was never uploaded.
   bool ReplaceModel(int id, const std::vector<Batch>& batches);
+
+  // Uploads baked light (`BakeProbes`, gfx/probes.h): every surface gets the
+  // probes' colour at its position as one more light term, with no shadow and
+  // no flicker, for static lamps a game keeps out of `CameraState::lights`.
+  // An empty grid removes it.
+  void UploadProbes(const ProbeGrid& grid);
 
   // Beyond `distance` metres from the eye an instance of `model` is drawn as
   // `far_model` (a cheaper upload of the same thing) in the main and mirror
@@ -379,6 +390,8 @@ class SceneRenderer {
                     gl::GLenum internal_format = gl::kRgba8);
   std::map<std::string, std::string> loose_shaders_;
   ModelLods lods_;
+  GlTexture probe_tex_;
+  float probe_scale_[2] = {0, 0};  // 1 / extent in metres; 0 = none
   ModelLods no_lods_;  // always empty: shadow passes do not swap models
   std::vector<LodRequest> lod_requests_;
   std::vector<const ModelInstance*> lod_instances_;
@@ -546,7 +559,7 @@ class SceneRenderer {
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
-              sun_color = -1, sky_ambient = -1, fog_color = -1,
+              sun_color = -1, probe = -1, sky_ambient = -1, fog_color = -1,
               fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
               lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
               light_count = -1, light_pos = -1, light_color = -1,

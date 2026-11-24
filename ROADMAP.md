@@ -236,6 +236,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ## Phase 5: Scale and tools
 
 ### 5.1 Baked lighting (L)
+- **Progress:** light probes first: `gfx/probes.h` (`BakeProbes`, `ProbeGrid`, a text file; headless and tested) and
+  `SceneRenderer::UploadProbes` (a float texture over the floor plan, added in `world_lighting.frag`; off and
+  pixel-identical without an upload). The template bakes its lamps with `--baked`. Not done: lightmaps, probes in 3D
+  with direction, a `tools/` bake command, baked light in the mirror view.
 - Lightmaps or light probes for static lamps, lifting the 32-light limit for
   static geometry. A bake tool in `tools/` (CPU, cell-based), light probes
   first (cheaper, and they light dynamic props too).

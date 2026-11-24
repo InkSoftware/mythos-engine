@@ -57,6 +57,7 @@
 #include "engine/gfx/normalmap.h"
 #include "engine/gfx/particles.h"
 #include "engine/gfx/pbr.h"
+#include "engine/gfx/probes.h"
 #include "engine/gfx/render_stats.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/gfx/sky.h"
@@ -5058,6 +5059,52 @@ TEST(model_library_reloads_one_file_and_keeps_the_old_one_on_error) {
   CHECK(lib.Find("thing")->batches[0].verts.size() == 6u);
   CHECK(!lib.LoadFile((dir / "none.obj").string(), &error));
   fs::remove_all(dir);
+}
+
+TEST(probes_bake_light_with_walls_and_sample_smoothly) {
+  mythos::Level l;
+  CHECK(l.Parse(
+      {"##########", "#...#....#", "#...#....#", "#........#", "##########"}));
+  const mythos::ProbeLamp lamp{2.5, 2.0, 1.5, 1.0, 0.5, 0.25, 4.0};
+  mythos::ProbeOptions options;
+  options.spacing = 0.5;
+  const mythos::ProbeGrid g = mythos::BakeProbes(l, {lamp}, options);
+  CHECK(!g.Empty() && g.width == 20 && g.depth == 10);
+  // Bright at the lamp, dimmer with distance, colour in the lamp's ratio.
+  const auto near_lamp = g.Sample(2.4, 1.5);
+  const auto farther = g.Sample(3.8, 1.5);
+  CHECK(near_lamp[0] > farther[0] && farther[0] > 0.0f);
+  CHECK(std::fabs(near_lamp[1] / near_lamp[0] - 0.5f) < 1e-3f);
+  CHECK(std::fabs(near_lamp[2] / near_lamp[0] - 0.25f) < 1e-3f);
+  // The wall at column 4 shadows the room beyond it (row 1); a lamp in the
+  // row of the opening (row 3) lights through it.
+  const auto behind_wall = g.Sample(6.0, 1.5);
+  CHECK_EQ(behind_wall[0], 0.0f);
+  const mythos::ProbeLamp low{2.5, 2.0, 3.5, 1.0, 1.0, 1.0, 4.0};
+  CHECK(mythos::BakeProbes(l, {low}, options).Sample(5.5, 3.5)[0] > 0.0f);
+  // Beyond the radius: none. A baked ambient is added everywhere open.
+  CHECK_EQ(g.Sample(8.5, 1.5)[0], 0.0f);
+  options.ambient = {0.1f, 0.1f, 0.1f};
+  const mythos::ProbeGrid lit = mythos::BakeProbes(l, {lamp}, options);
+  CHECK(std::fabs(lit.Sample(8.5, 1.5)[0] - 0.1f) < 1e-6f);
+  // Probes inside walls are filled from their neighbours, so sampling at a
+  // wall's face is not black.
+  CHECK(g.Sample(4.1, 1.5)[0] > 0.0f);
+  // Sampling is continuous: no jump between close points.
+  for (double x = 1.1; x < 3.9; x += 0.05) {
+    CHECK(std::fabs(g.Sample(x, 1.5)[0] - g.Sample(x + 0.05, 1.5)[0]) < 0.1f);
+  }
+  CHECK(mythos::ProbeGrid{}.Sample(1, 1)[0] == 0.0f);
+  // The text file round-trips (to its printed precision) and refuses junk.
+  mythos::ProbeGrid back;
+  std::string error;
+  CHECK(mythos::ParseProbes(mythos::SerializeProbes(g), &back, &error));
+  CHECK(back.width == g.width && back.depth == g.depth);
+  CHECK(std::fabs(back.Sample(2.4, 1.5)[0] - near_lamp[0]) < 1e-4f);
+  mythos::ProbeGrid kept = back;
+  CHECK(!mythos::ParseProbes("probes 0.5 2 2\n1 2 3\n", &back, &error));
+  CHECK(!mythos::ParseProbes("nope", &back, &error));
+  CHECK(back == kept);
 }
 
 }
