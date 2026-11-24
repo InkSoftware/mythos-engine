@@ -184,40 +184,52 @@ uint64_t SceneRenderer::SceneKey(const CameraState& cam) const {
   return h;
 }
 
-// The shadow map of the light that lights an outdoor scene (the sun or the
-// moon): one orthographic depth map centred on the viewer, redrawn only when
-// the scene, the snapped box or a shadow caster changes.
+// The shadow maps of the light that lights an outdoor scene (the sun or the
+// moon): two orthographic depth maps centred on the viewer (a close, sharp one
+// and a wide one), each redrawn only when the scene, its snapped box or a
+// shadow caster changes.
 void SceneRenderer::DrawSunShadow(const CameraState& cam, const Frame& f) {
   constexpr int kSunMapSize = 2048;
-  constexpr float kSunExtent = 24.0f, kSunDepth = 80.0f;
+  constexpr float kExtents[kSunCascades] = {8.0f, 26.0f};
+  constexpr float kSunDepth = 80.0f;
   sun_on_ = false;
   if (!cam.outdoor || cam.sun_shadow <= 0.0 || cam.shadow_level <= 0 ||
       !shadow_program_.Valid()) {
     return;
   }
-  if (sun_target_.Width() == 0) sun_target_.Create(kSunMapSize, kSunMapSize);
   const float eye[3] = {static_cast<float>(cam.x),
                         static_cast<float>(cam.eye_height),
                         static_cast<float>(cam.z)};
-  const SunShadow sun =
-      ComputeSunShadow(eye, f.moon, kSunExtent, kSunDepth, kSunMapSize);
-  std::memcpy(sun_view_proj_, sun.view_proj, sizeof(sun_view_proj_));
-  sun_texel_ = sun.texel;
-  sun_on_ = true;
-
-  uint64_t key = SceneKey(cam);
-  Mix(key, sun.view_proj, sizeof(sun.view_proj));
+  SunShadow cascades[kSunCascades];
+  bool stale[kSunCascades] = {};
+  bool any_stale = false;
+  uint64_t casters = SceneKey(cam);
   for (const ModelInstance& inst : cam.instances) {
     if (!(inst.views & ModelInstance::kShadow) || inst.model < 0) continue;
-    Mix(key, inst.model);
-    Mix(key, inst.matrix, sizeof(inst.matrix));
+    Mix(casters, inst.model);
+    Mix(casters, inst.matrix, sizeof(inst.matrix));
     if (!inst.skin.empty()) {
-      Mix(key, inst.skin.data(), inst.skin.size() * sizeof(Mat4f));
+      Mix(casters, inst.skin.data(), inst.skin.size() * sizeof(Mat4f));
     }
   }
-  key |= 1;
-  if (key == sun_key_) return;
-  sun_key_ = key;
+  for (int c = 0; c < kSunCascades; ++c) {
+    if (sun_target_[c].Width() == 0) {
+      sun_target_[c].Create(kSunMapSize, kSunMapSize);
+    }
+    cascades[c] =
+        ComputeSunShadow(eye, f.moon, kExtents[c], kSunDepth, kSunMapSize);
+    std::memcpy(sun_view_proj_[c], cascades[c].view_proj,
+                sizeof(sun_view_proj_[c]));
+    uint64_t key = casters;
+    Mix(key, cascades[c].view_proj, sizeof(cascades[c].view_proj));
+    key |= 1;
+    stale[c] = key != sun_key_[c];
+    sun_key_[c] = key;
+    any_stale = any_stale || stale[c];
+  }
+  sun_texel_ = 1.0f / static_cast<float>(kSunMapSize);
+  sun_on_ = true;
+  if (!any_stale) return;
 
   const GLint saved_model = u_model_, saved_emissive = u_emissive_,
               saved_alpha = u_alpha_test_, saved_skinned = u_skinned_,
@@ -231,21 +243,24 @@ void SceneRenderer::DrawSunShadow(const CameraState& cam, const Frame& f) {
   bind_normals_ = false;
   shadow_program_.Use();
   shadow_program_.Set("uTex", 0);
-  shadow_program_.SetMat4("uView", sun.view);
-  shadow_program_.SetMat4("uProj", sun.proj);
-  sun_target_.Bind();
-  gl::Viewport(0, 0, sun_target_.Width(), sun_target_.Height());
   Enable(kDepthTest);
   DepthFunc(kLequal);
   Disable(kBlend);
   ActiveTexture(kTexture0);
-  Clear(kDepthBufferBit);
-  draw_state_ = DrawState{};
-  Frustum frustum;
-  FrustumPlanes(sun.view_proj, frustum);
-  counting_shadows_ = true;
-  DrawScene(cam, frustum, ModelInstance::kShadow);
-  counting_shadows_ = false;
+  for (int c = 0; c < kSunCascades; ++c) {
+    if (!stale[c]) continue;
+    shadow_program_.SetMat4("uView", cascades[c].view);
+    shadow_program_.SetMat4("uProj", cascades[c].proj);
+    sun_target_[c].Bind();
+    gl::Viewport(0, 0, sun_target_[c].Width(), sun_target_[c].Height());
+    Clear(kDepthBufferBit);
+    draw_state_ = DrawState{};
+    Frustum frustum;
+    FrustumPlanes(cascades[c].view_proj, frustum);
+    counting_shadows_ = true;
+    DrawScene(cam, frustum, ModelInstance::kShadow);
+    counting_shadows_ = false;
+  }
   u_model_ = saved_model;
   u_emissive_ = saved_emissive;
   u_alpha_test_ = saved_alpha;

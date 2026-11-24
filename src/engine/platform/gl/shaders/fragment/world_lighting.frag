@@ -27,8 +27,9 @@ uniform vec2 uEnv;                 // strength (0 = none), the highest mip level
 uniform sampler2D uProbeTex;  // baked light over the floor plan (RGB)
 uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
 uniform float uSunShadow;      // 1: a shadow map of the outdoor light is bound
-uniform mat4 uSunVP;           // world -> the shadow map's clip space
-uniform sampler2D uSunShadowTex;
+uniform mat4 uSunVP[2];        // world -> each cascade's clip space (0 close, 1 wide)
+uniform sampler2D uSunShadowTex;     // the close cascade
+uniform sampler2D uSunShadowTexFar;  // the wide one
 uniform float uSunTexel;       // one texel in uv
 uniform vec3 uSunColor;    // direct light outdoors (the moon's, unless a time of day is set)
 uniform vec3 uSkyAmbient;  // ambient light outdoors
@@ -116,17 +117,31 @@ float gMetal = 0.0, gAo = 1.0;  // the material map, set by main
 float gRough = 1.0;             // the roughness the specular uses
 vec3 gF0 = vec3(0.04);          // reflectance at normal incidence: 0.04 for a dielectric, the albedo for a metal
 // The outdoor light's shadow: 1 lit, 0 in shadow, a 3x3 soft edge. `p` is already pushed off the surface along its normal.
-float sunShadowFactor(vec3 p) {
-    vec4 c = uSunVP * vec4(p, 1.0);
+// One cascade: its shadow (1 lit .. 0 shadow) and how far inside its box the point is (0 at or outside the edge).
+float sunCascade(vec3 p, int cascade, out float inside) {
+    vec4 c = uSunVP[cascade] * vec4(p, 1.0);
     vec3 s = c.xyz / c.w * 0.5 + 0.5;
-    if (s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0 || s.z > 1.0) return 1.0;
+    vec2 edge = min(s.xy, 1.0 - s.xy);
+    inside = (s.z > 1.0) ? 0.0 : smoothstep(0.0, 0.08, min(edge.x, edge.y));
+    if (inside <= 0.0) return 1.0;
     float lit = 0.0;
     for (int y = -1; y <= 1; ++y)
-        for (int x = -1; x <= 1; ++x)
-            lit += (texture(uSunShadowTex, s.xy + vec2(float(x), float(y)) * uSunTexel).r + 0.0008 < s.z) ? 0.0 : 1.0;
-    // Fade out toward the edge of the box, where there is no map.
-    vec2 edge = min(s.xy, 1.0 - s.xy);
-    return mix(1.0, lit / 9.0, smoothstep(0.0, 0.06, min(edge.x, edge.y)));
+        for (int x = -1; x <= 1; ++x) {
+            vec2 uv = s.xy + vec2(float(x), float(y)) * uSunTexel;
+            float d = cascade == 0 ? texture(uSunShadowTex, uv).r : texture(uSunShadowTexFar, uv).r;
+            lit += (d + 0.0008 < s.z) ? 0.0 : 1.0;
+        }
+    return lit / 9.0;
+}
+
+// The close cascade where the point is well inside it, blending into the wide one toward its edge, and fading out
+// past the wide one's edge where there is no map.
+float sunShadowFactor(vec3 p) {
+    float in0, in1;
+    float near = sunCascade(p, 0, in0);
+    float far = sunCascade(p, 1, in1);
+    float shadow = mix(far, near, in0);
+    return mix(1.0, shadow, max(in0, in1));
 }
 
 vec3 bumpNormal(vec3 n) {

@@ -387,6 +387,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uMaterialTex", 7);
   world_program_.Set("uProbeTex", 8);
   world_program_.Set("uSunShadowTex", 9);
+  world_program_.Set("uSunShadowTexFar", 11);
   world_program_.Set("uReflectionEnv", 10);
 }
 
@@ -995,10 +996,12 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   }
   Uniform1f(u.sun_shadow, sun_on_ ? 1.0f : 0.0f);
   if (sun_on_) {
-    UniformMatrix4fv(u.sun_vp, 1, kFalse, sun_view_proj_);
-    Uniform1f(u.sun_texel, 1.0f / static_cast<float>(sun_target_.Width()));
+    UniformMatrix4fv(u.sun_vp, kSunCascades, kFalse, &sun_view_proj_[0][0]);
+    Uniform1f(u.sun_texel, sun_texel_);
     ActiveTexture(kTexture0 + 9);
-    sun_target_.DepthTexture().Bind();
+    sun_target_[0].DepthTexture().Bind();
+    ActiveTexture(kTexture0 + 11);
+    sun_target_[1].DepthTexture().Bind();
     ActiveTexture(kTexture0);
   }
   Uniform3f(u.sun_color, f.sky.light_color[0], f.sky.light_color[1],
