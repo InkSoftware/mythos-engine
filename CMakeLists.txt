@@ -338,6 +338,12 @@ add_executable(mythos_pack tools/pack/mythos_pack.cpp)
 target_link_libraries(mythos_pack PRIVATE mythos_engine)
 mythos_engine_warnings(mythos_pack)
 
+# Bakes light probes for a level from a list of lamps (see tools/bake/):
+#   mythos_bake_probes <level.txt> <lamps.txt> <out.probes> [--tiles ...] [--spacing m] [--ambient r g b]
+add_executable(mythos_bake_probes tools/bake/mythos_bake_probes.cpp)
+target_link_libraries(mythos_bake_probes PRIVATE mythos_engine)
+mythos_engine_warnings(mythos_bake_probes)
+
 # ---------------------------------------------------------------- tests
 if(MYTHOS_BUILD_TESTS)
     enable_testing()

@@ -50,7 +50,7 @@ its own README: copy it to start a new one. It is built and tested with the engi
 ```
 src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
 assets/       fonts, common sounds and textures, the basic house and office models and an animated character (`characters/`), that games share
-tools/        mythos_assets.py, generate_models.py, mythos_models.py (and its test), fetch_cc0_models.py, mythos_pbr_maps.py, editor/ (MythosEditor), pack/ (mythos_pack)
+tools/        bake/ (mythos_bake_probes), mythos_assets.py, generate_models.py, mythos_models.py (and its test), fetch_cc0_models.py, mythos_pbr_maps.py, editor/ (MythosEditor), pack/ (mythos_pack)
 tests/        test_main.cpp
 template-game/  a small game to copy when starting a new one
 third_party/  stb_truetype, stb_image

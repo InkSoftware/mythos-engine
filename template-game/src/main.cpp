@@ -12,6 +12,7 @@
 #include "engine/audio/audio_math.h"
 #include "engine/audio/spatial.h"
 #include "engine/core/file_watch.h"
+#include "engine/core/fileio.h"
 #include "engine/core/json.h"
 #include "engine/data/i18n.h"
 #include "engine/data/translation.h"
@@ -186,6 +187,20 @@ int main(const int argc, char** const argv) {
 
   // Baked light: the static lamps of the level become a probe grid, and are
   // then left out of the frame's live lights.
+  // The probes come from the baked file `hall.probes` (made by the engine's
+  // `mythos_bake_probes` from `hall.lamps`); a level edited while the game
+  // runs is baked again here from the lamps of the level.
+  const auto load_baked = [&] {
+    mythos::ProbeGrid grid;
+    std::string why;
+    if (mythos::ParseProbes(
+            mythos::ReadTextFile(GameAssets() + "/levels/hall.probes"), &grid,
+            &why)) {
+      renderer.UploadProbes(grid);
+      return true;
+    }
+    return false;
+  };
   const auto bake = [&] {
     std::vector<mythos::ProbeLamp> lamps;
     for (const mythos::Vec3& p : game.LampPositions()) {
@@ -193,7 +208,7 @@ int main(const int argc, char** const argv) {
     }
     renderer.UploadProbes(mythos::BakeProbes(game.level(), lamps));
   };
-  if (baked) bake();
+  if (baked && !load_baked()) bake();
 
   const mythos::UserFiles files("mythos", "template-game");
   const std::string save_dir = files.Path("saves");

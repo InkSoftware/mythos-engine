@@ -1,0 +1,4 @@
+; The hall's static lamps: x y z  r g b  radius (world units, linear colour).
+; These are the 'L' cells of hall.txt at lamp height; `mythos_bake_probes` turns them into hall.probes.
+6.5 2.1 2.5  1.0 0.78 0.5  7
+12.5 2.1 2.5  1.0 0.78 0.5  7

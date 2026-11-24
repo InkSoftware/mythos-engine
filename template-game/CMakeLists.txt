@@ -44,6 +44,19 @@ if (TARGET mythos::engine_platform)
             TEMPLATE_GAME_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets")
 endif ()
 
+# The baked light for --baked: the engine's bake tool turns the lamps file into
+# a probe grid beside the level. (Checked in too, so a build without the tool
+# still runs; the test re-bakes it into the build folder.)
+if (TARGET mythos_bake_probes)
+    add_test(NAME template_game_bake_probes
+            COMMAND mythos_bake_probes
+                    ${CMAKE_CURRENT_SOURCE_DIR}/assets/levels/hall.txt
+                    ${CMAKE_CURRENT_SOURCE_DIR}/assets/levels/hall.lamps
+                    ${CMAKE_CURRENT_BINARY_DIR}/hall.probes
+                    --tiles ${CMAKE_CURRENT_SOURCE_DIR}/assets/data/tiles.json)
+    set_tests_properties(template_game_bake_probes PROPERTIES PASS_REGULAR_EXPRESSION "baked 2 lamp")
+endif ()
+
 # Headless tests of the rules (ctest).
 add_executable(template_game_tests tests/game_test.cpp)
 target_link_libraries(template_game_tests PRIVATE template_game_rules)

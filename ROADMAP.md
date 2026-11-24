@@ -252,7 +252,8 @@ more than was built.
 - **Progress:** light probes first: `gfx/probes.h` (`BakeProbes`, `ProbeGrid`, a text file; headless and tested) and
   `SceneRenderer::UploadProbes` (a float texture over the floor plan, added in `world_lighting.frag`; off and
   pixel-identical without an upload). The template bakes its lamps with `--baked`. Not done: lightmaps, probes in 3D
-  with direction, a `tools/` bake command, baked light in the mirror view.
+  with direction and baked light in the mirror view. `tools/bake/mythos_bake_probes` bakes a level and a lamps file into
+  a `.probes` file (the template loads its checked-in `hall.probes`, and a ctest re-bakes it).
 - Lightmaps or light probes for static lamps, lifting the 32-light limit for
   static geometry. A bake tool in `tools/` (CPU, cell-based), light probes
   first (cheaper, and they light dynamic props too).
@@ -325,7 +326,7 @@ Gaps named in the Progress lines, by area:
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
 - **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
-- **Tools and data:** a bake command in `tools/` for light probes, bindings saved in `settings.txt`, door and `Level`
+- **Tools and data:** bindings saved in `settings.txt`, door and `Level`
   diffs in a save.
 
 ## Out of scope for now
