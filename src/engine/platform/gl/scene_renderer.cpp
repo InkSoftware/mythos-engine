@@ -805,7 +805,38 @@ void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
       pick[1] = i;
     }
   }
-  if (pick[0] < 0 || !CaptureReflectionProbe(cam, f, pick[0])) return;
+  if (pick[0] < 0) return;
+  // Keep the number of captures bounded: drop the farthest one that is not in
+  // use when a new one is about to be made.
+  int resident = 0;
+  for (int i = 0; i < reflection_count_; ++i) {
+    if (reflection_[i].cube.Valid()) ++resident;
+  }
+  for (const int want : {pick[0], pick[1]}) {
+    if (want < 0 || reflection_[want].cube.Valid()) continue;
+    while (resident >= kResidentReflectionProbes) {
+      int far_index = -1;
+      float far_dist = -1.0f;
+      for (int i = 0; i < reflection_count_; ++i) {
+        if (i == pick[0] || i == pick[1] || !reflection_[i].cube.Valid()) {
+          continue;
+        }
+        const float dx = reflection_[i].pos[0] - f.eye[0],
+                    dz = reflection_[i].pos[2] - f.eye[2];
+        const float d = dx * dx + dz * dz;
+        if (d > far_dist) {
+          far_dist = d;
+          far_index = i;
+        }
+      }
+      if (far_index < 0) break;
+      reflection_[far_index].cube.Reset();
+      reflection_[far_index].key = 0;
+      --resident;
+    }
+    ++resident;
+  }
+  if (!CaptureReflectionProbe(cam, f, pick[0])) return;
   env_probe_ = pick[0];
   if (pick[1] >= 0 && CaptureReflectionProbe(cam, f, pick[1])) {
     env_probe2_ = pick[1];

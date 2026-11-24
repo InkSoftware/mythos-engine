@@ -280,11 +280,15 @@ class SceneRenderer {
   // A reflection probe: a cube capture of the scene (128 x 128 a face, blurred
   // by mip level for rough surfaces) taken at a point, drawn the first frame
   // it is needed and again when the scene changes, not every frame. Up to
-  // kMaxReflectionProbes; the one nearest the viewer is used (a surface
+  // kMaxReflectionProbes; the two nearest the viewer are used (a surface
   // reflects it as if it were at infinity: no parallax). Models that move, the
   // sky, glass and particles are not in the capture. Returns the probe's index
   // or -1 when full.
-  static constexpr int kMaxReflectionProbes = 4;
+  static constexpr int kMaxReflectionProbes = 32;
+  // At most this many probes hold a capture at once (about 2 MB each): when
+  // another becomes one of the two nearest, the farthest idle one is dropped
+  // and captured again if it is needed later.
+  static constexpr int kResidentReflectionProbes = 6;
   //
   // With a box (`half_x`, `half_y`, `half_z` above 0: half the room's size
   // around the probe) the reflection is parallax corrected: a reflected ray
