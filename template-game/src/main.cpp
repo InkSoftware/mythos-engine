@@ -368,6 +368,14 @@ int main(const int argc, char** const argv) {
     }
 
     for (const std::string& cue : game.TakeSounds()) audio.Play(cue);
+    // The room's reverb: the bigger the room the player stands in (the cells
+    // reachable without a door), the longer the tail.
+    const mythos::ReverbSend room =
+        mythos::ReverbForRoom(mythos::RoomDoors::RegionSize(
+            game.level(), static_cast<int>(game.player().pos.x),
+            static_cast<int>(game.player().pos.y)));
+    audio.SetReverb(static_cast<float>(room.send),
+                    static_cast<float>(room.decay_seconds));
     if (hum >= 0) {
       const mythos::Vec2 ear = game.player().pos;
       const mythos::StereoGain pan = mythos::PositionalGain(

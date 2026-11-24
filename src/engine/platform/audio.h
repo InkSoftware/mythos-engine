@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "engine/audio/radio_fx.h"
+#include "engine/audio/reverb.h"
 
 namespace mythos {
 // Stereo float mixer on an SDL audio stream. Clips are mono WAVs resampled to
@@ -77,6 +78,11 @@ class AudioEngine {
   // Length of a loaded clip in seconds, or 0 if unknown.
   [[nodiscard]] double ClipSeconds(const std::string& name) const;
 
+  // The room's reverb: how much is added to the whole mix (0 off) and how long
+  // the tail rings in seconds; eased, so walking between rooms does not click.
+  // `ReverbForRoom` (audio/spatial.h) gives both from the size of a room.
+  void SetReverb(float send, float decay_seconds);
+
   // Volumes as 0..1 factors; master multiplies the other two.
   void SetVolumes(float master, float ambience, float effects);
 
@@ -136,6 +142,7 @@ class AudioEngine {
 
   [[nodiscard]] const Clip* FindClip(const std::string& name) const;
 
+  Reverb reverb_;
   SDL_AudioStream* stream_ = nullptr;
   int rate_ = 44100;
   std::map<std::string, Clip> clips_;

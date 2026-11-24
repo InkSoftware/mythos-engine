@@ -22,6 +22,7 @@
 
 #include "engine/audio/audio_math.h"
 #include "engine/audio/radio_fx.h"
+#include "engine/audio/reverb.h"
 #include "engine/audio/sound_bank.h"
 #include "engine/audio/spatial.h"
 #include "engine/core/cvar.h"
@@ -4964,6 +4965,63 @@ TEST(controls_page_draws_rows_and_hotspots) {
     prompt = prompt || run.text == mythos::Tr("controls.press");
   }
   CHECK(prompt);
+}
+
+TEST(reverb_adds_a_decaying_tail_and_does_nothing_when_off) {
+  constexpr int kRate = 48000;
+  const auto run = [&](double send, double decay, int seconds_listened,
+                       std::vector<float>& tail_energy) {
+    mythos::Reverb r;
+    r.Prepare(kRate);
+    r.Set(send, decay);
+    std::vector<float> block(2 * 480, 0.0f);
+    tail_energy.clear();
+    // An impulse in the first block, then silence, in 10 ms blocks.
+    for (int b = 0; b < seconds_listened * 100; ++b) {
+      std::ranges::fill(block, 0.0f);
+      if (b == 0) block[0] = block[1] = 1.0f;
+      r.Process(block.data(), 480);
+      float e = 0;
+      for (const float v : block) {
+        CHECK(std::isfinite(v));
+        e += v * v;
+      }
+      tail_energy.push_back(e);
+    }
+  };
+  std::vector<float> off, on, longer;
+  run(0.0, 1.0, 2, off);
+  CHECK_EQ(off[0], 2.0f);  // only the dry impulse: untouched
+  for (size_t i = 1; i < off.size(); ++i) CHECK_EQ(off[i], 0.0f);
+  run(0.5, 1.0, 2, on);
+  // The tail is there after the dry sound, and falls away.
+  float early = 0, late = 0;
+  for (size_t i = 5; i < 25; ++i) early += on[i];
+  for (size_t i = 150; i < 200; ++i) late += on[i];
+  CHECK(early > 1e-4f);
+  CHECK(late < early * 0.01f);
+  // A longer decay rings longer.
+  run(0.5, 3.0, 2, longer);
+  float longer_mid = 0, on_mid = 0;
+  for (size_t i = 60; i < 120; ++i) {
+    longer_mid += longer[i];
+    on_mid += on[i];
+  }
+  CHECK(longer_mid > on_mid * 2.0f);
+  // Loud noise for a while stays finite and bounded.
+  mythos::Reverb r;
+  r.Prepare(kRate);
+  r.Set(1.0, 10.0);
+  std::vector<float> noise(2 * 480);
+  uint32_t seed = 1;
+  for (int b = 0; b < 300; ++b) {
+    for (float& v : noise) {
+      seed = seed * 1664525u + 1013904223u;
+      v = static_cast<float>(seed >> 8) / 8388608.0f - 1.0f;
+    }
+    r.Process(noise.data(), 480);
+    for (const float v : noise) CHECK(std::isfinite(v) && std::fabs(v) < 20.0f);
+  }
 }
 
 }

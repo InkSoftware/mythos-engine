@@ -47,6 +47,7 @@ set(MYTHOS_IMGUI_TAG "v1.92.9-docking" CACHE STRING "The Dear ImGui tag (docking
 # ---------------------------------------------------------------- mythos::engine
 add_library(mythos_engine STATIC
     src/engine/audio/sound_bank.cpp
+    src/engine/audio/reverb.cpp
     src/engine/audio/spatial.cpp
     src/engine/core/cvar.cpp
     src/engine/core/file_watch.cpp

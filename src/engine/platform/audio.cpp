@@ -56,6 +56,7 @@ bool AudioEngine::Init() {
       have.freq > 0) {
     rate_ = have.freq;
   }
+  reverb_.Prepare(static_cast<double>(rate_));
   SDL_ResumeAudioStreamDevice(stream_);
   return true;
 }
@@ -225,6 +226,13 @@ void AudioEngine::SetSource(const int id, const float left, const float right) {
   SDL_UnlockAudioStream(stream_);
 }
 
+void AudioEngine::SetReverb(const float send, const float decay_seconds) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  reverb_.Set(static_cast<double>(send), static_cast<double>(decay_seconds));
+  SDL_UnlockAudioStream(stream_);
+}
+
 void AudioEngine::SetSourceMuffle(const int id, const float muffle) {
   if (!stream_ || id < 0) return;
   SDL_LockAudioStream(stream_);
@@ -286,6 +294,7 @@ void AudioEngine::Mix(float* const out, const int frames) {
   MixVoices(out, frames, duck_start, duck_level_);
   MixSources(out, frames);
   RemoveFinishedVoices();
+  reverb_.Process(out, frames);
   for (int i = 0; i < frames * kChannels; ++i) {
     out[i] = std::max(-1.0f, std::min(1.0f, out[i]));
   }
