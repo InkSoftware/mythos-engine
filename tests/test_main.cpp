@@ -5300,6 +5300,20 @@ TEST(save_state_level_diff_records_and_restores_changed_cells) {
   CHECK(fresh.At(1, 1) == 'x');
 }
 
+TEST(music_tempo_map_finds_bar_and_phrase_ends) {
+  // 120 bpm 4/4 (2 s bars) for 6 s, then 60 bpm 4/4 (4 s bars).
+  const std::vector<mythos::TempoSection> map = {{0.0, 120, 4}, {6.0, 60, 4}};
+  CHECK(std::fabs(mythos::NextBarTime(map, 0.5) - 2.0) < 1e-9);
+  CHECK(std::fabs(mythos::NextBarTime(map, 5.0) - 6.0) < 1e-9);
+  CHECK(std::fabs(mythos::NextBarTime(map, 6.0) - 6.0) < 1e-9);
+  CHECK(std::fabs(mythos::NextBarTime(map, 6.5) - 10.0) < 1e-9);
+  // Two-bar phrases: 4 s long in the first section, cut by the change at 6.
+  CHECK(std::fabs(mythos::NextPhraseTime(map, 4.5, 2) - 6.0) < 1e-9);
+  CHECK(std::fabs(mythos::NextPhraseTime(map, 1.0, 2) - 4.0) < 1e-9);
+  CHECK(std::fabs(mythos::NextPhraseTime(map, 7.0, 2) - 14.0) < 1e-9);
+  CHECK_EQ(mythos::NextBarTime({}, 3.0), 3.0);
+}
+
 TEST(save_state_furniture_diff_records_removed_and_added_pieces) {
   mythos::Level base;
   CHECK(base.Parse({"#####", "#...#", "#####"}));

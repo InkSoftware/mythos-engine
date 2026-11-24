@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <limits>
 
 namespace mythos {
 double NextBarTime(const double now, const double bpm,
@@ -10,6 +12,37 @@ double NextBarTime(const double now, const double bpm,
   const double bar = 60.0 / bpm * beats_per_bar;
   const double bars = std::ceil(now / bar - 1e-9);
   return std::max(0.0, bars) * bar;
+}
+
+namespace {
+// The first multiple of `step` from `start` that is at or after `now`.
+double NextOnGrid(const double start, const double step, const double now) {
+  if (now <= start) return start;
+  return start + std::ceil((now - start) / step - 1e-9) * step;
+}
+
+double NextOnMap(const std::vector<TempoSection>& map, const double now,
+                 const int bars) {
+  for (std::size_t i = 0; i < map.size(); ++i) {
+    const TempoSection& s = map[i];
+    const double end = i + 1 < map.size() ? map[i + 1].start
+                                          : std::numeric_limits<double>::max();
+    if (now > end) continue;
+    if (s.bpm <= 0 || s.beats_per_bar <= 0 || bars <= 0) return now;
+    const double step = 60.0 / s.bpm * s.beats_per_bar * bars;
+    return std::min(NextOnGrid(s.start, step, now), end);
+  }
+  return now;
+}
+}  // namespace
+
+double NextBarTime(const std::vector<TempoSection>& map, const double now) {
+  return NextOnMap(map, now, 1);
+}
+
+double NextPhraseTime(const std::vector<TempoSection>& map, const double now,
+                      const int bars_per_phrase) {
+  return NextOnMap(map, now, bars_per_phrase);
 }
 
 void LayerFader::FadeAt(const std::string& layer, const double target,

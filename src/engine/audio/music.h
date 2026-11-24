@@ -17,6 +17,25 @@ namespace mythos {
 // counts as now.
 double NextBarTime(double now, double bpm, int beats_per_bar);
 
+// A stretch of music with its own tempo, from `start` seconds (the music's own
+// clock) until the next section starts. Bars count from `start`.
+struct TempoSection {
+  double start = 0;
+  double bpm = 120;
+  int beats_per_bar = 4;
+};
+
+// The next bar line at or after `now` in a tempo map (sections in time order;
+// a bar that would cross into the next section ends there, which is also a
+// bar line). With no sections, `now`.
+double NextBarTime(const std::vector<TempoSection>& map, double now);
+
+// The next phrase end (every `bars_per_phrase` bars, counted from the start of
+// the section) at or after `now`; a phrase cut short by a tempo change ends
+// where the next section begins.
+double NextPhraseTime(const std::vector<TempoSection>& map, double now,
+                      int bars_per_phrase);
+
 class LayerFader {
  public:
   // Fades `layer` to `target` (0..1) over `seconds` (0 or less: at once). A
