@@ -24,6 +24,11 @@ library. This is a plan, not a promise: each item is meant to ship on its own.
 
 Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
+Status: every item below has a first working version, with a **Progress** line saying what is built and what is not.
+"done" in a heading means nothing the item set out to do is left; "first version" means it works, is tested, is shown in
+`template-game/` and has gaps listed in its Progress line. The **Where** and **Why** lines are the original plan and may be
+more than was built.
+
 ---
 
 ## Phase 1: Look and feedback (the cheapest visible wins)
@@ -54,7 +59,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Tests:** determinism, lifetime and spawn counts, collision with walls.
 - **Risk:** lighting. Start unlit or ambient-lit, with an optional glow.
 
-### 1.3 Decals (S to M)
+### 1.3 Decals (S to M) - first version
 - **Progress:** cell-bounded decals, clipped thin-wall and window-frame decals,
   a separate blended render pass and `[decals]` persistence are implemented.
   Cell-wall decals require a visible neighboring thick wall; thin-cell floor
@@ -116,24 +121,24 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Risk:** keep the action set generic (set flag, play sound, open door,
   show text key, spawn, call game id). Anything else is the game's.
 
-### 2.2 Save and load (M)
+### 2.2 Save and load (M) - first version
 - **Progress:** `data/save.h` provides the versioned JSON file (named
   sections), per-version migrations, numbered slots and atomic writes;
   `world/save_state.h` serialises `Progress` and `Player`. Door and `Level`
-  diffs are not done: a game stores them in its own sections.
+  diffs are a game's own sections (the template saves its doors and the guide that way).
 - **Where:** `data/save.h` is a versioned JSON snapshot (`Progress`, player,
   doors, flags, the `Level` diffs, game-supplied blob), a slot API and atomic
   writes (temp file then rename, via `fileio`). A migration hook per version.
 - **Tests:** round trip, a corrupt file, forward version rejection.
 
-### 2.3 Input actions and rebinding (M)
+### 2.3 Input actions and rebinding (M) - first version
 - **Progress:** `ui/input_map.h` has named actions with contexts, up to two
   bindings each (keys, pad buttons, axis halves, mouse buttons, written as
   text), a conflict check per context with refuse-or-steal rebinding, reset,
   JSON persistence of the differences only and dead-zone maths,
   `ActionTracker` (per-frame state) and `DefaultGameplayMap` (the usual keys);
   `ProbeBinding`, `ApplyActions` and `InputPoll::pressed` feed a game from it (the
-  template's F3 opens the controls page and saves `bindings.json`). The rebind page is
+  template's Esc opens the settings menu, F3 or its Controls row the controls page, which saves `bindings.json`). The rebind page is
   `ui/controls_ui.h` (`UpdateControlsPage` tested, `DrawControlsPage`). The settings menu has a Controls row
   (`GameSettings::controls_page`, `SettingsPage::kControls`, `LeaveControlsPage`). Not done: saving the bindings in
   settings.txt.
@@ -148,7 +153,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
 ## Phase 3: Life (the largest, so it comes after the cheap work)
 
-### 3.1 Skeletal animation (L)
+### 3.1 Skeletal animation (L) - first version
 - **Progress:** `gfx/skeleton.h` has the bone hierarchy (at most 64, parents
   first), keyframed clips, a sampler (loop or clamp), pose blending, an
   `Animator` crossfade and `SkinMatrices` (headless, tested). GPU skinning: a `Batch` with `skin`
@@ -174,7 +179,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - **Done when:** a CC0 animated character walks, idles and casts a shadow.
 - **Risk:** the biggest item; split into loader, sampler, GPU skinning.
 
-### 3.2 AI and pathfinding (M)
+### 3.2 AI and pathfinding (M) - first version
 - **Progress:** `world/nav.h` provides deterministic cardinal A* and a
   reachability flood, with optional conservative body-clearance checks and
   door avoidance. It treats thin-wall cells as blocked; sub-cell routing,
@@ -195,7 +200,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
 ## Phase 4: Atmosphere
 
-### 4.1 Audio: occlusion, reverb zones, mixer groups (M)
+### 4.1 Audio: occlusion, reverb zones, mixer groups (M) - first version
 - **Progress:** `audio/spatial.h` has the occlusion maths, a low-pass cutoff and coefficient, the reverb send for a room size and
   `MixerGroups` (volume and ducking); `world/sound_path.h` counts walls and closed doors between a source and the
   listener; `AudioEngine::SetSourceMuffle` low-passes a positional source (the template's hum in the back room is
@@ -208,7 +213,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   snapshots (duck music on dialogue) and a layered music crossfade. The
   mixer applies the maths; tests cover the maths.
 
-### 4.2 SSAO (M)
+### 4.2 SSAO (M) - first version
 - **Progress:** done as a post pass (`ssao.frag` at half size, a blur, multiplied in the composite, less on bright
   pixels), behind the Ambient occlusion setting (off by default; `CameraState::ssao`); the scene target's depth is now a
   texture, copied out of the multisampled target only while it is on. The template shows it with `--ssao`. Not done:
@@ -217,7 +222,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   term only. Needs a depth/normal copy of the multisampled target (resolve).
   Setting: off / on, off keeps pixel parity.
 
-### 4.3 Reflection probes (M)
+### 4.3 Reflection probes (M) - first version
 - **Progress:** `SceneRenderer::AddReflectionProbe` and `CameraState::reflections`: a 128 x 128 cube capture of the world at
   each probe (redrawn only when the scene changes), mips as the roughness blur, read in the world shader's
   environment reflection; off by default and unchanged then. The template shows it with `--reflections` (a toolbox
@@ -229,7 +234,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   chunk. The world shader replaces the analytic ambient term when one is
   bound. Captured on load and when the scene revision changes, not per frame.
 
-### 4.4 Sun and day/night (S to M)
+### 4.4 Sun and day/night (S to M) - first version
 - **Progress:** `gfx/sky.h` (`SkyAt(hour)`, `NightLook`) and `CameraState::time_of_day` drive the sun or moon's direction and
   light, ambient, the sky gradient, stars, clouds and haze of an outdoor scene; with it unset the night is as it was.
   The template shows it (`--outdoor --hour H`). A sun shadow (`CameraState::sun_shadow`, one orthographic map around the viewer, `gfx/sun_shadow.h`) is done.
@@ -242,7 +247,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
 ## Phase 5: Scale and tools
 
-### 5.1 Baked lighting (L)
+### 5.1 Baked lighting (L) - first version (probes)
 - **Progress:** light probes first: `gfx/probes.h` (`BakeProbes`, `ProbeGrid`, a text file; headless and tested) and
   `SceneRenderer::UploadProbes` (a float texture over the floor plan, added in `world_lighting.frag`; off and
   pixel-identical without an upload). The template bakes its lamps with `--baked`. Not done: lightmaps, probes in 3D
@@ -251,7 +256,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   static geometry. A bake tool in `tools/` (CPU, cell-based), light probes
   first (cheaper, and they light dynamic props too).
 
-### 5.2 Instancing and LOD (M)
+### 5.2 Instancing and LOD (M) - first version
 - **Progress:** `gfx/lod.h` plans each pass's model instances: a distance cull (`ModelInstance::max_distance`), a far model
   swapped in beyond a distance (`SceneRenderer::SetModelLod`) and a sort by model. Shadow casters are never culled or
   swapped. GPU instancing: runs of static instances of one model draw as one instanced draw per batch (200 chairs:
@@ -260,7 +265,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   distance LOD or cull per model. The 8-cell chunking already helps; this
   removes per-prop draw calls.
 
-### 5.3 Asset hot-reload (S to M)
+### 5.3 Asset hot-reload (S to M) - first version
 - **Progress:** `core/file_watch.h` (`FileWatcher`), `SceneRenderer::ReloadShaders` (loose GLSL, a failed compile keeps the
   old program) and `ReloadTextures` (in place); the template watches its level, its textures and the engine's shaders
   and reloads each (`Game::ReloadLevel`). Models (`ModelLibrary::LoadFile`, `SceneRenderer::ReplaceModel`) and sounds
@@ -268,7 +273,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - Watch textures, shaders and levels and reload without a restart. Dev builds
   only; the shader embed step needs a loose-file mode.
 
-### 5.4 Editor prefabs (M)
+### 5.4 Editor prefabs (M) - first version
 - **Progress:** `editor/prefab.h` (a `.prefab` file in the level's own line format, capture, quarter turns and placement with
   checks, tested) and a Prefabs section in the Inspector (save an area, place at a cell with a turn). Not done:
   picking the area or the cell with the mouse in the viewport, a ghost preview, prefabs that keep a link to their file
@@ -276,7 +281,7 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 - Reusable groups of furniture and decor, saved as a file, placed and
   overridden in the editor. Mirrors the level format so games need no code.
 
-### 5.5 Cutscene sequencer (L)
+### 5.5 Cutscene sequencer (L) - first version
 - **Progress:** `world/cutscene.h` (a text file of camera keys, cues, value tracks and animation keys, a `CutscenePlayer` with
   `Skip`, tested); the template plays `assets/cutscenes/intro.cutscene` (camera glide, a fade, text, the guide's wave).
   Not done: the editor's timeline panel, sound and tween-callback tracks beyond cues and values, a camera key picked
@@ -288,20 +293,38 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 
 ## Suggested order
 
-| Order | Item | Size | Depends on |
-|---|---|---|---|
-| 1 | 1.1 Tonemap and grade | S | none |
-| 2 | 1.4 Camera shake and tweens | S | none |
-| 3 | 1.2 Particles | M | none |
-| 4 | 1.3 Decals | S to M | none |
-| 5 | 2.1 Triggers and events | M to L | none |
-| 6 | 1.5 Debug overlay and console | M | none |
-| 7 | 2.2 Save and load | M | 2.1 |
-| 8 | 2.3 Input actions | M | none |
-| 9 | 3.2 AI and pathfinding | M | 2.1 |
-| 10 | 3.1 Skeletal animation | L | none |
-| 11 | 4.4 Sun, 4.1 audio, 4.2 SSAO, 4.3 probes | S to M each | none |
-| 12 | 5.x tools and scale | mixed | 5.5 needs 1.4, 2.1, 3.1 |
+The order the items were built in. All have a first version.
+
+| Order | Item | Size | Depends on | Status |
+|---|---|---|---|---|
+| 1 | 1.1 Tonemap and grade | S | none | done |
+| 2 | 1.4 Camera shake and tweens | S | none | done |
+| 3 | 1.2 Particles | M | none | done |
+| 4 | 1.3 Decals | S to M | none | first version |
+| 5 | 2.1 Triggers and events | M to L | none | done (no visual graph) |
+| 6 | 1.5 Debug overlay and console | M | none | done |
+| 7 | 2.2 Save and load | M | 2.1 | first version |
+| 8 | 2.3 Input actions | M | none | first version |
+| 9 | 3.2 AI and pathfinding | M | 2.1 | first version |
+| 10 | 3.1 Skeletal animation | L | none | first version |
+| 11 | 4.4 Sun, 4.1 audio, 4.2 SSAO, 4.3 probes | S to M each | none | first versions |
+| 12 | 5.x tools and scale | mixed | 5.5 needs 1.4, 2.1, 3.1 | first versions |
+
+## What is left
+
+Gaps named in the Progress lines, by area:
+
+- **Rendering:** sun-shadow cascades; the mirror and glass panes with the sun-aware sky, ambient occlusion, baked light
+  and reflection probes; HDR and parallax-corrected reflection probes, a probe per chunk, a real roughness filter;
+  lightmaps and probes in 3D with direction; instancing skinned models and LOD for baked world geometry; SSAO applied to
+  the ambient term inside the world shader.
+- **Animation and AI:** glTF with external buffers, sparse accessors, morph targets and textures on skinned models;
+  noise events, memory of last-seen positions and path smoothing for the AI.
+- **Audio:** a layered music crossfade and a per-sound reverb send.
+- **Editor:** a cutscene timeline panel, picking the prefab area or cell and a camera key with the mouse, linked prefabs
+  and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
+- **Tools and data:** a bake command in `tools/` for light probes, bindings saved in `settings.txt`, door and `Level`
+  diffs in a save.
 
 ## Out of scope for now
 

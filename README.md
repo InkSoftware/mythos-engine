@@ -40,22 +40,25 @@ headless.
 ## Starting a game
 
 `template-game/` is a small complete game on the engine (walk, doors, a patrolling animated guide, triggers and rules,
-saving) with its own README: copy it to start a new one. It is built and tested with the engine.
+an opening cutscene, saving, a settings menu with rebindable controls, sound with occlusion and reverb, hot reload, and
+flags that show the day cycle, shadows from the sun, ambient occlusion, baked light, reflection probes and instancing) with
+its own README: copy it to start a new one. It is built and tested with the engine (`MYTHOS_BUILD_TEMPLATE_GAME`).
+`ROADMAP.md` says what each engine feature is and what is left; `CLAUDE.md` is the guide for working on the engine.
 
 ## Layout
 
 ```
 src/engine/   the engine, by kind, included as "engine/<folder>/<file>.h"
-assets/       fonts, common sounds and textures, and the basic house and office models, that games share
-tools/        mythos_assets.py, generate_models.py, mythos_models.py, fetch_cc0_models.py, mythos_pbr_maps.py, editor/ (MythosEditor), pack/ (mythos_pack)
+assets/       fonts, common sounds and textures, the basic house and office models and an animated character (`characters/`), that games share
+tools/        mythos_assets.py, generate_models.py, mythos_models.py (and its test), fetch_cc0_models.py, mythos_pbr_maps.py, editor/ (MythosEditor), pack/ (mythos_pack)
 tests/        test_main.cpp
 template-game/  a small game to copy when starting a new one
 third_party/  stb_truetype, stb_image
 ```
 
-The sources are in folders by kind: `core/` (math, matrices, JSON, files, packed assets), `world/` (levels, tiles,
-movement, the player, doors, props, the body), `audio/` (sound arithmetic, the sound bank), `data/` (achievements, credits,
-translations), `gfx/` (surfaces, textures and their derived normal maps (or authored `_nrm` / `_rough` companions, light PBR), meshes, models, fonts and text, light arithmetic), `ui/` (overlay, paging and wrapping, menus,
+The sources are in folders by kind: `core/` (math, matrices, JSON, files, a file watcher, tweens, events, packed assets), `world/` (levels, tiles,
+movement, the player, doors, props, the body, triggers, AI, navigation, cutscenes, sound paths), `audio/` (sound arithmetic,
+occlusion, reverb, mixer groups, the sound bank), `data/` (achievements, credits, translations, save files), `gfx/` (surfaces, textures and their derived normal maps (or authored `_nrm` / `_rough` companions, light PBR), meshes, models, fonts and text, light arithmetic, skeletons and animation, glTF, the sky, light probes, level of detail), `ui/` (overlay, paging and wrapping, menus,
 settings), `editor/` (the level editor's rules: level files, projects, undo, prefabs, the game adapter) and `platform/` (window,
 input, mixer; `platform/gl/` is the renderer, `platform/editor/` the editor's window and panels). A folder depends only
 on the ones before it in that list (`gfx/` also on `world/`), apart from `platform/`, which uses them all.
@@ -75,7 +78,7 @@ target_link_libraries(my_game_rules PUBLIC mythos::engine)
 To work on the engine and a game together, point FetchContent at your checkout:
 `cmake -DFETCHCONTENT_SOURCE_DIR_MYTHOS_ENGINE=/path/to/mythos-engine ...`
 
-Options: `MYTHOS_BUILD_PLATFORM` (SDL layer, default ON), `MYTHOS_BUILD_TESTS` (default ON when top level), `MYTHOS_WARNINGS_AS_ERRORS` (warnings in the engine's own code fail the build, default OFF, on in CI),
+Options: `MYTHOS_BUILD_PLATFORM` (SDL layer, default ON), `MYTHOS_BUILD_TESTS` (default ON when top level), `MYTHOS_BUILD_TEMPLATE_GAME` (builds `template-game/`, default ON when top level), `MYTHOS_BUILD_EDITOR` (the level editor, default ON when top level), `MYTHOS_WARNINGS_AS_ERRORS` (warnings in the engine's own code fail the build, default OFF, on in CI),
 `MYTHOS_FETCH_SDL` (download SDL when none is installed, default ON), `MYTHOS_SDL_VERSION` (the SDL release fetched,
 3.2.28), `MYTHOS_PORTABLE` (link SDL statically, always fetched, so the app runs without SDL installed),
 `MYTHOS_LTO` (link-time optimization for Release, on by default). MSVC builds use `/utf-8`, which games inherit.
