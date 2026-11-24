@@ -88,6 +88,78 @@ bool ParseEase(const std::string& name, Ease* const out) {
   return false;
 }
 
+void SortCutscene(Cutscene& scene) {
+  SortByTime(scene.camera);
+  SortByTime(scene.cues);
+  SortByTime(scene.anims);
+  for (auto& track : scene.values) SortByTime(track.keys);
+}
+
+std::vector<std::string> ValidateCutscene(const Cutscene& scene) {
+  std::vector<std::string> problems;
+  const auto bad_time = [](const double t) {
+    return !std::isfinite(t) || t < 0;
+  };
+  if (bad_time(scene.duration))
+    problems.emplace_back("the duration is not a time");
+  for (size_t i = 0; i < scene.camera.size(); ++i) {
+    const CameraKey& k = scene.camera[i];
+    if (bad_time(k.time)) {
+      problems.push_back("camera key " + std::to_string(i + 1) + ": bad time");
+    }
+    for (const double v :
+         {k.pos.x, k.pos.y, k.pos.z, k.yaw, k.pitch, k.fov_scale}) {
+      if (!std::isfinite(v)) {
+        problems.push_back("camera key " + std::to_string(i + 1) +
+                           ": a number is not finite");
+        break;
+      }
+    }
+  }
+  for (size_t i = 0; i < scene.cues.size(); ++i) {
+    if (bad_time(scene.cues[i].time)) {
+      problems.push_back("cue " + std::to_string(i + 1) + ": bad time");
+    }
+    if (scene.cues[i].action.type.empty()) {
+      problems.push_back("cue " + std::to_string(i + 1) + ": no type");
+    }
+  }
+  for (size_t i = 0; i < scene.anims.size(); ++i) {
+    const AnimKey& k = scene.anims[i];
+    if (bad_time(k.time)) {
+      problems.push_back("animation key " + std::to_string(i + 1) +
+                         ": bad time");
+    }
+    if (k.actor.empty() || k.clip.empty()) {
+      problems.push_back("animation key " + std::to_string(i + 1) +
+                         ": needs an actor and a clip");
+    }
+  }
+  for (size_t i = 0; i < scene.values.size(); ++i) {
+    const ValueTrack& t = scene.values[i];
+    if (t.name.empty()) {
+      problems.push_back("value track " + std::to_string(i + 1) + ": no name");
+    }
+    for (size_t j = 0; j < i; ++j) {
+      if (!t.name.empty() && scene.values[j].name == t.name) {
+        problems.push_back("value track '" + t.name + "' appears twice");
+        break;
+      }
+    }
+    for (const ValueKey& k : t.keys) {
+      if (bad_time(k.time) || !std::isfinite(k.value)) {
+        problems.push_back("value track '" + t.name + "': a bad key");
+        break;
+      }
+    }
+  }
+  if (scene.camera.empty() && scene.cues.empty() && scene.anims.empty() &&
+      scene.values.empty() && scene.duration <= 0) {
+    problems.emplace_back("nothing to play: no keys and no duration");
+  }
+  return problems;
+}
+
 bool ParseCutscene(const std::string& text, Cutscene* const out,
                    std::string* const error) {
   const auto fail = [&](const std::string& why) {

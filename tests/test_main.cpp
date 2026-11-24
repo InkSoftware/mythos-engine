@@ -5249,6 +5249,37 @@ TEST(music_layers_fade_crossfade_and_go_silent) {
   CHECK(f.Silent());
 }
 
+TEST(cutscene_sort_and_validate) {
+  mythos::Cutscene s;
+  CHECK(!mythos::ValidateCutscene(s).empty());  // nothing to play
+  s.duration = 2;
+  CHECK(mythos::ValidateCutscene(s).empty());
+  s.camera = {{2, {}, 0, 0, 1, mythos::Ease::kLinear},
+              {1, {}, 0, 0, 1, mythos::Ease::kLinear}};
+  s.cues = {{1.5, {"b", ""}}, {0.5, {"a", ""}}, {0.5, {"c", ""}}};
+  s.values = {
+      {"fade", {{1, 1, mythos::Ease::kLinear}, {0, 0, mythos::Ease::kLinear}}}};
+  s.anims = {{2, "x", "Walk", 0.2}, {1, "x", "Idle", 0.2}};
+  mythos::SortCutscene(s);
+  CHECK(s.camera[0].time == 1 && s.camera[1].time == 2);
+  CHECK(s.cues[0].action.type == "a" &&
+        s.cues[1].action.type == "c");  // stable
+  CHECK(s.cues[2].action.type == "b");
+  CHECK(s.values[0].keys[0].time == 0 && s.anims[0].clip == "Idle");
+  CHECK(mythos::ValidateCutscene(s).empty());
+  // Problems, one line each.
+  s.cues.push_back({-1, {"", ""}});
+  s.anims.push_back({0, "", "Wave", 0.2});
+  s.values.push_back({"fade", {}});
+  s.values.push_back({"", {}});
+  s.camera[0].yaw = std::nan("");
+  const std::vector<std::string> problems = mythos::ValidateCutscene(s);
+  CHECK(problems.size() >= 6);
+  mythos::Cutscene worse;
+  worse.duration = -1;
+  CHECK(!mythos::ValidateCutscene(worse).empty());
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

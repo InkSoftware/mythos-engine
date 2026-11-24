@@ -285,8 +285,9 @@ more than was built.
 ### 5.5 Cutscene sequencer (L) - first version
 - **Progress:** `world/cutscene.h` (a text file of camera keys, cues, value tracks and animation keys, a `CutscenePlayer` with
   `Skip`, tested); the template plays `assets/cutscenes/intro.cutscene` (camera glide, a fade, text, the guide's wave).
-  Not done: the editor's timeline panel, sound and tween-callback tracks beyond cues and values, a camera key picked
-  from the viewport, and a cutscene runner that other systems (the cvar console) can drive.
+  The editor has a Cutscene panel (tables of keys, a key from the viewport camera, problems, save). Not done: a
+  graphical timeline (scrubbing, dragging keys, a camera preview), sound and tween-callback tracks beyond cues and
+  values, and a cutscene runner that other systems (the cvar console) can drive.
 - Timeline of camera, tween, sound, event and animation tracks, built on 1.4,
   2.1 and 3.1. Editor timeline panel.
 
@@ -322,7 +323,7 @@ Gaps named in the Progress lines, by area:
 - **Animation and AI:** glTF with external buffers, sparse accessors, morph targets and textures on skinned models;
   noise events, memory of last-seen positions and path smoothing for the AI.
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
-- **Editor:** a cutscene timeline panel, picking the prefab area or cell and a camera key with the mouse, linked prefabs
+- **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area or cell and a camera key with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
 - **Tools and data:** a bake command in `tools/` for light probes, bindings saved in `settings.txt`, door and `Level`
   diffs in a save.

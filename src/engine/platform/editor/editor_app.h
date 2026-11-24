@@ -13,6 +13,7 @@
 #include "engine/gfx/model.h"
 #include "engine/gfx/textures.h"
 #include "engine/platform/editor/viewport.h"
+#include "engine/world/cutscene.h"
 #include "imgui.h"
 
 namespace mythos::editor {
@@ -222,6 +223,8 @@ class EditorApp {
 
   void DrawPrefabs(LevelDoc& doc);
 
+  void DrawCutscenes();
+
   void DrawPalette();
 
   void DrawAssets();
@@ -263,6 +266,10 @@ class EditorApp {
   // Prefabs panel: the rectangle to save, the name, the cell and turns to
   // place.
   int prefab_rect_[4] = {0, 0, 1, 1};
+  // The cutscene panel: the file being edited and its state.
+  Cutscene cut_;
+  std::string cut_file_, cut_new_name_ = "intro", cut_status_;
+  bool cut_loaded_ = false;
   std::string prefab_name_ = "group";
   std::string prefab_sel_;
   int prefab_at_[2] = {0, 0};
@@ -319,7 +326,8 @@ class EditorApp {
 
   bool show_levels_ = true, show_outliner_ = true, show_inspector_ = true,
        show_palette_ = true, show_assets_ = true, show_console_ = true,
-       show_problems_ = true, show_preview_ = true, show_demo_ = false;
+       show_problems_ = true, show_preview_ = true, show_demo_ = false,
+       show_cutscene_ = false;
   bool layout_reset_ = false, layout_built_ = false;
   int focus_viewport_ = 0, focus_preview_ = 0;
   bool preview_started_ = false;

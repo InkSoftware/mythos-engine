@@ -187,6 +187,7 @@ void EditorApp::Frame(const float dt) {
   if (show_assets_) DrawAssets();
   if (show_console_) DrawConsole();
   if (show_problems_) DrawProblems();
+  if (show_cutscene_) DrawCutscenes();
   DrawViewportWindow(dt);
   if (show_preview_) DrawPreviewWindow();
   if (show_demo_) ImGui::ShowDemoWindow(&show_demo_);
@@ -279,6 +280,7 @@ void EditorApp::DrawMenuBar() {
     ImGui::MenuItem("Assets", nullptr, &show_assets_);
     ImGui::MenuItem("Console", nullptr, &show_console_);
     ImGui::MenuItem("Problems", nullptr, &show_problems_);
+    ImGui::MenuItem("Cutscene", nullptr, &show_cutscene_);
     ImGui::MenuItem("Game Preview", nullptr, &show_preview_);
     ImGui::Separator();
     if (ImGui::MenuItem("Frame level", "Home")) FrameLevel();
@@ -1058,6 +1060,231 @@ void EditorApp::DrawAssets() {
     }
     ImGui::EndTabBar();
   }
+  ImGui::End();
+}
+
+// The cutscene editor: files in `assets/cutscenes`, their camera keys, cues,
+// value tracks and animation keys as tables, a button that takes a camera key
+// from the viewport, the problems, and Save. The format is world/cutscene.h's.
+void EditorApp::DrawCutscenes() {
+  if (!ImGui::Begin("Cutscene", &show_cutscene_)) {
+    ImGui::End();
+    return;
+  }
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::path(project_.AssetDir()) / "cutscenes";
+  std::error_code ec;
+  std::vector<std::string> files;
+  for (fs::directory_iterator it(dir, ec), end; !ec && it != end;
+       it.increment(ec)) {
+    if (it->path().extension() == ".cutscene") {
+      files.push_back(it->path().stem().string());
+    }
+  }
+  std::ranges::sort(files);
+
+  if (ImGui::BeginCombo("File",
+                        cut_file_.empty() ? "(none)" : cut_file_.c_str())) {
+    for (const std::string& f : files) {
+      if (ImGui::Selectable(f.c_str(), f == cut_file_)) {
+        Cutscene loaded;
+        std::string error;
+        if (ParseCutscene(ReadTextFile((dir / (f + ".cutscene")).string()),
+                          &loaded, &error)) {
+          cut_ = std::move(loaded);
+          cut_file_ = f;
+          cut_loaded_ = true;
+          cut_status_.clear();
+        } else {
+          cut_status_ = f + ": " + error;
+        }
+      }
+    }
+    ImGui::EndCombo();
+  }
+  InputStr("New name", &cut_new_name_);
+  ImGui::SameLine();
+  if (ImGui::SmallButton("New")) {
+    cut_ = {};
+    cut_.duration = 3.0;
+    cut_file_ = SafePrefabName(cut_new_name_);
+    cut_loaded_ = true;
+    cut_status_ = "New cutscene: Save writes " + cut_file_ + ".cutscene";
+  }
+  if (!cut_loaded_) {
+    if (!cut_status_.empty()) ImGui::TextWrapped("%s", cut_status_.c_str());
+    ImGui::End();
+    return;
+  }
+
+  const auto ease_combo = [](const char* const id, Ease* const ease) {
+    ImGui::SetNextItemWidth(110);
+    if (ImGui::BeginCombo(id, EaseName(*ease).c_str())) {
+      for (int i = 0; i < kEaseCount; ++i) {
+        const auto e = static_cast<Ease>(i);
+        if (ImGui::Selectable(EaseName(e).c_str(), e == *ease)) *ease = e;
+      }
+      ImGui::EndCombo();
+    }
+  };
+  const auto number = [](const char* const id, double* const v,
+                         const float width, const float speed) {
+    ImGui::SetNextItemWidth(width);
+    ImGui::DragScalar(id, ImGuiDataType_Double, v, speed, nullptr, nullptr,
+                      "%.3f");
+  };
+
+  ImGui::DragScalar("Duration (s)", ImGuiDataType_Double, &cut_.duration, 0.05f,
+                    nullptr, nullptr, "%.2f");
+  ImGui::Text("Length %.2f s", CutsceneLength(cut_));
+
+  ImGui::SeparatorText("Camera keys");
+  if (ImGui::SmallButton("Add key from the viewport camera")) {
+    const OrbitCamera& oc = cam_;
+    const Vec3 eye = oc.Eye();
+    CameraKey k;
+    k.time = cut_.camera.empty() ? 0.0 : cut_.camera.back().time + 1.0;
+    k.pos = {eye.x, eye.y, eye.z};
+    k.yaw = oc.heading;
+    k.pitch = -oc.pitch;  // the editor looks down for positive; the game up
+    cut_.camera.push_back(k);
+  }
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Add key")) cut_.camera.push_back({});
+  for (size_t i = 0; i < cut_.camera.size(); ++i) {
+    CameraKey& k = cut_.camera[i];
+    ImGui::PushID(static_cast<int>(i));
+    number("##t", &k.time, 60, 0.05f);
+    ImGui::SameLine();
+    number("##x", &k.pos.x, 60, 0.05f);
+    ImGui::SameLine();
+    number("##y", &k.pos.y, 60, 0.05f);
+    ImGui::SameLine();
+    number("##z", &k.pos.z, 60, 0.05f);
+    ImGui::SameLine();
+    number("##yaw", &k.yaw, 60, 0.01f);
+    ImGui::SameLine();
+    number("##pitch", &k.pitch, 60, 0.01f);
+    ImGui::SameLine();
+    number("##fov", &k.fov_scale, 50, 0.01f);
+    ImGui::SameLine();
+    ease_combo("##ease", &k.ease);
+    ImGui::SameLine();
+    const bool remove = ImGui::SmallButton("x");
+    ImGui::PopID();
+    if (remove) {
+      cut_.camera.erase(cut_.camera.begin() + static_cast<std::ptrdiff_t>(i));
+      break;
+    }
+  }
+  if (!cut_.camera.empty()) {
+    ImGui::TextDisabled("time, x, eye height, z, yaw, pitch, fov scale, ease");
+  }
+
+  ImGui::SeparatorText("Cues (the game carries them out)");
+  if (ImGui::SmallButton("Add cue"))
+    cut_.cues.push_back({0.0, {"message", ""}});
+  for (size_t i = 0; i < cut_.cues.size(); ++i) {
+    CueKey& k = cut_.cues[i];
+    ImGui::PushID(1000 + static_cast<int>(i));
+    number("##t", &k.time, 60, 0.05f);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110);
+    InputStr("##type", &k.action.type);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220);
+    InputStr("##arg", &k.action.argument);
+    ImGui::SameLine();
+    const bool remove = ImGui::SmallButton("x");
+    ImGui::PopID();
+    if (remove) {
+      cut_.cues.erase(cut_.cues.begin() + static_cast<std::ptrdiff_t>(i));
+      break;
+    }
+  }
+
+  ImGui::SeparatorText(
+      "Value tracks (a fade, a position: the game reads them)");
+  if (ImGui::SmallButton("Add track")) {
+    cut_.values.push_back(
+        {"value" + std::to_string(cut_.values.size() + 1), {}});
+  }
+  for (size_t i = 0; i < cut_.values.size(); ++i) {
+    ValueTrack& t = cut_.values[i];
+    ImGui::PushID(2000 + static_cast<int>(i));
+    ImGui::SetNextItemWidth(140);
+    InputStr("##name", &t.name);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Add key")) t.keys.push_back({});
+    ImGui::SameLine();
+    const bool remove_track = ImGui::SmallButton("Remove track");
+    for (size_t j = 0; j < t.keys.size(); ++j) {
+      ValueKey& k = t.keys[j];
+      ImGui::PushID(static_cast<int>(j));
+      ImGui::Indent();
+      number("##t", &k.time, 60, 0.05f);
+      ImGui::SameLine();
+      number("##v", &k.value, 60, 0.01f);
+      ImGui::SameLine();
+      ease_combo("##ease", &k.ease);
+      ImGui::SameLine();
+      const bool remove = ImGui::SmallButton("x");
+      ImGui::Unindent();
+      ImGui::PopID();
+      if (remove) {
+        t.keys.erase(t.keys.begin() + static_cast<std::ptrdiff_t>(j));
+        break;
+      }
+    }
+    ImGui::PopID();
+    if (remove_track) {
+      cut_.values.erase(cut_.values.begin() + static_cast<std::ptrdiff_t>(i));
+      break;
+    }
+  }
+
+  ImGui::SeparatorText("Animation keys");
+  if (ImGui::SmallButton("Add animation key")) {
+    cut_.anims.push_back({0.0, "actor", "Idle", 0.2});
+  }
+  for (size_t i = 0; i < cut_.anims.size(); ++i) {
+    AnimKey& k = cut_.anims[i];
+    ImGui::PushID(3000 + static_cast<int>(i));
+    number("##t", &k.time, 60, 0.05f);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    InputStr("##actor", &k.actor);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    InputStr("##clip", &k.clip);
+    ImGui::SameLine();
+    number("##fade", &k.fade, 50, 0.01f);
+    ImGui::SameLine();
+    const bool remove = ImGui::SmallButton("x");
+    ImGui::PopID();
+    if (remove) {
+      cut_.anims.erase(cut_.anims.begin() + static_cast<std::ptrdiff_t>(i));
+      break;
+    }
+  }
+
+  ImGui::Separator();
+  const std::vector<std::string> problems = ValidateCutscene(cut_);
+  for (const std::string& p : problems) {
+    ImGui::TextColored({1.0f, 0.55f, 0.4f, 1.0f}, "%s", p.c_str());
+  }
+  ImGui::BeginDisabled(!problems.empty() || cut_file_.empty());
+  if (ImGui::Button("Sort keys and save")) {
+    SortCutscene(cut_);
+    std::error_code make;
+    fs::create_directories(dir, make);
+    const std::string path = (dir / (cut_file_ + ".cutscene")).string();
+    cut_status_ = WriteFileAtomic(path, SerializeCutscene(cut_))
+                      ? "Saved " + cut_file_ + ".cutscene"
+                      : "Could not write " + path;
+  }
+  ImGui::EndDisabled();
+  if (!cut_status_.empty()) ImGui::TextWrapped("%s", cut_status_.c_str());
   ImGui::End();
 }
 

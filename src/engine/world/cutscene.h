@@ -97,6 +97,18 @@ bool ParseEase(const std::string& name, Ease* out);
 bool ParseCutscene(const std::string& text, Cutscene* out, std::string* error);
 std::string SerializeCutscene(const Cutscene& scene);
 
+// Puts every list of keys in time order (stable: keys at one time keep their
+// order). The player and the file writer expect it; an editor calls it after
+// the times were changed.
+void SortCutscene(Cutscene& scene);
+
+// What is wrong with a cutscene, one line each (empty when nothing is): a
+// negative or non-finite time, a cue with no type, an animation key with no
+// actor or clip, a value track with no name or a duplicate name, a camera key
+// with a non-finite number. A cutscene with no keys at all and no duration is
+// reported too (it ends at once and shows nothing).
+std::vector<std::string> ValidateCutscene(const Cutscene& scene);
+
 using CueCallback = std::function<void(const EventAction&)>;
 using AnimCallback = std::function<void(const AnimKey&)>;
 
