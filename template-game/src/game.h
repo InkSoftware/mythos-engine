@@ -5,6 +5,7 @@
 #ifndef TEMPLATE_GAME_GAME_H_
 #define TEMPLATE_GAME_GAME_H_
 
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -92,6 +93,11 @@ class Game {
   // doors. The front end plays them; the rules only say which.
   std::vector<std::string> TakeSounds() { return std::exchange(sounds_, {}); }
 
+  // A sound the guide may hear (a door, a crash): she goes to look.
+  void MakeNoise(const mythos::Vec2& at, double loudness) {
+    noises_.Add({at, loudness}, time_);
+  }
+
   // Shows `key` for a few seconds.
   void Say(const std::string& key);
 
@@ -121,8 +127,20 @@ class Game {
   mythos::GltfModel guide_;
   mythos::AnimStateMachine anim_;
   mythos::ai::NodePtr brain_;
-  std::vector<mythos::NavCell> waypoints_, path_;
-  size_t next_waypoint_ = 0, path_step_ = 0;
+  std::vector<mythos::NavCell> waypoints_;
+  size_t next_waypoint_ = 0;
+  // The route she is walking: smoothed points, the step she is on and the cell
+  // it leads to.
+  std::vector<mythos::Vec2> route_;
+  size_t route_step_ = 0;
+  mythos::NavCell route_goal_{-1, -1};
+  enum class Walk { kWalking, kArrived, kNoRoute };
+  Walk WalkTo(const mythos::NavCell& goal, double dt, bool avoid_doors);
+  // What she hears and remembers.
+  mythos::ai::NoiseBoard noises_;
+  mythos::ai::LastSeen last_seen_;
+  std::optional<mythos::ai::Noise> heard_;
+  double time_ = 0;
   mythos::Vec2 guide_pos_;
   double guide_angle_ = 0;
   bool guide_sees_player_ = false;

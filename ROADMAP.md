@@ -182,11 +182,10 @@ more than was built.
 ### 3.2 AI and pathfinding (M) - first version
 - **Progress:** `world/nav.h` provides deterministic cardinal A* and a
   reachability flood, with optional conservative body-clearance checks and
-  door avoidance. It treats thin-wall cells as blocked; sub-cell routing,
-  smoothing remains. `world/ai.h` adds a reactive behaviour tree (leaf and
+  door avoidance. It treats thin-wall cells as blocked; `SmoothPath` pulls a path taut. `world/ai.h` adds a reactive behaviour tree (leaf and
   condition callbacks, sequence, selector, inverter, succeeder, cooldown), a
-  sight cone with line of sight and hearing that walls muffle. Not done: noise
-  event queues, memory of last-seen positions, path smoothing.
+  sight cone with line of sight and hearing that walls muffle. `NoiseBoard`, `LastSeen` and `SmoothPath` (the guide in the template greets,
+  searches, investigates and patrols). Not done: sub-cell steering around moving obstacles, and group behaviour.
 - **Where:** `world/nav.h` is A\* on the grid with door and thin-wall awareness
   (`Level::ThinArms`, `BoxBlocked`), path smoothing and a reachability flood.
   `world/ai.h` is a minimal behaviour-tree runtime (sequence, selector,
@@ -323,7 +322,7 @@ Gaps named in the Progress lines, by area:
   lightmaps and probes in 3D with direction; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF with external buffers, sparse accessors, morph targets and textures on skinned models;
-  noise events, memory of last-seen positions and path smoothing for the AI.
+  steering around moving obstacles and group behaviour for the AI.
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
 - **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.

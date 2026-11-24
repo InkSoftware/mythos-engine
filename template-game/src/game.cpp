@@ -105,8 +105,8 @@ bool Game::ReloadLevel(std::string* error) {
   // Where the guide walks may have changed too.
   waypoints_.clear();
   for (const auto& [x, y] : level_.FindAll('w')) waypoints_.push_back({x, y});
-  path_.clear();
-  path_step_ = 0;
+  route_.clear();
+  route_step_ = 0;
   next_waypoint_ = 0;
   if (!level_.Passable(static_cast<int>(player_.pos.x),
                        static_cast<int>(player_.pos.y))) {
@@ -127,11 +127,13 @@ void Game::Restart() {
   progress_ = {};
   message_.clear();
   events_.Reset();
+  noises_.Clear();
+  last_seen_.Forget();
 
   waypoints_.clear();
   for (const auto& [x, y] : level_.FindAll('w')) waypoints_.push_back({x, y});
-  path_.clear();
-  path_step_ = 0;
+  route_.clear();
+  route_step_ = 0;
   next_waypoint_ = 0;
   if (!waypoints_.empty()) {
     guide_pos_ = {waypoints_[0].x + 0.5, waypoints_[0].y + 0.5};
@@ -153,39 +155,95 @@ void Game::Restart() {
         std::atan2(player_.pos.y - guide_pos_.y, player_.pos.x - guide_pos_.x);
     return Status::kSuccess;
   }));
+  // Looking for you: when she has lost sight of you, she goes to where she
+  // last saw you.
+  std::vector<NodePtr> search;
+  search.push_back(Condition([this] {
+    return !guide_sees_player_ && last_seen_.Remembers(time_, 6.0);
+  }));
+  search.push_back(Leaf([this](double dt) {
+    const mythos::Vec2 at = last_seen_.Where();
+    const Walk walk =
+        WalkTo({static_cast<int>(at.x), static_cast<int>(at.y)}, dt, false);
+    if (walk == Walk::kWalking) return Status::kRunning;
+    last_seen_.Forget();  // arrived (or no way there): give up
+    return Status::kFailure;
+  }));
+  // What she hears: a door opening brings her to look.
+  std::vector<NodePtr> investigate;
+  investigate.push_back(Condition([this] {
+    heard_ = noises_.Loudest(level_, guide_pos_, 1.0, time_);
+    return heard_.has_value();
+  }));
+  investigate.push_back(Leaf([this](double dt) {
+    if (!heard_) return Status::kFailure;
+    const Walk walk = WalkTo(
+        {static_cast<int>(heard_->pos.x), static_cast<int>(heard_->pos.y)}, dt,
+        false);
+    return walk == Walk::kWalking ? Status::kRunning : Status::kFailure;
+  }));
   std::vector<NodePtr> top;
   top.push_back(Sequence(std::move(greet)));
+  top.push_back(Sequence(std::move(search)));
+  top.push_back(Sequence(std::move(investigate)));
   top.push_back(Leaf([this](double dt) {
-    // Walk the cells of a path to the next waypoint, then pick the next one.
+    // The patrol: walk to the next waypoint, then pick the next one.
     if (waypoints_.empty()) return Status::kFailure;
-    if (path_step_ >= path_.size()) {
-      const mythos::NavCell here{static_cast<int>(guide_pos_.x),
-                                 static_cast<int>(guide_pos_.y)};
+    const Walk walk = WalkTo(waypoints_[next_waypoint_], dt, true);
+    if (walk == Walk::kArrived) {
       next_waypoint_ = (next_waypoint_ + 1) % waypoints_.size();
-      mythos::NavOptions options;
-      options.avoid_doors = true;
-      path_ =
-          mythos::FindPath(level_, here, waypoints_[next_waypoint_], options);
-      path_step_ = 0;
-      if (path_.empty()) return Status::kFailure;
+    } else if (walk == Walk::kNoRoute) {
+      return Status::kFailure;
     }
-    const mythos::NavCell cell = path_[path_step_];
-    const double tx = cell.x + 0.5, ty = cell.y + 0.5;
-    const double dx = tx - guide_pos_.x, dy = ty - guide_pos_.y;
-    const double dist = std::hypot(dx, dy);
-    const double step = kGuideSpeed * dt;
-    if (dist <= step) {
-      guide_pos_ = {tx, ty};
-      ++path_step_;
-    } else {
-      guide_pos_.x += dx / dist * step;
-      guide_pos_.y += dy / dist * step;
-      guide_angle_ = std::atan2(dy, dx);
-    }
-    guide_moving_ = true;
     return Status::kRunning;
   }));
   brain_ = Selector(std::move(top));
+}
+
+// Walks the guide along a smoothed route to `goal` (planned again when the goal
+// changes), turning her to face where she goes.
+Game::Walk Game::WalkTo(const mythos::NavCell& goal, const double dt,
+                        const bool avoid_doors) {
+  const mythos::NavCell here{static_cast<int>(guide_pos_.x),
+                             static_cast<int>(guide_pos_.y)};
+  if (!(route_goal_ == goal) || route_step_ >= route_.size()) {
+    if (here == goal) {
+      route_.clear();
+      route_step_ = 0;
+      route_goal_ = {-1, -1};
+      return Walk::kArrived;
+    }
+    mythos::NavOptions options;
+    options.avoid_doors = avoid_doors;
+    const std::vector<mythos::NavCell> cells =
+        mythos::FindPath(level_, here, goal, options);
+    if (cells.empty()) {
+      route_.clear();
+      route_goal_ = {-1, -1};
+      return Walk::kNoRoute;
+    }
+    route_ = mythos::SmoothPath(level_, cells, 0.25);
+    route_goal_ = goal;
+    route_step_ = route_.size() > 1 ? 1 : 0;  // the first point is where she is
+  }
+  const mythos::Vec2 target = route_[route_step_];
+  const double dx = target.x - guide_pos_.x, dy = target.y - guide_pos_.y;
+  const double dist = std::hypot(dx, dy);
+  const double step = kGuideSpeed * dt;
+  if (dist <= step) {
+    guide_pos_ = target;
+    ++route_step_;
+  } else {
+    guide_pos_.x += dx / dist * step;
+    guide_pos_.y += dy / dist * step;
+    guide_angle_ = std::atan2(dy, dx);
+  }
+  guide_moving_ = true;
+  if (route_step_ >= route_.size()) {
+    route_goal_ = {-1, -1};
+    return Walk::kArrived;
+  }
+  return Walk::kWalking;
 }
 
 void Game::Say(const std::string& key) {
@@ -213,6 +271,8 @@ void Game::UseDoorAhead() {
     }
     if (const int swing = doors_.Use(x, y); swing != 0) {
       sounds_.emplace_back(swing > 0 ? "door_open" : "door_close");
+      // A door is heard through the house: the guide goes to look.
+      MakeNoise({x + 0.5, y + 0.5}, 9.0);
       return;
     }
   }
@@ -255,6 +315,7 @@ void Game::UpdateGuide(const double dt) {
   sight.fov = kGuideFov;
   sight.range = kGuideSight;
   guide_sees_player_ = mythos::ai::CanSee(level_, sight, player_.pos);
+  if (guide_sees_player_) last_seen_.Saw(player_.pos, time_);
   guide_moving_ = false;
   if (brain_) brain_->Tick(dt);
   anim_.SetBool("moving", guide_moving_);
@@ -268,6 +329,7 @@ void Game::UpdateGuide(const double dt) {
 void Game::Update(const double dt, const mythos::MoveInput& move,
                   const mythos::ActionInput& act) {
   dt_ = dt;
+  time_ += dt;
   if (cutscene_player_.Playing()) {
     // The world carries on, the player watches: the guide still acts, the
     // cues and animation keys are played, and interact skips.
@@ -337,8 +399,8 @@ bool Game::LoadSave(const std::string& dir, const int slot) {
     guide_pos_.x = g->value("x", guide_pos_.x);
     guide_pos_.y = g->value("z", guide_pos_.y);
     guide_angle_ = g->value("angle", guide_angle_);
-    path_.clear();
-    path_step_ = 0;
+    route_.clear();
+    route_step_ = 0;
   }
   // The trigger runtime treats the player as outside until the next sample.
   events_.Reset();

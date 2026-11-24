@@ -215,6 +215,31 @@ void TestSavedDoorsComeBack() {
   std::filesystem::remove_all(dir);
 }
 
+void TestGuideInvestigatesANoiseAndSearchesForYou() {
+  template_game::Game game;
+  if (!LoadGame(game)) return ++g_failures, void();
+  // The player stands in the back room, far out of her sight; a noise in the
+  // first room, in the middle of her patrol, brings her to it.
+  mythos::Player p = game.player();
+  p.pos = {15.5, 5.5};
+  mythos::SaveData data;
+  data.Set("player", mythos::PlayerToJson(p));
+  const std::string dir =
+      (std::filesystem::temp_directory_path() / "template_game_test5").string();
+  CHECK(mythos::SaveSlots(dir, template_game::kSaveVersion).Save(0, data) ==
+        mythos::SaveStatus::kOk);
+  CHECK(game.LoadSave(dir, 0));
+  game.MakeNoise({4.5, 3.5}, 14.0);
+  double closest = 1e9;
+  for (int i = 0; i < 60 * 8; ++i) {
+    Step(game, 1.0 / 60);
+    const mythos::Vec2 g = game.guide_pos();
+    closest = std::min(closest, std::hypot(g.x - 4.5, g.y - 3.5));
+  }
+  CHECK(closest < 0.6);  // she walked right to it
+  std::filesystem::remove_all(dir);
+}
+
 void TestSaveRoundTrip() {
   template_game::Game game;
   if (!LoadGame(game)) return ++g_failures, void();
@@ -244,6 +269,7 @@ int main() {
   TestPrefabPlacesIntoTheHall();
   TestIntroCutscenePlaysAndSkips();
   TestSavedDoorsComeBack();
+  TestGuideInvestigatesANoiseAndSearchesForYou();
   TestSaveRoundTrip();
   std::printf("%d failure(s)\n", g_failures);
   return g_failures == 0 ? 0 : 1;

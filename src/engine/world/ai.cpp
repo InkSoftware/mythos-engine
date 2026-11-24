@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <utility>
 
@@ -123,6 +124,40 @@ bool CanSee(const Level& level, const Sight& sight, const Vec2& target) {
     if (std::fabs(diff) > sight.fov / 2) return false;
   }
   return level.LineOfSight(sight.eye.x, sight.eye.y, target.x, target.y);
+}
+
+void NoiseBoard::Add(const Noise& noise, const double now) {
+  // Drop what has been forgotten, so the list stays short.
+  std::erase_if(noises_,
+                [&](const Entry& e) { return now - e.time > lifetime_; });
+  noises_.push_back({noise, now});
+}
+
+std::optional<Noise> NoiseBoard::Loudest(const Level& level, const Vec2& ear,
+                                         const double sensitivity,
+                                         const double now) const {
+  std::optional<Noise> best;
+  double best_left = -1e30;
+  for (const Entry& e : noises_) {
+    if (now - e.time > lifetime_ ||
+        !CanHear(level, ear, sensitivity, e.noise)) {
+      continue;
+    }
+    double dist = std::hypot(e.noise.pos.x - ear.x, e.noise.pos.y - ear.y);
+    if (!level.LineOfSight(e.noise.pos.x, e.noise.pos.y, ear.x, ear.y)) {
+      dist *= 2;
+    }
+    const double left = e.noise.loudness * sensitivity - dist;
+    if (left > best_left) {
+      best_left = left;
+      best = e.noise;
+    }
+  }
+  return best;
+}
+
+double LastSeen::Age(const double now) const {
+  return known_ ? now - time_ : std::numeric_limits<double>::infinity();
 }
 
 bool CanHear(const Level& level, const Vec2& ear, const double sensitivity,

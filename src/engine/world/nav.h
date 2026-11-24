@@ -195,6 +195,48 @@ inline uint64_t Distance(const NavCell a, const NavCell b) {
   }
   return cells;
 }
+
+// Pulls a cell path taut: waypoints (cell centres) from the start to the end
+// that skip every cell a straight walk can cut across, tested with
+// Level::BoxBlocked for a body of `radius` (the same collision the player has,
+// so the walk is not blocked by thin walls or furniture). The first and last
+// points are the first and last cell centres. An empty path gives an empty
+// result.
+[[nodiscard]] inline std::vector<Vec2> SmoothPath(
+    const Level& level, const std::vector<NavCell>& path,
+    const double radius = 0.2) {
+  std::vector<Vec2> points;
+  points.reserve(path.size());
+  for (const NavCell& c : path) points.push_back({c.x + 0.5, c.y + 0.5});
+  if (points.size() < 3) return points;
+  const auto clear = [&](const Vec2& a, const Vec2& b) {
+    const double length = std::hypot(b.x - a.x, b.y - a.y);
+    const int steps = std::max(1, static_cast<int>(std::ceil(length / 0.1)));
+    for (int i = 0; i <= steps; ++i) {
+      const double t = static_cast<double>(i) / steps;
+      const double x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
+      if (level.BoxBlocked(x - radius, y - radius, x + radius, y + radius)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  std::vector<Vec2> out{points.front()};
+  size_t anchor = 0;
+  while (anchor + 1 < points.size()) {
+    // The farthest point still reachable in a straight line from the anchor.
+    size_t reach = anchor + 1;
+    for (size_t k = points.size() - 1; k > anchor + 1; --k) {
+      if (clear(points[anchor], points[k])) {
+        reach = k;
+        break;
+      }
+    }
+    out.push_back(points[reach]);
+    anchor = reach;
+  }
+  return out;
+}
 }  // namespace mythos
 
 #endif  // MYTHOS_ENGINE_WORLD_NAV_H_

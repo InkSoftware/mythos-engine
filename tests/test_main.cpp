@@ -5330,6 +5330,53 @@ TEST(settings_keep_the_key_bindings_on_one_line) {
   CHECK(restored.Bindings("forward")[0].code == "I");
 }
 
+TEST(ai_noise_board_last_seen_and_smoothed_paths) {
+  mythos::Level l;
+  CHECK(l.Parse(
+      {"#########", "#...#...#", "#...#...#", "#.......#", "#########"}));
+  // Noises: heard when near and in range, older ones are forgotten, the
+  // loudest left after the distance wins.
+  mythos::ai::NoiseBoard board(3.0);
+  board.Add({{6.5, 3.5}, 6.0}, 0.0);
+  board.Add({{2.5, 1.5}, 3.0}, 0.0);
+  const mythos::Vec2 ear{7.5, 3.5};
+  auto heard = board.Loudest(l, ear, 1.0, 1.0);
+  CHECK(heard && heard->pos.x == 6.5);
+  // The quiet one in the other room is out of range: sensitivity brings it in.
+  CHECK(!mythos::ai::CanHear(l, ear, 1.0, {{2.5, 1.5}, 3.0}));
+  CHECK(!board.Loudest(l, {1.5, 1.5}, 0.1, 1.0));
+  // Forgotten after the lifetime.
+  CHECK(!board.Loudest(l, ear, 1.0, 5.0));
+  board.Add({{7.5, 3.5}, 2.0}, 5.0);  // also clears the old ones
+  CHECK_EQ(board.Size(), 1u);
+  board.Clear();
+  CHECK_EQ(board.Size(), 0u);
+
+  mythos::ai::LastSeen seen;
+  CHECK(!seen.Known() && !seen.Remembers(0, 5) && std::isinf(seen.Age(1)));
+  seen.Saw({3, 4}, 10.0);
+  CHECK(seen.Known() && seen.Where().x == 3);
+  CHECK(seen.Remembers(12.0, 5.0) && !seen.Remembers(16.0, 5.0));
+  CHECK_EQ(seen.Age(12.5), 2.5);
+  seen.Forget();
+  CHECK(!seen.Known());
+
+  // Paths pulled taut: a straight run across an open room is two points; round
+  // a wall the corner stays.
+  mythos::Level open;
+  CHECK(open.Parse({"#######", "#.....#", "#.....#", "#.....#", "#######"}));
+  const auto path = mythos::FindPath(open, {1, 1}, {5, 3});
+  CHECK(path.size() > 3);
+  const auto smooth = mythos::SmoothPath(open, path);
+  CHECK_EQ(smooth.size(), 2u);
+  CHECK(smooth.front().x == 1.5 && smooth.back().x == 5.5);
+  const auto around = mythos::FindPath(l, {1, 1}, {7, 1});
+  const auto bent = mythos::SmoothPath(l, around);
+  CHECK(bent.size() >= 3 && bent.size() < around.size());
+  CHECK(mythos::SmoothPath(l, {}).empty());
+  CHECK_EQ(mythos::SmoothPath(l, {{1, 1}}).size(), 1u);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);
