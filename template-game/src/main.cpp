@@ -243,11 +243,12 @@ int main(const int argc, char** const argv) {
   }
 
   // Input actions: the engine's default keys, with the player's rebinding laid
-  // over them from bindings.json. `rebinding` waits for the next key.
+  // over them from the `bindings` line of settings.txt.
   mythos::InputMap bindings = mythos::DefaultGameplayMap();
   {
     mythos::json::Value saved;
-    if (mythos::json::Parse(files.Read("bindings.json"), saved)) {
+    if (!settings.bindings.empty() &&
+        mythos::json::Parse(settings.bindings, saved)) {
       bindings.FromJson(saved);
     }
   }
@@ -325,9 +326,9 @@ int main(const int argc, char** const argv) {
     } else if (page == mythos::SettingsPage::kControls) {
       const mythos::ControlsResult result = mythos::UpdateControlsPage(
           bindings, mythos::kPlayContext, controls, ui, poll.pressed);
-      if (result == mythos::ControlsResult::kChanged &&
-          !files.Write("bindings.json", bindings.ToJson().dump(2))) {
-        std::fprintf(stderr, "could not save the key bindings\n");
+      if (result == mythos::ControlsResult::kChanged) {
+        settings.bindings = bindings.ToJson().dump();
+        mythos::SaveSettings(files, settings);
       }
       if (result == mythos::ControlsResult::kBack) {
         mythos::LeaveControlsPage(page, menu_index);

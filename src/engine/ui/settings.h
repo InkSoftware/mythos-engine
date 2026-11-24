@@ -77,6 +77,12 @@ struct GameSettings {
   int effects_volume = 8;
   Lang language = Lang::kEnglish;
 
+  // The player's key bindings as one line of JSON
+  // (`InputMap::ToJson().dump()`), saved as `bindings` in settings.txt; empty
+  // is the defaults. The game reads it with `InputMap::FromJson` and writes it
+  // when the controls page reports a change.
+  std::string bindings;
+
   // Not saved: a game that shows the controls page (ui/controls_ui.h) sets it,
   // and the main page then has a Controls row that opens it.
   bool controls_page = false;

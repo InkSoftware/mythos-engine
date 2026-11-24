@@ -5300,6 +5300,36 @@ TEST(save_state_level_diff_records_and_restores_changed_cells) {
   CHECK(fresh.At(1, 1) == 'x');
 }
 
+TEST(settings_keep_the_key_bindings_on_one_line) {
+  GameSettings s;
+  CHECK(s.bindings.empty());
+  // Default: no key is written with a value that matters, and an old file
+  // without it keeps the default.
+  GameSettings old;
+  ApplyKeyValues(old, {{"filmGrain", "0"}});
+  CHECK(old.bindings.empty());
+  s.bindings = "{\"forward\":[\"key:I\"]}";
+  GameSettings back;
+  ApplyKeyValues(back, ToKeyValues(s));
+  CHECK(back.bindings == s.bindings);
+  // The file format is key=value lines: a value with '=' survives, a newline
+  // is cut at the first one.
+  GameSettings eq;
+  ApplyKeyValues(eq, {{"bindings", "a=b"}});
+  CHECK(eq.bindings == "a=b");
+  GameSettings nl;
+  ApplyKeyValues(nl, {{"bindings", "one\ntwo"}});
+  CHECK(nl.bindings == "one");
+  // The bindings round trip through the input map.
+  InputMap map = DefaultGameplayMap();
+  map.Rebind("forward", 0, {BindKind::kKey, "I", 0}, true);
+  s.bindings = map.ToJson().dump();
+  InputMap restored = DefaultGameplayMap();
+  json::Value parsed;
+  CHECK(json::Parse(s.bindings, parsed) && restored.FromJson(parsed));
+  CHECK(restored.Bindings("forward")[0].code == "I");
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

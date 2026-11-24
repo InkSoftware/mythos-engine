@@ -209,6 +209,7 @@ std::map<std::string, std::string> ToKeyValues(const GameSettings& s) {
                                   s.motion_blur, 0, kMotionBlurCount - 1)])},
           {"visualFx", s.visual_fx ? "1" : "0"},
           {"ambientOcclusion", s.ambient_occlusion ? "1" : "0"},
+          {"bindings", s.bindings},
           {"cameraEffect", s.camera_effect ? "1" : "0"},
           {"fullscreen", s.fullscreen ? "1" : "0"},
           {"vsync", s.vsync ? "1" : "0"},
@@ -256,6 +257,9 @@ void ApplyKeyValues(GameSettings& s,
       }
     } else if (key == "visualFx") {
       s.visual_fx = val != "0";
+    } else if (key == "bindings") {
+      // One line only (a newline would end the line in the file).
+      s.bindings = val.substr(0, val.find_first_of("\r\n"));
     } else if (key == "ambientOcclusion") {
       s.ambient_occlusion = val != "0";
     } else if (key == "cameraEffect") {

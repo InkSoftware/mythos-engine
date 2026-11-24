@@ -139,10 +139,9 @@ more than was built.
   JSON persistence of the differences only and dead-zone maths,
   `ActionTracker` (per-frame state) and `DefaultGameplayMap` (the usual keys);
   `ProbeBinding`, `ApplyActions` and `InputPoll::pressed` feed a game from it (the
-  template's Esc opens the settings menu, F3 or its Controls row the controls page, which saves `bindings.json`). The rebind page is
+  template's Esc opens the settings menu, F3 or its Controls row the controls page, which saves the `bindings` line of `settings.txt`). The rebind page is
   `ui/controls_ui.h` (`UpdateControlsPage` tested, `DrawControlsPage`). The settings menu has a Controls row
-  (`GameSettings::controls_page`, `SettingsPage::kControls`, `LeaveControlsPage`). Not done: saving the bindings in
-  settings.txt.
+  (`GameSettings::controls_page`, `SettingsPage::kControls`, `LeaveControlsPage`). The bindings are saved in settings.txt (`GameSettings::bindings`).
 - **Why:** Unity Input System, Unreal Enhanced Input.
 - **Where:** `ui/input_map.h` has named actions bound to keys, buttons and
   axes, with contexts (gameplay, menu), a conflict check, persistence in
@@ -328,7 +327,7 @@ Gaps named in the Progress lines, by area:
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
 - **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
-- **Tools and data:** bindings saved in `settings.txt`, furniture changes in a save.
+- **Tools and data:** furniture changes in a save.
 
 ## Out of scope for now
 
