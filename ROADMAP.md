@@ -276,9 +276,9 @@ more than was built.
 
 ### 5.4 Editor prefabs (M) - first version
 - **Progress:** `editor/prefab.h` (a `.prefab` file in the level's own line format, capture, quarter turns and placement with
-  checks, tested) and a Prefabs section in the Inspector (save an area, place at a cell with a turn). Not done:
-  picking the area or the cell with the mouse in the viewport, a ghost preview, prefabs that keep a link to their file
-  (an update that reaches the placed copies), and prefabs holding triggers or decals.
+  checks, tested) and a Prefabs section in the Inspector (save an area, place at a cell with a turn). The viewport's Prefab tool (P) places the chosen prefab at the clicked cell with a
+  footprint ghost. Not done: picking the area to capture with the mouse, prefabs that keep a link to their file (an
+  update that reaches the placed copies), and prefabs holding triggers or decals.
 - Reusable groups of furniture and decor, saved as a file, placed and
   overridden in the editor. Mirrors the level format so games need no code.
 
@@ -323,7 +323,7 @@ Gaps named in the Progress lines, by area:
 - **Animation and AI:** glTF with external buffers, sparse accessors, morph targets and textures on skinned models;
   noise events, memory of last-seen positions and path smoothing for the AI.
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
-- **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area or cell and a camera key with the mouse, linked prefabs
+- **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
 - **Tools and data:** a bake command in `tools/` for light probes, bindings saved in `settings.txt`, door and `Level`
   diffs in a save.
