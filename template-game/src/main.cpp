@@ -346,6 +346,9 @@ int main(const int argc, char** const argv) {
       std::fprintf(stderr, "no intro: %s\n", why.c_str());
     }
   }
+  // A slammed door shakes the view a little, and tilts it (roll).
+  mythos::CameraFx camera_fx;
+  camera_fx.params.max_roll = 0.02;
   mythos::FrameClock clock;
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false, was_in_back_room = false;
@@ -487,6 +490,10 @@ int main(const int argc, char** const argv) {
     cam.z = game.player().pos.y;
     cam.yaw = game.player().angle;
     cam.pitch = game.player().pitch;
+    // The shake and tilt ride on the player's camera (the cutscene has its
+    // own).
+    camera_fx.Update(dt);
+    mythos::ApplyCameraFx(camera_fx.Sample(), cam);
     // A cutscene takes the camera from the player.
     mythos::CameraSample film;
     if (game.CutsceneActive() && game.CutsceneCamera(&film)) {
@@ -578,6 +585,7 @@ int main(const int argc, char** const argv) {
                                renderer.Stats(), &console, clock.Seconds());
     }
     for (const std::string& cue : game.TakeSounds()) {
+      if (cue == "door_close") camera_fx.AddShake(0.45);
       audio.Play(cue, 1.0f, 1.0f, "effects",
                  cue.starts_with("door") ? 1.5f : 0.4f);
     }
