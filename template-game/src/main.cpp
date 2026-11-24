@@ -18,6 +18,7 @@
 #include "engine/platform/gl/scene_renderer.h"
 #include "engine/platform/input.h"
 #include "engine/platform/window.h"
+#include "engine/ui/input_map.h"
 #include "engine/ui/settings.h"
 #include "game.h"
 
@@ -128,6 +129,18 @@ int main(const int argc, char** const argv) {
   const std::string save_dir = files.Path("saves");
 
   const mythos::GameSettings settings;
+
+  // Input actions: the engine's default keys, with the player's rebinding laid
+  // over them from bindings.json. `rebinding` waits for the next key.
+  mythos::InputMap bindings = mythos::DefaultGameplayMap();
+  {
+    mythos::json::Value saved;
+    if (mythos::json::Parse(files.Read("bindings.json"), saved)) {
+      bindings.FromJson(saved);
+    }
+  }
+  mythos::ActionTracker actions;
+  bool rebinding = false, f3_was = false;
   mythos::FrameClock clock;
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false;
@@ -138,10 +151,34 @@ int main(const int argc, char** const argv) {
     mythos::ActionInput act;
     const mythos::InputPoll poll =
         mythos::PollInput(move, ui, act, true, nullptr);
-    if (poll.quit || ui.pause_pressed) break;
+    if (poll.quit || (ui.pause_pressed && !rebinding)) break;
+
+    // Rebinding: F3 starts it, the next key becomes Use, Esc cancels.
+    const bool* keys = SDL_GetKeyboardState(nullptr);
+    if (rebinding && ui.pause_pressed) {
+      rebinding = false;
+    } else if (rebinding && poll.pressed) {
+      bindings.Rebind("interact", 0, *poll.pressed, true);
+      if (!files.Write("bindings.json", bindings.ToJson().dump(2))) {
+        std::fprintf(stderr, "could not save the key bindings\n");
+      }
+      rebinding = false;
+      game.Say("template.rebound");
+    } else if (keys[SDL_SCANCODE_F3] && !f3_was) {
+      rebinding = true;
+    }
+    f3_was = keys[SDL_SCANCODE_F3];
+    actions.Update(
+        bindings, mythos::kPlayContext,
+        [](const mythos::Binding& b) { return mythos::ProbeBinding(b); });
+    if (rebinding) {
+      move = {};
+      act = {};
+    } else {
+      mythos::ApplyActions(actions, move, act);
+    }
     if (poll.toggle_fullscreen) window.ApplyMode(true, 1280, 720);
 
-    const bool* keys = SDL_GetKeyboardState(nullptr);
     if (keys[SDL_SCANCODE_F5] && !f5_was) game.Save(save_dir, 0);
     if (keys[SDL_SCANCODE_F9] && !f9_was) game.LoadSave(save_dir, 0);
     f5_was = keys[SDL_SCANCODE_F5];
@@ -187,7 +224,11 @@ int main(const int argc, char** const argv) {
     std::ranges::fill(overlay.px, 0u);
     mythos::DrawText(overlay, 8, 8, mythos::Tr("template.help"),
                      mythos::Rgba(255, 255, 255));
-    if (!game.message().empty()) {
+    if (rebinding) {
+      const std::string line = mythos::Tr("template.rebind");
+      mythos::DrawText(overlay, (overlay.w - mythos::TextWidth(line, 2)) / 2,
+                       overlay.h - 40, line, mythos::Rgba(160, 220, 255), 2);
+    } else if (!game.message().empty()) {
       const std::string line = mythos::Tr(game.message());
       mythos::DrawText(overlay, (overlay.w - mythos::TextWidth(line, 2)) / 2,
                        overlay.h - 40, line, mythos::Rgba(255, 230, 160), 2);

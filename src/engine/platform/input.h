@@ -2,9 +2,11 @@
 #define MYTHOS_ENGINE_PLATFORM_INPUT_H_
 
 #include <functional>
+#include <optional>
 #include <string>
 
 #include "engine/platform/window.h"
+#include "engine/ui/input_map.h"
 #include "engine/ui/menu.h"
 #include "engine/world/player.h"
 
@@ -25,12 +27,26 @@ struct InputPoll {
   bool quit = false;
   bool toggle_fullscreen = false;
   ConsoleInput console;
+  // The key, mouse button or pad button pressed in this poll (the last one),
+  // as a binding: what a "press a key" rebind prompt captures. Empty for none.
+  std::optional<Binding> pressed;
 };
 
 // Turns on text input for the debug console: typed text and the editing keys
 // go to `InputPoll::console`, and the game's own keys (movement, interact,
 // menu) are ignored until it is turned off again.
 void SetConsoleCapture(Window& window, bool capture);
+
+// How hard `b` is held right now (0..1): a key, a mouse button or a pad button
+// is 0 or 1, a pad axis its deflection past `dead_zone` on the bound side.
+// The probe an `ActionTracker` takes.
+double ProbeBinding(const Binding& b, double dead_zone = 0.2);
+
+// Overwrites the movement and interact fields of a poll with the play actions
+// of `actions` (see DefaultGameplayMap), so rebound keys drive the game. Mouse
+// look and the other buttons stay as PollInput set them.
+void ApplyActions(const ActionTracker& actions, MoveInput& move,
+                  ActionInput& act);
 
 // Maps a window position to a UI hotspot index (-1 for none) and optionally its
 // value.

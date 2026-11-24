@@ -4417,6 +4417,45 @@ TEST(anim_state_machine_transitions_on_params_and_finish) {
   CHECK(m.CurrentPose().size() == 1u);
 }
 
+TEST(input_map_action_tracker_edges_and_default_map) {
+  const mythos::InputMap map = mythos::DefaultGameplayMap();
+  CHECK(map.Has("forward") && map.Has("interact") && map.Has("run"));
+  // No input is bound to two play actions.
+  for (const std::string& a : map.Actions(mythos::kPlayContext)) {
+    for (const mythos::Binding& b : map.Bindings(a)) {
+      CHECK(map.Resolve(mythos::kPlayContext, b) == a);
+    }
+  }
+  bool w_down = false;
+  double stick = 0;
+  const mythos::BindingProbe probe = [&](const mythos::Binding& b) {
+    if (b.kind == mythos::BindKind::kKey && b.code == "W")
+      return w_down ? 1.0 : 0.0;
+    if (b.kind == mythos::BindKind::kPadAxis) {
+      return mythos::AxisStrength(b, stick, 0.2);
+    }
+    return 0.0;
+  };
+  mythos::ActionTracker t;
+  t.Update(map, mythos::kPlayContext, probe);
+  CHECK(!t.Down("forward") && !t.Pressed("forward"));
+  w_down = true;
+  t.Update(map, mythos::kPlayContext, probe);
+  CHECK(t.Down("forward") && t.Pressed("forward") && !t.Released("forward"));
+  t.Update(map, mythos::kPlayContext, probe);
+  CHECK(t.Down("forward") && !t.Pressed("forward"));
+  w_down = false;
+  t.Update(map, mythos::kPlayContext, probe);
+  CHECK(!t.Down("forward") && t.Released("forward"));
+  CHECK(!t.Down("no_such_action"));
+  // An axis binding gives strength, and the strongest binding wins.
+  mythos::InputMap custom = map;
+  custom.Rebind("forward", 1, {mythos::BindKind::kPadAxis, "LeftY", -1});
+  stick = -0.6;
+  t.Update(custom, mythos::kPlayContext, probe);
+  CHECK(t.Strength("forward") > 0.49 && t.Strength("forward") < 0.51);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

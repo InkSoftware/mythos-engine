@@ -206,4 +206,48 @@ bool InputMap::FromJson(const json::Value& v) {
   }
   return true;
 }
+
+void ActionTracker::Update(const InputMap& map, const std::string& context,
+                           const BindingProbe& probe) {
+  before_ = std::move(now_);
+  now_.clear();
+  for (const std::string& action : map.Actions(context)) {
+    double strength = 0;
+    for (const Binding& b : map.Bindings(action)) {
+      strength = std::max(strength, std::clamp(probe(b), 0.0, 1.0));
+    }
+    now_[action] = strength;
+  }
+}
+
+double ActionTracker::Strength(const std::string& action) const {
+  const auto it = now_.find(action);
+  return it == now_.end() ? 0.0 : it->second;
+}
+
+bool ActionTracker::Pressed(const std::string& action) const {
+  const auto it = before_.find(action);
+  return Down(action) && (it == before_.end() || it->second <= 0);
+}
+
+bool ActionTracker::Released(const std::string& action) const {
+  const auto it = before_.find(action);
+  return !Down(action) && it != before_.end() && it->second > 0;
+}
+
+InputMap DefaultGameplayMap() {
+  const auto key = [](const char* name) {
+    return Binding{BindKind::kKey, name, 0};
+  };
+  InputMap map;
+  map.Define("forward", kPlayContext, {key("W"), key("Up")});
+  map.Define("back", kPlayContext, {key("S"), key("Down")});
+  map.Define("strafe_left", kPlayContext, {key("A")});
+  map.Define("strafe_right", kPlayContext, {key("D")});
+  map.Define("turn_left", kPlayContext, {key("Left")});
+  map.Define("turn_right", kPlayContext, {key("Right")});
+  map.Define("run", kPlayContext, {key("Left Shift"), key("Right Shift")});
+  map.Define("interact", kPlayContext, {key("E"), key("Space")});
+  return map;
+}
 }

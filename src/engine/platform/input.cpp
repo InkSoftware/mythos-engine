@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "engine/world/gamepad.h"
 
@@ -269,6 +270,69 @@ void GamepadLed(const int r, const int g, const int b) {
   SDL_SetGamepadLED(g_pad, byte(r), byte(g), byte(b));
 }
 
+namespace {
+constexpr struct {
+  const char* name;
+  int button;
+} kMouseButtons[] = {{"Left", SDL_BUTTON_LEFT},
+                     {"Middle", SDL_BUTTON_MIDDLE},
+                     {"Right", SDL_BUTTON_RIGHT},
+                     {"X1", SDL_BUTTON_X1},
+                     {"X2", SDL_BUTTON_X2}};
+
+std::optional<Binding> MouseBinding(const int button) {
+  for (const auto& m : kMouseButtons) {
+    if (m.button == button) return Binding{BindKind::kMouseButton, m.name, 0};
+  }
+  return std::nullopt;
+}
+}
+
+double ProbeBinding(const Binding& b, const double dead_zone) {
+  switch (b.kind) {
+    case BindKind::kKey: {
+      const SDL_Scancode sc = SDL_GetScancodeFromName(b.code.c_str());
+      return sc != SDL_SCANCODE_UNKNOWN && SDL_GetKeyboardState(nullptr)[sc]
+                 ? 1.0
+                 : 0.0;
+    }
+    case BindKind::kMouseButton: {
+      const SDL_MouseButtonFlags held = SDL_GetMouseState(nullptr, nullptr);
+      for (const auto& m : kMouseButtons) {
+        if (b.code == m.name) return (held & SDL_BUTTON_MASK(m.button)) ? 1 : 0;
+      }
+      return 0.0;
+    }
+    case BindKind::kPadButton: {
+      const SDL_GamepadButton button =
+          SDL_GetGamepadButtonFromString(b.code.c_str());
+      return g_pad != nullptr && button != SDL_GAMEPAD_BUTTON_INVALID &&
+                     SDL_GetGamepadButton(g_pad, button)
+                 ? 1.0
+                 : 0.0;
+    }
+    case BindKind::kPadAxis: {
+      const SDL_GamepadAxis axis = SDL_GetGamepadAxisFromString(b.code.c_str());
+      if (g_pad == nullptr || axis == SDL_GAMEPAD_AXIS_INVALID) return 0.0;
+      return AxisStrength(b, PadAxis(axis), dead_zone);
+    }
+  }
+  return 0.0;
+}
+
+void ApplyActions(const ActionTracker& actions, MoveInput& move,
+                  ActionInput& act) {
+  move.forward = actions.Down("forward");
+  move.back = actions.Down("back");
+  move.strafe_left = actions.Down("strafe_left");
+  move.strafe_right = actions.Down("strafe_right");
+  move.turn_left = actions.Down("turn_left");
+  move.turn_right = actions.Down("turn_right");
+  move.run = actions.Down("run");
+  act.interact_pressed = actions.Pressed("interact");
+  act.interact_held = actions.Down("interact");
+}
+
 bool GamepadConnected() { return g_pad != nullptr; }
 bool GamepadLastUsed() { return g_pad != nullptr && g_pad_last_used; }
 
@@ -300,6 +364,7 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         }
         break;
       case SDL_EVENT_MOUSE_BUTTON_DOWN:
+        if (const auto b = MouseBinding(event.button.button)) out.pressed = b;
         if (!relative_mouse) HandleMouseDown(event.button, ui, point_at);
         break;
       case SDL_EVENT_KEY_DOWN:
@@ -307,7 +372,13 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         if (HandleConsoleKey(event.key.key, event.key.repeat, out.console)) {
           break;
         }
-        if (!event.key.repeat) HandleKeyDown(event.key.key, ui, act, out);
+        if (!event.key.repeat) {
+          HandleKeyDown(event.key.key, ui, act, out);
+          if (const char* name = SDL_GetScancodeName(event.key.scancode);
+              name != nullptr && *name != '\0') {
+            out.pressed = Binding{BindKind::kKey, name, 0};
+          }
+        }
         break;
       case SDL_EVENT_TEXT_INPUT:
         if (g_console_capture) out.console.text += event.text.text;
@@ -324,6 +395,10 @@ InputPoll PollInput(MoveInput& move, UiInput& ui, ActionInput& act,
         }
         break;
       case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        if (const char* name = SDL_GetGamepadStringForButton(
+                static_cast<SDL_GamepadButton>(event.gbutton.button))) {
+          out.pressed = Binding{BindKind::kPadButton, name, 0};
+        }
         HandlePadButton(static_cast<SDL_GamepadButton>(event.gbutton.button),
                         ui, act);
         break;

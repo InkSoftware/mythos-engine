@@ -5,6 +5,8 @@
 #ifndef MYTHOS_ENGINE_UI_INPUT_MAP_H_
 #define MYTHOS_ENGINE_UI_INPUT_MAP_H_
 
+#include <functional>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,6 +39,32 @@ double ApplyDeadZone(double value, double dead);
 // The strength (0..1) with which `b` is down given the raw axis value, or
 // 0 for the wrong half of the axis.
 double AxisStrength(const Binding& b, double raw_value, double dead);
+
+// How hard a binding is held right now, 0..1 (the platform layer asks SDL).
+using BindingProbe = std::function<double(const Binding&)>;
+
+class InputMap;
+
+// Per-frame state of the actions of one context: how hard each is held, and
+// the edges against the frame before.
+class ActionTracker {
+ public:
+  // Samples every action of `context` (an action's strength is its strongest
+  // binding).
+  void Update(const InputMap& map, const std::string& context,
+              const BindingProbe& probe);
+
+  [[nodiscard]] double Strength(const std::string& action) const;
+  [[nodiscard]] bool Down(const std::string& action) const {
+    return Strength(action) > 0;
+  }
+  // Went down this frame / went up this frame.
+  [[nodiscard]] bool Pressed(const std::string& action) const;
+  [[nodiscard]] bool Released(const std::string& action) const;
+
+ private:
+  std::map<std::string, double> now_, before_;
+};
 
 class InputMap {
  public:
@@ -85,6 +113,14 @@ class InputMap {
   [[nodiscard]] const Action* Find(const std::string& name) const;
   std::vector<Action> actions_;
 };
+
+// The context of a first-person game's play actions.
+inline constexpr const char* kPlayContext = "play";
+
+// forward, back, strafe_left, strafe_right, turn_left, turn_right, run and
+// interact on the usual keys (WASD and the arrows, Shift, E and Space), in
+// the context kPlayContext. Names are SDL's scancode names.
+InputMap DefaultGameplayMap();
 }
 
 #endif
