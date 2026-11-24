@@ -5280,6 +5280,26 @@ TEST(cutscene_sort_and_validate) {
   CHECK(!mythos::ValidateCutscene(worse).empty());
 }
 
+TEST(save_state_level_diff_records_and_restores_changed_cells) {
+  mythos::Level base;
+  CHECK(base.Parse({"#####", "#.N.#", "#####"}));
+  mythos::Level now = base;
+  CHECK(mythos::LevelDiffToJson(base, now).empty());
+  now.Set(2, 1, 'n');  // a door opened
+  now.Set(1, 1, 'x');
+  const mythos::json::Value diff = mythos::LevelDiffToJson(base, now);
+  CHECK_EQ(diff.size(), 2u);
+  mythos::Level fresh = base;
+  CHECK_EQ(mythos::ApplyLevelDiff(fresh, diff), 2);
+  CHECK(fresh.At(2, 1) == 'n' && fresh.At(1, 1) == 'x');
+  // Junk is skipped: wrong shapes, out of range cells, long glyphs.
+  const mythos::json::Value junk = {
+      {9, 9, "z"}, {1, 1, "toolong"}, {"a", 1, "z"}, 5};
+  CHECK_EQ(mythos::ApplyLevelDiff(fresh, junk), 0);
+  CHECK_EQ(mythos::ApplyLevelDiff(fresh, mythos::json::Value(3)), 0);
+  CHECK(fresh.At(1, 1) == 'x');
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

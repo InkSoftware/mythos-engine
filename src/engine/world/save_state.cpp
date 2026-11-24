@@ -1,5 +1,6 @@
 #include "engine/world/save_state.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,37 @@ bool ProgressFromJson(const json::Value& v, Progress& out) {
   }
   out = std::move(p);
   return true;
+}
+
+json::Value LevelDiffToJson(const Level& baseline, const Level& now) {
+  json::Value out = json::Value::array();
+  const int w = std::min(baseline.Width(), now.Width());
+  const int h = std::min(baseline.Height(), now.Height());
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      if (baseline.At(x, y) != now.At(x, y)) {
+        out.push_back({x, y, std::string(1, now.At(x, y))});
+      }
+    }
+  }
+  return out;
+}
+
+int ApplyLevelDiff(Level& level, const json::Value& diff) {
+  if (!diff.is_array()) return 0;
+  int applied = 0;
+  for (const auto& entry : diff) {
+    if (!entry.is_array() || entry.size() != 3 ||
+        !entry[0].is_number_integer() || !entry[1].is_number_integer() ||
+        !entry[2].is_string() || entry[2].get<std::string>().size() != 1) {
+      continue;
+    }
+    const int x = entry[0].get<int>(), y = entry[1].get<int>();
+    if (!level.InBounds(x, y)) continue;
+    level.Set(x, y, entry[2].get<std::string>()[0]);
+    ++applied;
+  }
+  return applied;
 }
 
 json::Value PlayerToJson(const Player& player) {

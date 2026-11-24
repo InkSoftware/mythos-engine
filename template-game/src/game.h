@@ -107,6 +107,7 @@ class Game {
   void Restart();
 
   mythos::Level level_;
+  mythos::Level baseline_;  // the level as loaded: what a save diffs against
   mythos::ModelLibrary models_;
   mythos::Player player_;
   mythos::PlayerParams params_;

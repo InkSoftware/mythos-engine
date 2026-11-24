@@ -55,6 +55,7 @@ bool Game::Load(const std::string& engine_assets,
     return fail(why);
   }
   level_.SetTiles(tiles);
+  baseline_ = level_;
   doors_.Scan(level_);
   if (!events_.Load(level_))
     return fail("the level's triggers or rules are bad");
@@ -98,6 +99,7 @@ bool Game::ReloadLevel(std::string* error) {
     return false;
   }
   level_ = std::move(fresh);
+  baseline_ = level_;
   doors_.Scan(level_);
   events_.Load(level_);
   // Where the guide walks may have changed too.
@@ -301,16 +303,8 @@ bool Game::Save(const std::string& dir, const int slot) {
   mythos::SaveData data;
   data.Set("player", mythos::PlayerToJson(player_));
   data.Set("progress", mythos::ProgressToJson(progress_));
-  // Doors flip glyphs in the level, so remember each door cell's glyph.
-  mythos::json::Value doors = mythos::json::Value::array();
-  for (int y = 0; y < level_.Height(); ++y) {
-    for (int x = 0; x < level_.Width(); ++x) {
-      if (level_.Tiles().IsDoor(level_.At(x, y))) {
-        doors.push_back({x, y, std::string(1, level_.At(x, y))});
-      }
-    }
-  }
-  data.Set("doors", std::move(doors));
+  // Doors flip glyphs in the level: the changed cells are the saved doors.
+  data.Set("level", mythos::LevelDiffToJson(baseline_, level_));
   mythos::json::Value guide = mythos::json::Value::object();
   guide["x"] = guide_pos_.x;
   guide["z"] = guide_pos_.y;
@@ -335,16 +329,10 @@ bool Game::LoadSave(const std::string& dir, const int slot) {
   if (const auto* p = data.Section("progress")) {
     mythos::ProgressFromJson(*p, progress_);
   }
-  if (const auto* d = data.Section("doors"); d != nullptr && d->is_array()) {
-    for (const auto& item : *d) {
-      if (item.is_array() && item.size() == 3 && item[2].is_string() &&
-          !item[2].get<std::string>().empty()) {
-        level_.Set(item[0].get<int>(), item[1].get<int>(),
-                   item[2].get<std::string>()[0]);
-      }
-    }
-    doors_.Scan(level_);
-  }
+  // Start from the level as loaded, then lay the saved changes over it.
+  level_ = baseline_;
+  if (const auto* d = data.Section("level")) mythos::ApplyLevelDiff(level_, *d);
+  doors_.Scan(level_);
   if (const auto* g = data.Section("guide")) {
     guide_pos_.x = g->value("x", guide_pos_.x);
     guide_pos_.y = g->value("z", guide_pos_.y);

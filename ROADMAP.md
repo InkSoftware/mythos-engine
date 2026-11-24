@@ -125,7 +125,8 @@ more than was built.
 - **Progress:** `data/save.h` provides the versioned JSON file (named
   sections), per-version migrations, numbered slots and atomic writes;
   `world/save_state.h` serialises `Progress` and `Player`. Door and `Level`
-  diffs are a game's own sections (the template saves its doors and the guide that way).
+  diffs: `LevelDiffToJson` / `ApplyLevelDiff` save the changed map cells (doors included); the template also saves the guide
+  as its own section. Props taken from a level are a game's own section.
 - **Where:** `data/save.h` is a versioned JSON snapshot (`Progress`, player,
   doors, flags, the `Level` diffs, game-supplied blob), a slot API and atomic
   writes (temp file then rename, via `fileio`). A migration hook per version.
@@ -327,8 +328,7 @@ Gaps named in the Progress lines, by area:
 - **Audio:** a per-sound reverb send and beat-synchronised music transitions.
 - **Editor:** a graphical cutscene timeline (the panel has tables), picking the prefab area to capture with the mouse, linked prefabs
   and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
-- **Tools and data:** bindings saved in `settings.txt`, door and `Level`
-  diffs in a save.
+- **Tools and data:** bindings saved in `settings.txt`, furniture changes in a save.
 
 ## Out of scope for now
 

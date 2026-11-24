@@ -185,6 +185,36 @@ void TestIntroCutscenePlaysAndSkips() {
   CHECK(!second.StartCutscene("nope", &error) && !error.empty());
 }
 
+void TestSavedDoorsComeBack() {
+  template_game::Game game;
+  if (!LoadGame(game)) return ++g_failures, void();
+  const std::string dir =
+      (std::filesystem::temp_directory_path() / "template_game_test4").string();
+  std::filesystem::remove_all(dir);
+  // Open the door from the west side, wait for it, and save.
+  mythos::Player p = game.player();
+  p.pos = {8.2, 3.5};
+  p.angle = 0;
+  mythos::SaveData data;
+  data.Set("player", mythos::PlayerToJson(p));
+  CHECK(mythos::SaveSlots(dir, template_game::kSaveVersion).Save(1, data) ==
+        mythos::SaveStatus::kOk);
+  CHECK(game.LoadSave(dir, 1));
+  mythos::ActionInput use;
+  use.interact_pressed = true;
+  Step(game, 1.0 / 60, {}, use);
+  Step(game, 1.5);
+  CHECK(game.level().Passable(9, 3));
+  CHECK(game.Save(dir, 0));
+  // A new game starts with the door shut and gets it open from the save.
+  template_game::Game again;
+  if (!LoadGame(again)) return ++g_failures, void();
+  CHECK(!again.level().Passable(9, 3));
+  CHECK(again.LoadSave(dir, 0));
+  CHECK(again.level().Passable(9, 3));
+  std::filesystem::remove_all(dir);
+}
+
 void TestSaveRoundTrip() {
   template_game::Game game;
   if (!LoadGame(game)) return ++g_failures, void();
@@ -213,6 +243,7 @@ int main() {
   TestGuideWavesWhenSheSeesYou();
   TestPrefabPlacesIntoTheHall();
   TestIntroCutscenePlaysAndSkips();
+  TestSavedDoorsComeBack();
   TestSaveRoundTrip();
   std::printf("%d failure(s)\n", g_failures);
   return g_failures == 0 ? 0 : 1;
