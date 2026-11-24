@@ -173,8 +173,11 @@ void Game::UseDoorAhead() {
         std::floor(player_.pos.x + std::cos(player_.angle) * reach));
     const int y = static_cast<int>(
         std::floor(player_.pos.y + std::sin(player_.angle) * reach));
-    if (level_.InBounds(x, y) && level_.Tiles().IsDoor(level_.At(x, y)) &&
-        doors_.Use(x, y) != 0) {
+    if (!level_.InBounds(x, y) || !level_.Tiles().IsDoor(level_.At(x, y))) {
+      continue;
+    }
+    if (const int swing = doors_.Use(x, y); swing != 0) {
+      sounds_.emplace_back(swing > 0 ? "door_open" : "door_close");
       return;
     }
   }
@@ -213,7 +216,11 @@ void Game::Update(const double dt, const mythos::MoveInput& move,
                   const mythos::ActionInput& act) {
   dt_ = dt;
   mythos::ApplyLook(player_, move, params_);
-  walker_.Update(level_, player_, dt, move, params_);
+  if (walker_.Update(level_, player_, dt, move, params_)) {
+    static const char* const kSteps[] = {"step_wood1", "step_wood2",
+                                         "step_wood3"};
+    sounds_.emplace_back(kSteps[step_++ % 3]);
+  }
   if (act.interact_pressed) UseDoorAhead();
   doors_.Update(level_, dt, player_.pos, params_.radius, 0.8, 0.8);
   RunEvents(act.interact_pressed);

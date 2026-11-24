@@ -23,6 +23,7 @@
 #include "engine/audio/audio_math.h"
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/sound_bank.h"
+#include "engine/audio/spatial.h"
 #include "engine/core/cvar.h"
 #include "engine/core/fileio.h"
 #include "engine/core/json.h"
@@ -79,6 +80,7 @@
 #include "engine/world/player.h"
 #include "engine/world/room_doors.h"
 #include "engine/world/save_state.h"
+#include "engine/world/sound_path.h"
 #include "engine/world/tiles.h"
 #include "engine/world/trigger.h"
 
@@ -4454,6 +4456,78 @@ TEST(input_map_action_tracker_edges_and_default_map) {
   stick = -0.6;
   t.Update(custom, mythos::kPlayContext, probe);
   CHECK(t.Strength("forward") > 0.49 && t.Strength("forward") < 0.51);
+}
+
+TEST(spatial_occlusion_muffle_and_reverb) {
+  const mythos::Occlusion open = mythos::ComputeOcclusion(0, 0);
+  CHECK_EQ(open.gain, 1.0);
+  CHECK_EQ(open.muffle, 0.0);
+  const mythos::Occlusion one = mythos::ComputeOcclusion(1, 0);
+  const mythos::Occlusion two = mythos::ComputeOcclusion(2, 0);
+  CHECK(one.gain < 1 && two.gain < one.gain);
+  CHECK(two.muffle > one.muffle);
+  CHECK(mythos::ComputeOcclusion(10, 5).muffle <= 1.0);
+  CHECK(mythos::ComputeOcclusion(0, 1).gain > one.gain);  // a door muffles less
+  CHECK(mythos::ComputeOcclusion(-3, -1).gain == 1.0);
+  CHECK_EQ(mythos::MuffleCutoffHz(0), 16000.0);
+  CHECK(std::fabs(mythos::MuffleCutoffHz(1) - 500.0) < 1e-6);
+  CHECK(mythos::MuffleCutoffHz(0.5) < 16000 &&
+        mythos::MuffleCutoffHz(0.5) > 500);
+  const double a = mythos::LowpassCoefficient(500, 48000);
+  CHECK(a > 0 && a < mythos::LowpassCoefficient(16000, 48000));
+  CHECK_EQ(mythos::LowpassCoefficient(0, 48000), 0.0);
+  const mythos::ReverbSend closet = mythos::ReverbForRoom(4);
+  const mythos::ReverbSend hall = mythos::ReverbForRoom(300);
+  CHECK(hall.send > closet.send && hall.decay_seconds > closet.decay_seconds);
+  CHECK(mythos::ReverbForRoom(100000).send <= 0.5);
+}
+
+TEST(spatial_mixer_groups_duck_and_release) {
+  mythos::MixerGroups g;
+  CHECK_EQ(g.Gain("music"), 1.0);
+  g.SetVolume("music", 0.8);
+  CHECK_EQ(g.Gain("music"), 0.8);
+  g.AddDuck("music", "voice", 0.25, 0.1, 0.5);
+  g.Update(0.1);
+  CHECK_EQ(g.Gain("music"), 0.8);  // nobody talking
+  g.SetActive("voice", true);
+  g.Update(0.05);
+  const double half = g.Gain("music");
+  CHECK(half < 0.8 && half > 0.8 * 0.25);
+  g.Update(0.1);
+  CHECK(std::fabs(g.Gain("music") - 0.8 * 0.25) < 1e-9);
+  g.SetActive("voice", false);
+  g.Update(0.25);
+  CHECK(g.Gain("music") > 0.8 * 0.25 && g.Gain("music") < 0.8);
+  g.Update(0.5);
+  CHECK(std::fabs(g.Gain("music") - 0.8) < 1e-9);
+  CHECK_EQ(g.Gain("effects"), 1.0);  // untouched groups stay full
+}
+
+TEST(sound_path_counts_walls_and_closed_doors) {
+  mythos::Level l;
+  CHECK(l.Parse(
+      {"#########", "#...#...#", "#...N...#", "#...#...#", "#########"}));
+  auto tiles = std::make_shared<mythos::TileSet>();
+  (*tiles)['N'].solid = true;
+  (*tiles)['N'].door = mythos::DoorKind::kClosed;
+  l.SetTiles(tiles);
+  // Same room: nothing between.
+  mythos::SoundBlockers b =
+      mythos::CountSoundBlockers(l, {1.5, 1.5}, {3.5, 1.5});
+  CHECK(b.walls == 0 && b.closed_doors == 0);
+  // Across the wall (row 1): one wall.
+  b = mythos::CountSoundBlockers(l, {3.5, 1.5}, {5.5, 1.5});
+  CHECK(b.walls == 1 && b.closed_doors == 0);
+  // Through the closed door (row 2): one door, no wall.
+  b = mythos::CountSoundBlockers(l, {3.5, 2.5}, {5.5, 2.5});
+  CHECK(b.walls == 0 && b.closed_doors == 1);
+  // Standing in the doorway is not behind it.
+  b = mythos::CountSoundBlockers(l, {4.5, 2.5}, {6.5, 2.5});
+  CHECK(b.walls == 0 && b.closed_doors == 0);
+  // Across the middle wall into the far room: still one wall.
+  b = mythos::CountSoundBlockers(l, {1.5, 1.5}, {7.5, 1.5});
+  CHECK_EQ(b.walls, 1);
 }
 
 }

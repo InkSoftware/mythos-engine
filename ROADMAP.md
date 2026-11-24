@@ -194,6 +194,11 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ## Phase 4: Atmosphere
 
 ### 4.1 Audio: occlusion, reverb zones, mixer groups (M)
+- **Progress:** `audio/spatial.h` has the occlusion maths, a low-pass cutoff and coefficient, the reverb send for a room size and
+  `MixerGroups` (volume and ducking); `world/sound_path.h` counts walls and closed doors between a source and the
+  listener; `AudioEngine::SetSourceMuffle` low-passes a positional source (the template's hum in the back room is
+  muffled by its walls and closed door). Not done: the reverb itself in the mixer, `RoomDoors` regions as reverb
+  zones, the mixer using `MixerGroups` and a layered music crossfade.
 - **Where:** `audio/audio_math.h` gets cell-based occlusion (walls between
   source and listener, doors open or closed, a low-pass amount) and reverb
   zones from room size (`RoomDoors` regions). Mixer groups with volume and

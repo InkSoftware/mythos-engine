@@ -48,6 +48,10 @@ class AudioEngine {
   // Sets a source's target left/right gains; the mixer eases toward them.
   void SetSource(int id, float left, float right);
 
+  // Sets how muffled a source sounds (0 clear .. 1 fully; see ComputeOcclusion
+  // in audio/spatial.h); the mixer eases toward it and low-passes the source.
+  void SetSourceMuffle(int id, float muffle);
+
   // Removes every positional source.
   void ClearSources();
 
@@ -107,6 +111,9 @@ class AudioEngine {
     double pos = 0;
     float left = 0, right = 0;
     float target_l = 0, target_r = 0;
+    // Low-pass for occlusion: the muffle (0 clear .. 1 closed) and its target,
+    // and the filter state.
+    float muffle = 0, target_muffle = 0, lowpass = 0;
   };
 
   // SDL pulls audio here on the audio thread.

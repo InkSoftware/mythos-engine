@@ -7,6 +7,8 @@
 #include <cstdio>
 #include <string>
 
+#include "engine/audio/audio_math.h"
+#include "engine/audio/spatial.h"
 #include "engine/core/json.h"
 #include "engine/data/i18n.h"
 #include "engine/data/translation.h"
@@ -20,6 +22,7 @@
 #include "engine/platform/window.h"
 #include "engine/ui/input_map.h"
 #include "engine/ui/settings.h"
+#include "engine/world/sound_path.h"
 #include "game.h"
 
 namespace {
@@ -130,6 +133,19 @@ int main(const int argc, char** const argv) {
 
   const mythos::GameSettings settings;
 
+  // Sound: the engine's common clips. A hum in the back room is a positional
+  // source: panned and attenuated by distance, and muffled by the walls and
+  // the closed door between it and the player (occlusion).
+  mythos::AudioEngine audio;
+  int hum = -1;
+  mythos::Vec2 hum_at{14.5, 2.5};
+  if (audio.Init()) {
+    audio.LoadDir(EngineAssets() + "/sounds",
+                  {"step_wood1", "step_wood2", "step_wood3", "door_open",
+                   "door_close", "wind"});
+    hum = audio.AddSource("wind");
+  }
+
   // Input actions: the engine's default keys, with the player's rebinding laid
   // over them from bindings.json. `rebinding` waits for the next key.
   mythos::InputMap bindings = mythos::DefaultGameplayMap();
@@ -232,6 +248,20 @@ int main(const int argc, char** const argv) {
       const std::string line = mythos::Tr(game.message());
       mythos::DrawText(overlay, (overlay.w - mythos::TextWidth(line, 2)) / 2,
                        overlay.h - 40, line, mythos::Rgba(255, 230, 160), 2);
+    }
+
+    for (const std::string& cue : game.TakeSounds()) audio.Play(cue);
+    if (hum >= 0) {
+      const mythos::Vec2 ear = game.player().pos;
+      const mythos::StereoGain pan = mythos::PositionalGain(
+          ear, game.player().angle, hum_at, 0.0, false, 1.0, 0.08);
+      const mythos::SoundBlockers between =
+          mythos::CountSoundBlockers(game.level(), hum_at, ear);
+      const mythos::Occlusion occluded =
+          mythos::ComputeOcclusion(between.walls, between.closed_doors);
+      const auto gain = static_cast<float>(occluded.gain);
+      audio.SetSource(hum, pan.left * gain, pan.right * gain);
+      audio.SetSourceMuffle(hum, static_cast<float>(occluded.muffle));
     }
 
     int w = 0, h = 0;

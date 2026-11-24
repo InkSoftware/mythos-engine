@@ -1,6 +1,7 @@
 // Headless tests of the template game's rules (no window, no GL).
 #include "game.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -73,6 +74,9 @@ void TestDoorOpensAndTheTriggerSpeaks() {
   Step(game, 1.0 / 60, {}, use);
   Step(game, 1.5);
   CHECK(game.level().Passable(9, 3));  // open
+  const std::vector<std::string> sounds = game.TakeSounds();
+  CHECK(std::ranges::count(sounds, "door_open") == 1);
+  CHECK(game.TakeSounds().empty());
   // Walk through to the back room; its trigger fires once.
   mythos::MoveInput forward;
   forward.forward = true;

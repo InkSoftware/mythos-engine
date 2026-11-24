@@ -6,6 +6,7 @@
 #include <numbers>
 #include <string>
 
+#include "engine/audio/spatial.h"
 #include "engine/core/vfs.h"
 
 namespace mythos {
@@ -224,6 +225,16 @@ void AudioEngine::SetSource(const int id, const float left, const float right) {
   SDL_UnlockAudioStream(stream_);
 }
 
+void AudioEngine::SetSourceMuffle(const int id, const float muffle) {
+  if (!stream_ || id < 0) return;
+  SDL_LockAudioStream(stream_);
+  if (static_cast<size_t>(id) < sources_.size()) {
+    sources_[static_cast<size_t>(id)].target_muffle =
+        std::clamp(muffle, 0.0f, 1.0f);
+  }
+  SDL_UnlockAudioStream(stream_);
+}
+
 void AudioEngine::ClearSources() {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);
@@ -342,13 +353,25 @@ void AudioEngine::MixSources(float* const out, const int frames) {
   const float ease = PerSample(kGainEaseSeconds, rate_);
   for (auto& src : sources_) {
     const auto& samples = src.clip->samples;
+    // The filter's coefficient is set once per block from the eased muffle.
+    src.muffle = EaseToward(src.muffle, src.target_muffle,
+                            std::min(1.0f, ease * static_cast<float>(frames)));
+    const bool filtered = src.muffle > 0.001f;
+    const auto coefficient = static_cast<float>(LowpassCoefficient(
+        MuffleCutoffHz(src.muffle), static_cast<double>(rate_)));
     for (int i = 0; i < frames; ++i) {
       if (src.pos >= static_cast<double>(samples.size())) {
         src.pos -= static_cast<double>(samples.size());
       }
       src.left = EaseToward(src.left, src.target_l, ease);
       src.right = EaseToward(src.right, src.target_r, ease);
-      const float sample = samples[static_cast<size_t>(src.pos)] * loop_scale_;
+      float sample = samples[static_cast<size_t>(src.pos)] * loop_scale_;
+      if (filtered) {
+        src.lowpass += coefficient * (sample - src.lowpass);
+        sample = src.lowpass;
+      } else {
+        src.lowpass = sample;
+      }
       const size_t idx = static_cast<size_t>(i) * kChannels;
       out[idx] += sample * src.left;
       out[idx + 1] += sample * src.right;

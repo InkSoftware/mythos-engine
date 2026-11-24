@@ -6,6 +6,7 @@
 #define TEMPLATE_GAME_GAME_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "engine/data/save.h"
@@ -61,6 +62,10 @@ class Game {
   // Where lamps stand: the cells of 'L', as world positions.
   [[nodiscard]] std::vector<mythos::Vec3> LampPositions() const;
 
+  // The sound cues (clip names) raised since the last call: footsteps and
+  // doors. The front end plays them; the rules only say which.
+  std::vector<std::string> TakeSounds() { return std::exchange(sounds_, {}); }
+
   // Shows `key` for a few seconds.
   void Say(const std::string& key);
 
@@ -96,6 +101,8 @@ class Game {
   bool guide_saw_player_ = false;
   double dt_ = 0;
 
+  std::vector<std::string> sounds_;
+  int step_ = 0;
   std::string message_;
   double message_time_ = 0;
   mythos::Vec2 start_;
