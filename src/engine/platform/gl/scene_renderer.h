@@ -7,6 +7,7 @@
 
 #include "engine/core/mat4.h"
 #include "engine/gfx/grade.h"
+#include "engine/gfx/lod.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/particles.h"
 #include "engine/gfx/render_stats.h"
@@ -62,6 +63,9 @@ struct ModelInstance {
   int model = -1;
   float matrix[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   unsigned views = kMain | kMirror;
+  // Not drawn in the main and mirror views farther than this from the eye (0:
+  // always). Shadow casting ignores it.
+  double max_distance = 0;
   // Bone matrices (see SkinMatrices in gfx/skeleton.h, at most kMaxBones) for
   // a model uploaded with skinned batches; empty for a static model.
   std::vector<Mat4f> skin;
@@ -238,6 +242,13 @@ class SceneRenderer {
   // Uploads a model and returns its id for `ModelInstance::model`.
   int UploadModel(const std::vector<Batch>& batches);
 
+  // Beyond `distance` metres from the eye an instance of `model` is drawn as
+  // `far_model` (a cheaper upload of the same thing) in the main and mirror
+  // views; shadows keep the near model.
+  void SetModelLod(int model, int far_model, double distance) {
+    lods_.Set(model, far_model, distance);
+  }
+
   // Sets the colour lookup table of the grade (a strip, see `IdentityLutStrip`
   // in gfx/grade.h), or clears it with an empty or invalid surface. Returns
   // whether a table is now set.
@@ -339,6 +350,10 @@ class SceneRenderer {
 
   void DrawInstances(const CameraState& cam, unsigned views);
   void UploadSkinnedBatch(BatchList& dst, const Batch& b);
+  ModelLods lods_;
+  ModelLods no_lods_;  // always empty: shadow passes do not swap models
+  std::vector<LodRequest> lod_requests_;
+  std::vector<const ModelInstance*> lod_instances_;
 
   // Splits batches into 8-cell chunks, uploads them and resolves their texture
   // maps by name (falling back to "missing").

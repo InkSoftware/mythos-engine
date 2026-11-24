@@ -244,6 +244,9 @@ int main(const int argc, char** const argv) {
     pete.model = guide_model;
     pete.views = mythos::ModelInstance::kMain | mythos::ModelInstance::kMirror |
                  mythos::ModelInstance::kShadow;
+    // Far away she is not worth drawing (a cheaper model could stand in with
+    // SceneRenderer::SetModelLod); her shadow is kept regardless.
+    pete.max_distance = 30.0;
     PlaceMatrix(game.guide_pos().x, game.guide_pos().y, game.guide_angle(),
                 pete.matrix);
     pete.skin = mythos::SkinMatrices(guide.skeleton, game.guide_pose());

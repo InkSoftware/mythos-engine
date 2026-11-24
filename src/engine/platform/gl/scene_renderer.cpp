@@ -848,11 +848,32 @@ void SceneRenderer::DrawDoors(const CameraState& cam, const Frustum& cull,
 
 void SceneRenderer::DrawInstances(const CameraState& cam,
                                   const unsigned views) {
+  // Plan the frame's instances: those of these views, culled and swapped for
+  // a cheaper model by distance from the eye (never for shadow casters, which
+  // must not pop in and out of the shadow maps), sorted by model.
+  const bool lod = (views & ModelInstance::kShadow) == 0;
+  const double ex = cam.x, ey = cam.eye_height, ez = cam.z;
+  lod_requests_.clear();
+  lod_instances_.clear();
   for (const ModelInstance& inst : cam.instances) {
     if ((inst.views & views) == 0 || inst.model < 0 ||
         std::cmp_greater_equal(inst.model, models_.size())) {
       continue;
     }
+    LodRequest r;
+    r.model = inst.model;
+    if (lod) {
+      const double dx = inst.matrix[12] - ex, dy = inst.matrix[13] - ey,
+                   dz = inst.matrix[14] - ez;
+      r.distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+      r.max_distance = inst.max_distance;
+    }
+    lod_requests_.push_back(r);
+    lod_instances_.push_back(&inst);
+  }
+  for (const LodDraw& draw : PlanDraws(lod_requests_, lod ? lods_ : no_lods_)) {
+    const ModelInstance& inst = *lod_instances_[draw.request];
+    if (std::cmp_greater_equal(draw.model, models_.size())) continue;
     // The bone matrices (at most kMaxBones) go up once per instance; static
     // batches of the same model ignore them.
     const bool skinned = !inst.skin.empty();
@@ -862,7 +883,7 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
       Uniform1i(u_skinned_, 1);
       UniformMatrix4fv(u_bones_, count, kFalse, inst.skin[0].data());
     }
-    DrawBatches(models_[static_cast<size_t>(inst.model)], inst.matrix);
+    DrawBatches(models_[static_cast<size_t>(draw.model)], inst.matrix);
     if (skinned) Uniform1i(u_skinned_, 0);
   }
 }

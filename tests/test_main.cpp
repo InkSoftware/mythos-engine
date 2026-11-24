@@ -47,6 +47,7 @@
 #include "engine/gfx/font.h"
 #include "engine/gfx/gltf.h"
 #include "engine/gfx/grade.h"
+#include "engine/gfx/lod.h"
 #include "engine/gfx/materials.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/model.h"
@@ -4560,6 +4561,44 @@ TEST(sky_follows_the_day_and_matches_the_old_night) {
     const auto a = mythos::SkyAt(h).light_color;
     const auto b = mythos::SkyAt(h + 0.01).light_color;
     for (size_t i = 0; i < 3; ++i) CHECK(std::fabs(a[i] - b[i]) < 0.05f);
+  }
+}
+
+TEST(lod_plan_culls_swaps_and_sorts) {
+  mythos::ModelLods lods;
+  lods.Set(5, 6, 10.0);
+  CHECK_EQ(lods.Choose(5, 3.0), 5);
+  CHECK_EQ(lods.Choose(5, 10.0), 5);  // at the distance still near
+  CHECK_EQ(lods.Choose(5, 10.5), 6);
+  CHECK_EQ(lods.Choose(7, 99.0), 7);  // no entry: unchanged
+  // A chain and a loop.
+  lods.Set(6, 8, 30.0);
+  CHECK_EQ(lods.Choose(5, 20.0), 6);
+  CHECK_EQ(lods.Choose(5, 40.0), 8);
+  lods.Set(8, 5, 0.0);
+  const int looped = lods.Choose(5, 40.0);  // ends: no hang
+  CHECK(looped == 5 || looped == 6 || looped == 8);
+  lods.Clear();
+  CHECK_EQ(lods.Choose(5, 99.0), 5);
+
+  mythos::ModelLods table;
+  table.Set(2, 3, 5.0);
+  const std::vector<mythos::LodRequest> requests = {
+      {2, 1.0, 0},    // 0: near model 2
+      {1, 2.0, 0},    // 1: model 1
+      {2, 9.0, 0},    // 2: far, becomes 3
+      {4, 50.0, 20},  // 3: culled
+      {-1, 0, 0},     // 4: no model
+      {1, 3.0, 0},    // 5: model 1 again
+      {4, 10.0, 20},  // 6: within its limit
+  };
+  const std::vector<mythos::LodDraw> plan = mythos::PlanDraws(requests, table);
+  CHECK_EQ(plan.size(), 5u);
+  const std::vector<size_t> order = {1, 5, 0, 2, 6};
+  const std::vector<int> models = {1, 1, 2, 3, 4};
+  for (size_t i = 0; i < plan.size(); ++i) {
+    CHECK_EQ(plan[i].request, order[i]);  // ties keep the order given
+    CHECK_EQ(plan[i].model, models[i]);
   }
 }
 
