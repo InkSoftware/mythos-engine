@@ -40,6 +40,7 @@ if (TARGET mythos::engine_platform)
     # packs or copies them next to the executable instead (see README.md).
     target_compile_definitions(template_game PRIVATE
             TEMPLATE_ENGINE_ASSETS="${MYTHOS_ENGINE_ASSET_DIR}"
+            TEMPLATE_ENGINE_SHADERS="${MYTHOS_ENGINE_SHADER_DIR}"
             TEMPLATE_GAME_ASSETS="${CMAKE_CURRENT_SOURCE_DIR}/assets")
 endif ()
 

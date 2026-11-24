@@ -243,6 +243,9 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   removes per-prop draw calls.
 
 ### 5.3 Asset hot-reload (S to M)
+- **Progress:** `core/file_watch.h` (`FileWatcher`), `SceneRenderer::ReloadShaders` (loose GLSL, a failed compile keeps the
+  old program) and `ReloadTextures` (in place); the template watches its level, its textures and the engine's shaders
+  and reloads each (`Game::ReloadLevel`). Not done: models (OBJ) and sounds, and an editor hook.
 - Watch textures, shaders and levels and reload without a restart. Dev builds
   only; the shader embed step needs a loose-file mode.
 

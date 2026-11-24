@@ -1,5 +1,7 @@
 #include "engine/platform/gl/scene_renderer.h"
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -8,6 +10,7 @@
 #include <numbers>
 #include <utility>
 
+#include "engine/core/fileio.h"
 #include "engine/core/mat4.h"
 #include "engine/core/math.h"
 #include "engine/gfx/normalmap.h"
@@ -199,39 +202,79 @@ void GrowBounds(float* const bmin, float* const bmax,
 }
 }
 
-bool SceneRenderer::Init(const TextureLibrary& textures) {
-  world_program_.Build(shaders::kWorldGeometryVert, shaders::kWorldLightingFrag,
-                       {{0, "aPos"},
-                        {1, "aNormal"},
-                        {2, "aUV"},
-                        {3, "aJoints"},
-                        {4, "aWeights"}},
-                       shaders::kToneMapAndGrainFrag);
-  shadow_program_.Build(shaders::kWorldGeometryVert,
-                        shaders::kShadowDistanceFrag,
-                        {{0, "aPos"},
-                         {1, "aNormal"},
-                         {2, "aUV"},
-                         {3, "aJoints"},
-                         {4, "aWeights"}});
-  composite_program_.Build(shaders::kFullscreenQuadVert,
-                           shaders::kLensAndFxaaFrag,
-                           {{0, "aPos"}, {2, "aUV"}});
-  quad_program_.Build(shaders::kFullscreenQuadVert, shaders::kOverlayFrag,
-                      {{0, "aPos"}, {2, "aUV"}});
-  sky_program_.Build(shaders::kFullscreenQuadVert, shaders::kNightSkyFrag,
-                     {{0, "aPos"}, {2, "aUV"}}, shaders::kToneMapAndGrainFrag);
-  mirror_program_.Build(shaders::kMirrorGlassVert, shaders::kMirrorGlassFrag,
-                        {{0, "aPos"}});
-  glass_program_.Build(shaders::kGlassPaneVert, shaders::kGlassPaneFrag,
-                       {{0, "aPos"}, {2, "aUV"}});
-  particle_program_.Build(
-      shaders::kParticleVert, shaders::kParticleFrag,
-      {{0, "aPos"}, {1, "aUV"}, {2, "aColor"}, {3, "aShape"}});
-  bloom_program_.Build(shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
-                       {{0, "aPos"}, {2, "aUV"}});
-  const bool text_ok = text_.Init();
+const char* SceneRenderer::ShaderSource(const char* const embedded) const {
+  if (loose_shaders_.empty()) return embedded;
+  for (int i = 0; i < shaders::kShaderFileCount; ++i) {
+    if (*shaders::kShaderFiles[i].source != embedded) continue;
+    const auto it = loose_shaders_.find(shaders::kShaderFiles[i].path);
+    return it == loose_shaders_.end() ? embedded : it->second.c_str();
+  }
+  return embedded;
+}
+
+// Builds every program (from the loose files when there are any). A program
+// that fails to build leaves the one it would replace in place, so a typo
+// during a reload does not black out the screen; returns whether all built.
+bool SceneRenderer::BuildPrograms() {
+  bool all = true;
+  const auto build = [&](GlProgram& program, const char* const vertex,
+                         const char* const fragment,
+                         const std::initializer_list<GlProgram::Attrib> attribs,
+                         const char* const extra = nullptr) {
+    GlProgram next;
+    if (next.Build(ShaderSource(vertex), ShaderSource(fragment), attribs,
+                   extra != nullptr ? ShaderSource(extra) : nullptr)) {
+      program = std::move(next);
+    } else {
+      all = false;
+    }
+  };
+  const std::initializer_list<GlProgram::Attrib> world_attribs = {
+      {0, "aPos"}, {1, "aNormal"}, {2, "aUV"}, {3, "aJoints"}, {4, "aWeights"}};
+  const std::initializer_list<GlProgram::Attrib> quad_attribs = {{0, "aPos"},
+                                                                 {2, "aUV"}};
+  build(world_program_, shaders::kWorldGeometryVert,
+        shaders::kWorldLightingFrag, world_attribs,
+        shaders::kToneMapAndGrainFrag);
+  build(shadow_program_, shaders::kWorldGeometryVert,
+        shaders::kShadowDistanceFrag, world_attribs);
+  build(composite_program_, shaders::kFullscreenQuadVert,
+        shaders::kLensAndFxaaFrag, quad_attribs);
+  build(quad_program_, shaders::kFullscreenQuadVert, shaders::kOverlayFrag,
+        quad_attribs);
+  build(sky_program_, shaders::kFullscreenQuadVert, shaders::kNightSkyFrag,
+        quad_attribs, shaders::kToneMapAndGrainFrag);
+  build(mirror_program_, shaders::kMirrorGlassVert, shaders::kMirrorGlassFrag,
+        {{0, "aPos"}});
+  build(glass_program_, shaders::kGlassPaneVert, shaders::kGlassPaneFrag,
+        quad_attribs);
+  build(particle_program_, shaders::kParticleVert, shaders::kParticleFrag,
+        {{0, "aPos"}, {1, "aUV"}, {2, "aColor"}, {3, "aShape"}});
+  build(bloom_program_, shaders::kFullscreenQuadVert, shaders::kBloomBlurFrag,
+        quad_attribs);
   if (world_program_.Valid()) LookUpWorldUniforms();
+  return all;
+}
+
+bool SceneRenderer::ReloadShaders(const std::string& dir) {
+  std::map<std::string, std::string> loose;
+  for (int i = 0; i < shaders::kShaderFileCount; ++i) {
+    std::string text = ReadTextFile(dir + "/" + shaders::kShaderFiles[i].path);
+    if (text.empty()) {
+      SDL_Log("shader reload: cannot read %s/%s", dir.c_str(),
+              shaders::kShaderFiles[i].path);
+      return false;
+    }
+    loose.emplace(shaders::kShaderFiles[i].path, std::move(text));
+  }
+  loose_shaders_ = std::move(loose);
+  ++scene_revision_;  // the shadow maps were drawn by the old program
+  return BuildPrograms();
+}
+
+bool SceneRenderer::Init(const TextureLibrary& textures) {
+  BuildPrograms();
+  const bool text_ok = text_.Init();
   BuildFullscreenQuad();
   UploadTextures(textures);
 
@@ -354,6 +397,26 @@ GlTexture SceneRenderer::MakeMipmappedTexture(
   return tex;
 }
 
+// Puts an image under `name`: into the texture already there (so the ids that
+// uploaded geometry holds stay valid), else a new one.
+void SceneRenderer::StoreTexture(
+    std::vector<std::pair<std::string, GlTexture>>& list,
+    const std::string& name, const int w, const int h, const void* const rgba,
+    const gl::GLenum internal_format) {
+  for (auto& [key, texture] : list) {
+    if (key != name) continue;
+    texture.Allocate(w, h, rgba, internal_format);
+    GenerateMipmap(kTexture2D);
+    return;
+  }
+  list.emplace_back(name, MakeMipmappedTexture(w, h, rgba, internal_format));
+}
+
+void SceneRenderer::ReloadTextures(const TextureLibrary& textures) {
+  ++scene_revision_;
+  UploadTextures(textures);
+}
+
 void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
   std::vector<uint8_t> rgba_bytes;
   for (const auto& name : textures.Names()) {
@@ -365,8 +428,7 @@ void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
     }
     const Surface& s = textures.Get(name);
     SurfaceToRgbaFlipped(s, rgba_bytes);
-    textures_.emplace_back(
-        name, MakeMipmappedTexture(s.w, s.h, rgba_bytes.data(), kSrgb8Alpha8));
+    StoreTexture(textures_, name, s.w, s.h, rgba_bytes.data(), kSrgb8Alpha8);
 
     const std::string nrm_name = name + kNormalSuffix,
                       rough_name = name + kRoughSuffix,
@@ -378,19 +440,17 @@ void SceneRenderer::UploadTextures(const TextureLibrary& textures) {
             textures.Has(rough_name) ? &textures.Get(rough_name) : nullptr,
             kNormalStrength),
         rgba_bytes);
-    normal_maps_.emplace_back(
-        name, MakeMipmappedTexture(s.w, s.h, rgba_bytes.data()));
+    StoreTexture(normal_maps_, name, s.w, s.h, rgba_bytes.data());
 
     const Surface mat = MakeMaterialMap(
         s, textures.Has(metal_name) ? &textures.Get(metal_name) : nullptr,
         textures.Has(ao_name) ? &textures.Get(ao_name) : nullptr);
     if (!mat.Empty()) {
       SurfaceToRgbaFlipped(mat, rgba_bytes);
-      material_maps_.emplace_back(
-          name, MakeMipmappedTexture(mat.w, mat.h, rgba_bytes.data()));
+      StoreTexture(material_maps_, name, mat.w, mat.h, rgba_bytes.data());
     }
   }
-  {
+  if (default_material_.Id() == 0) {
     // Default material: no metal (R 0), full occlusion value (G 255), i.e.
     // neutral.
     const uint8_t open[4] = {0, 255, 255, 255};

@@ -5,6 +5,15 @@
 // `shaders/fragment` into a generated source file (cmake/EmbedShaders.cmake).
 // All are `#version 410 core`.
 namespace mythos::shaders {
+// Each embedded source with the path of the file it came from, relative to
+// the shaders folder (for loading loose files in development).
+struct ShaderFile {
+  const char* path;
+  const char* const* source;
+};
+extern const ShaderFile kShaderFiles[];
+extern const int kShaderFileCount;
+
 extern const char* const kWorldGeometryVert;
 extern const char* const kFullscreenQuadVert;
 extern const char* const kMirrorGlassVert;

@@ -10,6 +10,7 @@
 
 #include "engine/audio/audio_math.h"
 #include "engine/audio/spatial.h"
+#include "engine/core/file_watch.h"
 #include "engine/core/json.h"
 #include "engine/data/i18n.h"
 #include "engine/data/translation.h"
@@ -34,6 +35,12 @@ using template_game::Game;
 // beside the executable and finds them with mythos::FindAssetDir.
 std::string EngineAssets() { return TEMPLATE_ENGINE_ASSETS; }
 std::string GameAssets() { return TEMPLATE_GAME_ASSETS; }
+std::string EngineShaders() { return TEMPLATE_ENGINE_SHADERS; }
+
+bool HasSuffix(const std::string& s, const std::string& suffix) {
+  return s.size() >= suffix.size() &&
+         s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
 
 bool LoadStrings(mythos::Translation& en, mythos::Translation& el) {
   const auto load = [](const std::string& file, mythos::Translation& out) {
@@ -167,6 +174,12 @@ int main(const int argc, char** const argv) {
   }
   mythos::ActionTracker actions;
   bool rebinding = false, f3_was = false;
+
+  // Hot reload (development): edit the level, a texture or a shader and see it
+  // without restarting. The paths are the ones compiled in by CMake.
+  mythos::FileWatcher watcher;
+  watcher.Add(GameAssets());
+  watcher.Add(EngineShaders());
   mythos::FrameClock clock;
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false;
@@ -212,6 +225,40 @@ int main(const int argc, char** const argv) {
 
     const double dt = std::min(clock.Step(false), 0.1);
     game.Update(dt, move, act);
+
+    bool level_changed = false, textures_changed = false,
+         shaders_changed = false;
+    for (const std::string& path : watcher.Poll(dt)) {
+      if (HasSuffix(path, ".txt")) level_changed = true;
+      for (const char* ext : {".png", ".bmp", ".tga", ".jpg"}) {
+        if (HasSuffix(path, ext)) textures_changed = true;
+      }
+      if (path.starts_with(EngineShaders())) shaders_changed = true;
+    }
+    if (level_changed || textures_changed || shaders_changed) {
+      bool ok = true;
+      if (shaders_changed) ok = renderer.ReloadShaders(EngineShaders()) && ok;
+      if (textures_changed) {
+        textures.LoadOverrides(GameAssets());
+        renderer.ReloadTextures(textures);
+      }
+      if (level_changed) {
+        std::string why;
+        if (!game.ReloadLevel(&why)) {
+          std::fprintf(stderr, "level reload: %s\n", why.c_str());
+          ok = false;
+        }
+      }
+      if (level_changed || textures_changed) {
+        renderer.UploadWorld(
+            mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
+      }
+      std::fprintf(stderr, "hot reload:%s%s%s%s\n",
+                   level_changed ? " level" : "",
+                   textures_changed ? " textures" : "",
+                   shaders_changed ? " shaders" : "", ok ? "" : " (failed)");
+      game.Say(ok ? "template.reloaded" : "template.reload_failed");
+    }
 
     // The camera is the player's eye; lamps and doors come from the game.
     mythos::CameraState cam;

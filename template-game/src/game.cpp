@@ -39,6 +39,7 @@ bool Game::Load(const std::string& engine_assets,
   };
   // Models: the engine's, then the game's, which replace any of the same name.
   if (!models_.LoadDir(Join(engine_assets, "models"), error)) return false;
+  game_assets_ = game_assets;
   models_.LoadDir(Join(game_assets, "models"));  // the game may have none
 
   mythos::json::Value legend;
@@ -79,6 +80,37 @@ bool Game::Load(const std::string& engine_assets,
       {"walk", "idle", {{"moving", mythos::AnimOp::kEqual, 0}}});
   anim_.AddTransition({"wave", "idle", {}, true});
   Restart();
+  return true;
+}
+
+bool Game::ReloadLevel(std::string* error) {
+  mythos::Level fresh;
+  std::string why;
+  if (!fresh.LoadFile(Join(game_assets_, "levels/hall.txt"), &why)) {
+    if (error != nullptr) *error = why;
+    return false;
+  }
+  fresh.SetTiles(level_.TilesPtr());
+  mythos::EventGraphRuntime events;
+  if (!events.Load(fresh)) {
+    if (error != nullptr) *error = "the level's triggers or rules are bad";
+    return false;
+  }
+  level_ = std::move(fresh);
+  doors_.Scan(level_);
+  events_.Load(level_);
+  // Where the guide walks may have changed too.
+  waypoints_.clear();
+  for (const auto& [x, y] : level_.FindAll('w')) waypoints_.push_back({x, y});
+  path_.clear();
+  path_step_ = 0;
+  next_waypoint_ = 0;
+  if (!level_.Passable(static_cast<int>(player_.pos.x),
+                       static_cast<int>(player_.pos.y))) {
+    int sx = 1, sy = 1;
+    level_.Find('@', sx, sy);
+    player_.pos = {sx + 0.5, sy + 0.5};
+  }
   return true;
 }
 

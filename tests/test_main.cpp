@@ -25,6 +25,7 @@
 #include "engine/audio/sound_bank.h"
 #include "engine/audio/spatial.h"
 #include "engine/core/cvar.h"
+#include "engine/core/file_watch.h"
 #include "engine/core/fileio.h"
 #include "engine/core/json.h"
 #include "engine/core/json_reader.h"
@@ -4600,6 +4601,39 @@ TEST(lod_plan_culls_swaps_and_sorts) {
     CHECK_EQ(plan[i].request, order[i]);  // ties keep the order given
     CHECK_EQ(plan[i].model, models[i]);
   }
+}
+
+TEST(file_watcher_reports_added_changed_and_removed) {
+  namespace fs = std::filesystem;
+  const fs::path dir = fs::temp_directory_path() / "mythos_watch_test";
+  fs::remove_all(dir);
+  fs::create_directories(dir / "sub");
+  CHECK(mythos::WriteFileAtomic((dir / "a.txt").string(), "one"));
+  mythos::FileWatcher watcher(0.0);
+  CHECK(!watcher.Add((dir / "nope").string()));
+  CHECK(watcher.Add(dir.string()));
+  // What was there at the start is the baseline, not a change.
+  CHECK(watcher.Poll(0.1).empty());
+  // A change in content (size differs, so the clock's grain does not matter).
+  CHECK(mythos::WriteFileAtomic((dir / "a.txt").string(), "longer text"));
+  std::vector<std::string> changed = watcher.Poll(0.1);
+  CHECK_EQ(changed.size(), 1u);
+  CHECK(!changed.empty() && changed[0] == (dir / "a.txt").string());
+  CHECK(watcher.Poll(0.1).empty());
+  // A new file in a sub folder, then its removal.
+  CHECK(mythos::WriteFileAtomic((dir / "sub" / "b.txt").string(), "b"));
+  changed = watcher.Poll(0.1);
+  CHECK(changed.size() == 1 && changed[0] == (dir / "sub" / "b.txt").string());
+  fs::remove(dir / "sub" / "b.txt");
+  changed = watcher.Poll(0.1);
+  CHECK(changed.size() == 1 && changed[0] == (dir / "sub" / "b.txt").string());
+  // The interval holds scans back.
+  mythos::FileWatcher slow(1.0);
+  CHECK(slow.Add(dir.string()));
+  CHECK(mythos::WriteFileAtomic((dir / "c.txt").string(), "c"));
+  CHECK(slow.Poll(0.4).empty());
+  CHECK_EQ(slow.Poll(0.7).size(), 1u);
+  fs::remove_all(dir);
 }
 
 }

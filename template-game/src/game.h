@@ -39,6 +39,11 @@ class Game {
   void Update(double dt, const mythos::MoveInput& move,
               const mythos::ActionInput& act);
 
+  // Reads the level file again (development: the file changed on disk). The
+  // player stays where they are unless that is now inside a wall; doors start
+  // closed as the file says. A file that does not parse changes nothing.
+  bool ReloadLevel(std::string* error);
+
   bool Save(const std::string& dir, int slot);
   // Returns false (and says why in the message) when there is nothing to load.
   bool LoadSave(const std::string& dir, int slot);
@@ -106,6 +111,7 @@ class Game {
   std::string message_;
   double message_time_ = 0;
   mythos::Vec2 start_;
+  std::string game_assets_;
 };
 }
 

@@ -49,6 +49,7 @@ add_library(mythos_engine STATIC
     src/engine/audio/sound_bank.cpp
     src/engine/audio/spatial.cpp
     src/engine/core/cvar.cpp
+    src/engine/core/file_watch.cpp
     src/engine/core/fileio.cpp
     src/engine/core/json.cpp
     src/engine/core/mat4.cpp
@@ -105,6 +106,7 @@ add_library(mythos_engine STATIC
 )
 add_library(mythos::engine ALIAS mythos_engine)
 # The engine's own assets (fonts, common sounds and textures): a game merges them under its own.
+set(MYTHOS_ENGINE_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/platform/gl/shaders" CACHE INTERNAL "mythos-engine's GLSL folder (for hot reload in development)")
 set(MYTHOS_ENGINE_ASSET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/assets" CACHE INTERNAL "mythos-engine's assets folder")
 if(MYTHOS_LTO)
     include(CheckIPOSupported)

@@ -2,6 +2,7 @@
 #define MYTHOS_ENGINE_PLATFORM_GL_SCENE_RENDERER_H_
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -245,6 +246,16 @@ class SceneRenderer {
   // Beyond `distance` metres from the eye an instance of `model` is drawn as
   // `far_model` (a cheaper upload of the same thing) in the main and mirror
   // views; shadows keep the near model.
+  // Development reloads (see core/file_watch.h). `ReloadShaders` rebuilds every
+  // program from the loose source files under `dir` (the shaders folder, with
+  // `vertex/` and `fragment/`); one that does not compile keeps its old
+  // program, the error is logged, and false is returned. `ReloadTextures`
+  // uploads the library again into the textures already there, so geometry
+  // that was uploaded keeps drawing (a texture that gained a normal, roughness
+  // or metal companion needs `UploadWorld` again to use it).
+  bool ReloadShaders(const std::string& dir);
+  void ReloadTextures(const TextureLibrary& textures);
+
   void SetModelLod(int model, int far_model, double distance) {
     lods_.Set(model, far_model, distance);
   }
@@ -350,6 +361,12 @@ class SceneRenderer {
 
   void DrawInstances(const CameraState& cam, unsigned views);
   void UploadSkinnedBatch(BatchList& dst, const Batch& b);
+  bool BuildPrograms();
+  [[nodiscard]] const char* ShaderSource(const char* embedded) const;
+  void StoreTexture(std::vector<std::pair<std::string, GlTexture>>& list,
+                    const std::string& name, int w, int h, const void* rgba,
+                    gl::GLenum internal_format = gl::kRgba8);
+  std::map<std::string, std::string> loose_shaders_;
   ModelLods lods_;
   ModelLods no_lods_;  // always empty: shadow passes do not swap models
   std::vector<LodRequest> lod_requests_;

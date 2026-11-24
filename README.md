@@ -17,7 +17,7 @@ listen to and pick up, menus, and a bit of procedural art.
   distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect with bloom (the Visual effects setting) and a camcorder (VHS tape) look with a REC / PLAY / battery display and timecode (the Camcorder setting, `CameraState::tape` / `tape_time`), light scattered in the air (lamp glow, a visible torch beam), a battery-failing tint for the hand light (`CameraState::torch_tint`), render scale from 300 to 2160
   lines, a night sky that becomes a day (`CameraState::time_of_day`: sun, dawn and dusk colours, clouds, haze), a flash of lightning (`CameraState::lightning` lights the world and the sky; with `lightning_zoned` only inside
   `lightning_zones`, the rooms that have a window), culled world
-  geometry, a distance cull and level of detail for model instances (`gfx/lod.h`), SDF text.
+  geometry, a distance cull and level of detail for model instances (`gfx/lod.h`), SDF text, and hot reload of shaders and textures in development (`FileWatcher`, `SceneRenderer::ReloadShaders` / `ReloadTextures`).
 - **Life and logic** (headless, tested): skeletal animation (`gfx/skeleton.h`: bones, clips, blending, crossfade, `AnimStateMachine`;
   `gfx/gltf.h` loads a skinned `.glb`; the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
   perception (`world/ai.h`), A* (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned

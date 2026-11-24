@@ -9,6 +9,8 @@
       "rebound": "Use is rebound.",
       "east_room": "The back room. Somebody left the lamp on.",
       "saved": "Saved.",
+      "reloaded": "Reloaded.",
+      "reload_failed": "Reload failed (see the console).",
       "loaded": "Loaded.",
       "no_save": "Nothing saved yet."
     }
