@@ -35,6 +35,7 @@
 #include "engine/data/credits.h"
 #include "engine/data/events.h"
 #include "engine/data/i18n.h"
+#include "engine/data/save.h"
 #include "engine/data/translation.h"
 #include "engine/editor/adapter.h"
 #include "engine/editor/history.h"
@@ -72,6 +73,7 @@
 #include "engine/world/nav.h"
 #include "engine/world/player.h"
 #include "engine/world/room_doors.h"
+#include "engine/world/save_state.h"
 #include "engine/world/tiles.h"
 #include "engine/world/trigger.h"
 
@@ -3866,6 +3868,88 @@ TEST(free_camera_rise_run_look_and_place) {
   placed.Place(p, 1.6);
   CHECK(placed.x == 3.0 && placed.z == 7.0 && placed.y == 1.6);
   CHECK(placed.yaw == 1.0 && placed.pitch == 0.2);
+}
+
+TEST(save_text_round_trips_and_rejects_bad_files) {
+  mythos::SaveData data;
+  data.version = 2;
+  data.Set("game", mythos::json::Value{{"level", 3}});
+  mythos::SaveData back;
+  CHECK(mythos::SaveFromText(mythos::SaveToText(data), 2, {}, back) ==
+        mythos::SaveStatus::kOk);
+  CHECK_EQ((*back.Section("game"))["level"].get<int>(), 3);
+  CHECK(mythos::SaveFromText("", 2, {}, back) == mythos::SaveStatus::kMissing);
+  CHECK(mythos::SaveFromText("{oops", 2, {}, back) ==
+        mythos::SaveStatus::kCorrupt);
+  CHECK(mythos::SaveFromText("{\"version\":1}", 2, {}, back) ==
+        mythos::SaveStatus::kCorrupt);
+  // Written by a newer build.
+  CHECK(mythos::SaveFromText(mythos::SaveToText(data), 1, {}, back) ==
+        mythos::SaveStatus::kTooNew);
+}
+
+TEST(save_migrations_run_in_order) {
+  mythos::SaveData old;
+  old.version = 1;
+  old.Set("n", 1);
+  const std::vector<mythos::SaveMigration> steps = {
+      [](mythos::json::Value& s) {
+        s["n"] = s["n"].get<int>() + 10;
+        return true;
+      },
+      [](mythos::json::Value& s) {
+        s["n"] = s["n"].get<int>() * 2;
+        return true;
+      }};
+  mythos::SaveData out;
+  CHECK(mythos::SaveFromText(mythos::SaveToText(old), 3, steps, out) ==
+        mythos::SaveStatus::kOk);
+  CHECK_EQ(out.version, 3);
+  CHECK_EQ((*out.Section("n")).get<int>(), 22);
+  // A missing step fails rather than guessing.
+  CHECK(mythos::SaveFromText(mythos::SaveToText(old), 4, steps, out) ==
+        mythos::SaveStatus::kMigrationFailed);
+}
+
+TEST(save_slots_write_atomically_and_delete) {
+  const auto dir = std::filesystem::temp_directory_path() / "mythos_save_test";
+  std::filesystem::remove_all(dir);
+  const mythos::SaveSlots slots(dir.string(), 1);
+  mythos::SaveData out;
+  CHECK(slots.Load(0, out) == mythos::SaveStatus::kMissing);
+  CHECK(!slots.Exists(0));
+  mythos::SaveData data;
+  data.Set("a", "b");
+  CHECK(slots.Save(0, data) == mythos::SaveStatus::kOk);
+  CHECK(slots.Exists(0));
+  CHECK(slots.Load(0, out) == mythos::SaveStatus::kOk);
+  CHECK((*out.Section("a")).get<std::string>() == "b");
+  CHECK(slots.Delete(0));
+  CHECK(!slots.Exists(0));
+  std::filesystem::remove_all(dir);
+}
+
+TEST(save_state_round_trips_progress_and_player) {
+  mythos::Progress p;
+  p.AddNote("n1");
+  mythos::Progress::AddUnique(p.clues, "c1");
+  p.held = "key";
+  p.flags["door"] = 2;
+  mythos::Progress p2;
+  CHECK(mythos::ProgressFromJson(mythos::ProgressToJson(p), p2));
+  CHECK(p2.clues == p.clues && p2.notebook == p.notebook);
+  CHECK(p2.held == "key" && p2.flags.at("door") == 2);
+  CHECK(!mythos::ProgressFromJson(mythos::json::Value(5), p2));
+
+  mythos::Player a;
+  a.pos = {3.5, 7.25};
+  a.angle = 1.5;
+  a.pitch = -0.2;
+  a.flashlight = true;
+  mythos::Player b;
+  CHECK(mythos::PlayerFromJson(mythos::PlayerToJson(a), b));
+  CHECK(b.pos.x == 3.5 && b.pos.y == 7.25 && b.angle == 1.5);
+  CHECK(b.pitch == -0.2 && b.flashlight);
 }
 
 }

@@ -56,6 +56,7 @@ add_library(mythos_engine STATIC
     src/engine/data/credits.cpp
     src/engine/data/engine_strings.cpp
     src/engine/data/i18n.cpp
+    src/engine/data/save.cpp
     src/engine/data/translation.cpp
     src/engine/editor/adapter.cpp
     src/engine/editor/level_doc.cpp
@@ -89,6 +90,7 @@ add_library(mythos_engine STATIC
     src/engine/world/camera_fx.cpp
     src/engine/world/player.cpp
     src/engine/world/room_doors.cpp
+    src/engine/world/save_state.cpp
     src/engine/world/tiles.cpp
 )
 add_library(mythos::engine ALIAS mythos_engine)

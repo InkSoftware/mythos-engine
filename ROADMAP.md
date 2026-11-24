@@ -113,6 +113,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   show text key, spawn, call game id). Anything else is the game's.
 
 ### 2.2 Save and load (M)
+- **Progress:** `data/save.h` provides the versioned JSON file (named
+  sections), per-version migrations, numbered slots and atomic writes;
+  `world/save_state.h` serialises `Progress` and `Player`. Door and `Level`
+  diffs are not done: a game stores them in its own sections.
 - **Where:** `data/save.h` is a versioned JSON snapshot (`Progress`, player,
   doors, flags, the `Level` diffs, game-supplied blob), a slot API and atomic
   writes (temp file then rename, via `fileio`). A migration hook per version.
