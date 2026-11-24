@@ -5596,6 +5596,38 @@ TEST(gltf_decodes_material_textures_and_flips_v) {
   CHECK(pete.textures.empty());
 }
 
+TEST(reverb_send_bus_feeds_from_its_own_block) {
+  constexpr int kRate = 48000;
+  mythos::Reverb r;
+  r.Prepare(kRate);
+  r.Set(0.5, 1.0);
+  std::vector<float> dry(2 * 480, 0.0f), bus(2 * 480, 0.0f);
+  dry[0] = dry[1] = 1.0f;  // a loud dry impulse, but nothing sent to the reverb
+  r.ProcessSend(bus.data(), dry.data(), 480);
+  CHECK_EQ(dry[0], 1.0f);  // the dry sound is as it was
+  float energy = 0;
+  for (int b = 0; b < 20; ++b) {
+    std::ranges::fill(dry, 0.0f);
+    r.ProcessSend(bus.data(), dry.data(), 480);
+    for (const float v : dry) energy += v * v;
+  }
+  CHECK_EQ(energy, 0.0f);  // nothing sent: no tail
+  // The same impulse sent to the bus rings.
+  mythos::Reverb wet;
+  wet.Prepare(kRate);
+  wet.Set(0.5, 1.0);
+  bus[0] = bus[1] = 1.0f;
+  std::ranges::fill(dry, 0.0f);
+  wet.ProcessSend(bus.data(), dry.data(), 480);
+  std::ranges::fill(bus, 0.0f);
+  for (int b = 0; b < 20; ++b) {
+    std::ranges::fill(dry, 0.0f);
+    wet.ProcessSend(bus.data(), dry.data(), 480);
+    for (const float v : dry) energy += v * v;
+  }
+  CHECK(energy > 1e-6f);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

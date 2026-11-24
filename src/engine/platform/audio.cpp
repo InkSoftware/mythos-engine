@@ -109,7 +109,8 @@ int AudioEngine::LoadDir(const std::string& dir,
 }
 
 void AudioEngine::Play(const std::string& name, const float gain,
-                       const float pitch, const std::string& group) {
+                       const float pitch, const std::string& group,
+                       const float reverb) {
   if (!stream_) return;
   const Clip* clip = FindClip(name);
   if (!clip) return;
@@ -118,6 +119,7 @@ void AudioEngine::Play(const std::string& name, const float gain,
   v.step = std::max(kMinPitch, pitch);
   v.gain = gain * effect_scale_;
   v.group = group;
+  v.reverb = std::max(0.0f, reverb);
   StartVoice(v);
 }
 
@@ -205,13 +207,15 @@ void AudioEngine::SetVolumes(const float master, const float ambience,
   SDL_UnlockAudioStream(stream_);
 }
 
-int AudioEngine::AddSource(const std::string& name, const std::string& group) {
+int AudioEngine::AddSource(const std::string& name, const std::string& group,
+                           const float reverb) {
   if (!stream_) return -1;
   const Clip* clip = FindClip(name);
   if (!clip || clip->samples.empty()) return -1;
   Source s;
   s.clip = clip;
   s.group = group;
+  s.reverb = std::max(0.0f, reverb);
   SDL_LockAudioStream(stream_);
   sources_.push_back(s);
   const int id = static_cast<int>(sources_.size()) - 1;
@@ -376,10 +380,11 @@ void AudioEngine::Mix(float* const out, const int frames) {
     }
     music_stopping_ = false;
   }
+  reverb_bus_.assign(static_cast<size_t>(frames) * kChannels, 0.0f);
   MixVoices(out, frames, duck_start, duck_level_);
   MixSources(out, frames);
   RemoveFinishedVoices();
-  reverb_.Process(out, frames);
+  reverb_.ProcessSend(reverb_bus_.data(), out, frames);
   for (int i = 0; i < frames * kChannels; ++i) {
     out[i] = std::max(-1.0f, std::min(1.0f, out[i]));
   }
@@ -436,9 +441,15 @@ void AudioEngine::MixVoices(float* const out, const int frames,
         v.cur_r = EaseToward(v.cur_r, v.tgt_r, place_ease);
         out[idx] += sample * v.cur_l;
         out[idx + 1] += sample * v.cur_r;
+        reverb_bus_[idx] += sample * v.cur_l * v.reverb;
+        reverb_bus_[idx + 1] += sample * v.cur_r * v.reverb;
       } else {
-        out[idx] += sample * v.pan_l * kCentrePanCompensation;
-        out[idx + 1] += sample * v.pan_r * kCentrePanCompensation;
+        const float l = sample * v.pan_l * kCentrePanCompensation;
+        const float r = sample * v.pan_r * kCentrePanCompensation;
+        out[idx] += l;
+        out[idx + 1] += r;
+        reverb_bus_[idx] += l * v.reverb;
+        reverb_bus_[idx + 1] += r * v.reverb;
       }
       v.pos += v.step;
     }
@@ -473,6 +484,8 @@ void AudioEngine::MixSources(float* const out, const int frames) {
       const size_t idx = static_cast<size_t>(i) * kChannels;
       out[idx] += sample * src.left * group_gain;
       out[idx + 1] += sample * src.right * group_gain;
+      reverb_bus_[idx] += sample * src.left * group_gain * src.reverb;
+      reverb_bus_[idx + 1] += sample * src.right * group_gain * src.reverb;
       src.pos += 1.0;
     }
   }

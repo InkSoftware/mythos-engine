@@ -509,7 +509,12 @@ int main(const int argc, char** const argv) {
                        overlay.h - 40, line, mythos::Rgba(255, 230, 160), 2);
     }
 
-    for (const std::string& cue : game.TakeSounds()) audio.Play(cue);
+    // Each sound has its own share of the room reverb: footsteps stay dry,
+    // a door rings through the room.
+    for (const std::string& cue : game.TakeSounds()) {
+      audio.Play(cue, 1.0f, 1.0f, "effects",
+                 cue.starts_with("door") ? 1.5f : 0.4f);
+    }
     // The back room brings the music layer in, leaving takes it out.
     if (const bool in_back_room = game.player().pos.x > 9.0;
         in_back_room != was_in_back_room) {

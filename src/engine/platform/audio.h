@@ -38,8 +38,10 @@ class AudioEngine {
 
   // Plays a one-shot at `gain` (scaled by master x effects volume). `pitch` is
   // a playback-speed ratio, clamped to at least 0.25.
+  // `reverb` scales how much of this sound goes to the room reverb (1 the
+  // room's send as set by `SetReverb`, 0 dry, 2 wetter).
   void Play(const std::string& name, float gain = 1.0f, float pitch = 1.0f,
-            const std::string& group = "effects");
+            const std::string& group = "effects", float reverb = 1.0f);
 
   // Crossfades to the ambience loop `name`; repeating the current one does
   // nothing.
@@ -47,7 +49,8 @@ class AudioEngine {
 
   // Adds a looping positional source and returns its id, or -1 on failure. Ids
   // are valid until ClearSources().
-  int AddSource(const std::string& name, const std::string& group = "ambience");
+  int AddSource(const std::string& name, const std::string& group = "ambience",
+                float reverb = 1.0f);
 
   // Sets a source's target left/right gains; the mixer eases toward them.
   void SetSource(int id, float left, float right);
@@ -127,6 +130,7 @@ class AudioEngine {
     bool music = false;  // a layer of the music (see StartMusic)
     std::string layer;   // its name, for the fader
     std::string group = "effects";
+    float reverb = 1.0f;  // this sound's share of the reverb send
     float fade = 1.0f;
     float fade_rate = 0.0f;
     float pan_l = 0.7071f, pan_r = 0.7071f;
@@ -148,6 +152,7 @@ class AudioEngine {
     // and the filter state.
     float muffle = 0, target_muffle = 0, lowpass = 0;
     std::string group = "ambience";
+    float reverb = 1.0f;
   };
 
   // SDL pulls audio here on the audio thread.
@@ -174,6 +179,7 @@ class AudioEngine {
   LayerFader music_;
   bool music_stopping_ = false;
   Reverb reverb_;
+  std::vector<float> reverb_bus_;  // what each sound sends to the reverb
   SDL_AudioStream* stream_ = nullptr;
   int rate_ = 44100;
   std::map<std::string, Clip> clips_;

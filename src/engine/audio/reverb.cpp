@@ -56,6 +56,11 @@ void Reverb::UpdateFeedback() {
 }
 
 void Reverb::Process(float* const out, const int frames) {
+  ProcessSend(out, out, frames);
+}
+
+void Reverb::ProcessSend(const float* const send, float* const out,
+                         const int frames) {
   if (comb_l_[0].line.empty()) return;
   if (target_send_ <= 0.0 && send_ <= 1e-5 && !tail_) return;
   const double ease =
@@ -68,7 +73,8 @@ void Reverb::Process(float* const out, const int frames) {
   for (int f = 0; f < frames; ++f) {
     send_ += send_step;
     float* const frame = out + static_cast<ptrdiff_t>(f) * 2;
-    const float in = 0.5f * (frame[0] + frame[1]) * 0.25f;
+    const float* const source = send + static_cast<ptrdiff_t>(f) * 2;
+    const float in = 0.5f * (source[0] + source[1]) * 0.25f;
     float wet[2] = {0, 0};
     for (int side = 0; side < 2; ++side) {
       auto& combs = side == 0 ? comb_l_ : comb_r_;

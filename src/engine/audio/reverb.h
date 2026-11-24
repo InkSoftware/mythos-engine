@@ -24,6 +24,11 @@ class Reverb {
   // changes and the block is not touched.
   void Process(float* out, int frames);
 
+  // As Process, but the reverb is fed from `send` (a stereo block of what each
+  // sound sent to it, already scaled by its own send) and added to `out`; the
+  // two may be the same block. A mixer collects the sends per sound.
+  void ProcessSend(const float* send, float* out, int frames);
+
   [[nodiscard]] double Send() const { return send_; }
 
  private:
