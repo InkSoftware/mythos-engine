@@ -734,7 +734,8 @@ void SceneRenderer::SetInstanceLayout() {
   for (GLuint k = 0; k < 4; ++k) {
     EnableVertexAttribArray(5 + k);
     VertexAttribPointer(5 + k, 4, kFloat, kFalse, 16 * sizeof(float),
-                        reinterpret_cast<const void*>(k * 4 * sizeof(float)));
+                        reinterpret_cast<const void*>(static_cast<size_t>(k) *
+                                                      4 * sizeof(float)));
     gl::VertexAttribDivisor(5 + k, 1);
   }
 }

@@ -123,7 +123,8 @@ int main(const int argc, char** const argv) {
     if (arg == "--baked") baked = true;
     if (arg == "--sun-shadow") sun_shadow = true;
     if (arg == "--no-instancing") instancing = false;
-    if (i + 1 < argc && arg == "--crowd") crowd = std::atoi(argv[i + 1]);
+    if (i + 1 < argc && arg == "--crowd")
+      crowd = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (arg == "--controls") start_controls = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
