@@ -154,7 +154,7 @@ inline uint64_t Distance(const NavCell a, const NavCell b) {
       std::vector<NavCell> path;
       for (std::size_t i = goal_index; i != unset; i = parent[i])
         path.push_back(grid.Cell(i));
-      std::reverse(path.begin(), path.end());
+      std::ranges::reverse(path);
       return path;
     }
     const NavCell cell = grid.Cell(current.index);
@@ -283,6 +283,59 @@ struct Obstacle {
   const double n = std::hypot(out.x, out.y);
   if (n < 1e-9) return dir;
   return {out.x / n, out.y / n};
+}
+
+// A member of a group, for `FlockSteer`.
+struct FlockMember {
+  Vec2 pos;
+  Vec2 vel;
+};
+
+// Weights and reach of the three flocking rules.
+struct FlockParams {
+  double neighbour_radius = 3.0;   // who counts as a neighbour
+  double separation_radius = 1.0;  // closer than this pushes apart
+  double separation = 1.5;
+  double alignment = 0.6;
+  double cohesion = 0.4;
+};
+
+// The velocity change (a direction-and-strength, not unit) member `self` of
+// `group` wants from the three classic rules: keep apart from those closer
+// than `separation_radius`, match the neighbours' velocity, drift toward their
+// centre. Add it to the member's own goal direction (for example
+// `SteerAround`'s) and normalise. Zero when there are no neighbours.
+[[nodiscard]] inline Vec2 FlockSteer(const std::vector<FlockMember>& group,
+                                     const size_t self,
+                                     const FlockParams& p = {}) {
+  if (self >= group.size()) return {0, 0};
+  const FlockMember& me = group[self];
+  Vec2 apart{0, 0}, vel{0, 0}, centre{0, 0};
+  int count = 0;
+  for (size_t i = 0; i < group.size(); ++i) {
+    if (i == self) continue;
+    const double dx = group[i].pos.x - me.pos.x, dy = group[i].pos.y - me.pos.y;
+    const double d = std::hypot(dx, dy);
+    if (d > p.neighbour_radius) continue;
+    ++count;
+    vel.x += group[i].vel.x;
+    vel.y += group[i].vel.y;
+    centre.x += dx;
+    centre.y += dy;
+    if (d < p.separation_radius) {
+      // Away from the neighbour, stronger the closer; on top: to the right.
+      const double w = (1.0 - d / p.separation_radius);
+      const Vec2 away = d > 1e-6 ? Vec2{-dx / d, -dy / d} : Vec2{1, 0};
+      apart.x += away.x * w;
+      apart.y += away.y * w;
+    }
+  }
+  if (count == 0) return {0, 0};
+  const double inv = 1.0 / count;
+  return {apart.x * p.separation + (vel.x * inv - me.vel.x) * p.alignment +
+              centre.x * inv * p.cohesion,
+          apart.y * p.separation + (vel.y * inv - me.vel.y) * p.alignment +
+              centre.y * inv * p.cohesion};
 }
 }  // namespace mythos
 

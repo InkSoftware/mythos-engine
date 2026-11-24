@@ -5322,6 +5322,26 @@ TEST(nav_steer_around_bends_the_way_from_a_mover_in_the_path) {
   CHECK_EQ(mythos::SteerAround(pos, {0, 0}, 0.3, 1.5, {}).x, 0.0);
 }
 
+TEST(nav_flock_steer_separates_aligns_and_gathers) {
+  using mythos::FlockMember;
+  // Alone: nothing.
+  CHECK_EQ(mythos::FlockSteer({{{0, 0}, {1, 0}}}, 0).x, 0.0);
+  // Two close together: pushed apart along x.
+  std::vector<FlockMember> pair = {{{0, 0}, {0, 0}}, {{0.4, 0}, {0, 0}}};
+  CHECK(mythos::FlockSteer(pair, 0).x < 0);
+  CHECK(mythos::FlockSteer(pair, 1).x > 0);
+  // Far apart but in range: drawn together.
+  pair[1].pos = {2.5, 0};
+  CHECK(mythos::FlockSteer(pair, 0).x > 0);
+  // A neighbour that moves north: the still one is nudged north.
+  pair[1].vel = {0, 2};
+  CHECK(mythos::FlockSteer(pair, 0).y > 0);
+  // Out of range: ignored.
+  pair[1].pos = {30, 0};
+  CHECK_EQ(mythos::FlockSteer(pair, 0).x, 0.0);
+  CHECK_EQ(mythos::FlockSteer(pair, 5).x, 0.0);
+}
+
 TEST(music_tempo_map_finds_bar_and_phrase_ends) {
   // 120 bpm 4/4 (2 s bars) for 6 s, then 60 bpm 4/4 (4 s bars).
   const std::vector<mythos::TempoSection> map = {{0.0, 120, 4}, {6.0, 60, 4}};
