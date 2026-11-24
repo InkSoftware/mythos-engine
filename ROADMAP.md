@@ -329,7 +329,7 @@ Gaps named in the Progress lines, by area:
 - **Audio:** tempo changes and phrase-synchronised music transitions.
 - **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), linked prefabs
   and prefabs with triggers or decals, a visual event graph.
-- **Tools and data:** furniture changes in a save.
+- **Tools and data:** nothing named.
 
 ## Out of scope for now
 

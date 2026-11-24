@@ -26,6 +26,18 @@ json::Value LevelDiffToJson(const Level& baseline, const Level& now);
 // `RoomDoors::Scan` afterwards when doors may have changed.
 int ApplyLevelDiff(Level& level, const json::Value& diff);
 
+// What changed in the placements (furniture and decor): `{"removed": [ids],
+// "added": [placements]}`. A placement counts as added when `now` has one that
+// `baseline` does not (every field equal), so a moved piece is its old id
+// removed and the new one added. Only placements with an id can be removed
+// (`Level::RemovePlacement`); give the ones a game takes away or moves an id.
+json::Value FurnitureDiffToJson(const Level& baseline, const Level& now);
+
+// Removes the ids and adds the placements of a diff (malformed entries and
+// placements `AddFurniture` refuses are skipped). Returns how many changes
+// were made. A game rebuilds anything it derived from the level afterwards.
+int ApplyFurnitureDiff(Level& level, const json::Value& diff);
+
 json::Value PlayerToJson(const Player& player);
 bool PlayerFromJson(const json::Value& v, Player& out);
 }

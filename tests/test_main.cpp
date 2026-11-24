@@ -5300,6 +5300,35 @@ TEST(save_state_level_diff_records_and_restores_changed_cells) {
   CHECK(fresh.At(1, 1) == 'x');
 }
 
+TEST(save_state_furniture_diff_records_removed_and_added_pieces) {
+  mythos::Level base;
+  CHECK(base.Parse({"#####", "#...#", "#####"}));
+  mythos::Placement vase;
+  vase.x = 1;
+  vase.y = 1;
+  vase.model = "vase";
+  vase.id = "vase1";
+  CHECK(base.AddFurniture(vase));
+  mythos::Level now = base;
+  CHECK_EQ(
+      mythos::ApplyFurnitureDiff(now, mythos::FurnitureDiffToJson(base, now)),
+      0);
+  CHECK(now.RemovePlacement("vase1"));  // taken
+  mythos::Placement crate;
+  crate.x = 3;
+  crate.y = 1;
+  crate.model = "crate";
+  CHECK(now.AddFurniture(crate));  // put down
+  const mythos::json::Value diff = mythos::FurnitureDiffToJson(base, now);
+  CHECK_EQ(diff["removed"].size(), 1u);
+  CHECK_EQ(diff["added"].size(), 1u);
+  mythos::Level fresh = base;
+  CHECK_EQ(mythos::ApplyFurnitureDiff(fresh, diff), 2);
+  CHECK(fresh.FurnitureAt(1, 1) == nullptr);
+  CHECK(fresh.FurnitureAt(3, 1) != nullptr);
+  CHECK_EQ(mythos::ApplyFurnitureDiff(fresh, mythos::json::Value(3)), 0);
+}
+
 TEST(settings_keep_the_key_bindings_on_one_line) {
   GameSettings s;
   CHECK(s.bindings.empty());

@@ -374,6 +374,7 @@ bool Game::Save(const std::string& dir, const int slot) {
   data.Set("progress", mythos::ProgressToJson(progress_));
   // Doors flip glyphs in the level: the changed cells are the saved doors.
   data.Set("level", mythos::LevelDiffToJson(baseline_, level_));
+  data.Set("furniture", mythos::FurnitureDiffToJson(baseline_, level_));
   mythos::json::Value guide = mythos::json::Value::object();
   guide["x"] = guide_pos_.x;
   guide["z"] = guide_pos_.y;
@@ -401,6 +402,9 @@ bool Game::LoadSave(const std::string& dir, const int slot) {
   // Start from the level as loaded, then lay the saved changes over it.
   level_ = baseline_;
   if (const auto* d = data.Section("level")) mythos::ApplyLevelDiff(level_, *d);
+  if (const auto* d = data.Section("furniture")) {
+    mythos::ApplyFurnitureDiff(level_, *d);
+  }
   doors_.Scan(level_);
   if (const auto* g = data.Section("guide")) {
     guide_pos_.x = g->value("x", guide_pos_.x);
