@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** ambient occlusion in the mirror and the glass panes (screen space, main picture only); HDR reflection probes, a probe per chunk, a real roughness filter;
+- **Rendering:** ambient occlusion in the mirror (screen space, main picture only); HDR reflection probes, a probe per chunk, a real roughness filter;
   lightmaps and probes at several heights; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;

@@ -8,6 +8,7 @@ uniform float uAlpha;
 uniform float uDrops;   // 0 dry .. 1 wet
 uniform float uTime;
 uniform vec3 uEye;
+uniform vec3 uSky;      // the sky in the glass (the cold night by default, the sun-aware sky outdoors by day)
 out vec4 outColor;
 
 float hash(vec2 p) {
@@ -19,7 +20,7 @@ float hash(vec2 p) {
 void main() {
     vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
     float fres = pow(1.0 - abs(dot(n, normalize(uEye - vWorld))), 3.0);
-    vec3 col = mix(uTint, vec3(0.20, 0.26, 0.38), fres);   // the cold sky in the glass
+    vec3 col = mix(uTint, uSky, fres);   // the sky in the glass
     float a = uAlpha + fres * 0.30;
     if (uDrops > 0.0) {
         // Beads of water on a grid of 5 cm cells, each a jittered round drop; the wetter, the more cells hold one, and a

@@ -1515,6 +1515,15 @@ void SceneRenderer::DrawGlassPanes(const CameraState& cam, const Frame& f) {
     glass_program_.Set("uDrops", pane.drops);
     glass_program_.Set("uTime", static_cast<float>(cam.time));
     glass_program_.Set("uEye", f.eye[0], f.eye[1], f.eye[2]);
+    // The sky the glass reflects follows the time of day outdoors; otherwise
+    // it is the cold night it always was.
+    if (cam.outdoor && cam.time_of_day >= 0.0) {
+      glass_program_.Set("uSky", 0.5f * (f.sky.zenith[0] + f.sky.horizon[0]),
+                         0.5f * (f.sky.zenith[1] + f.sky.horizon[1]),
+                         0.5f * (f.sky.zenith[2] + f.sky.horizon[2]));
+    } else {
+      glass_program_.Set("uSky", 0.20f, 0.26f, 0.38f);
+    }
     DrawTris(0, 6);
   }
   Disable(kBlend);
