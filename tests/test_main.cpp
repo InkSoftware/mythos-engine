@@ -4509,6 +4509,14 @@ TEST(spatial_mixer_groups_duck_and_release) {
   g.Update(0.5);
   CHECK(std::fabs(g.Gain("music") - 0.8) < 1e-9);
   CHECK_EQ(g.Gain("effects"), 1.0);  // untouched groups stay full
+  // ClearActive is what the mixer does each block before marking the groups
+  // that are playing: a duck releases when its trigger stops.
+  g.SetActive("voice", true);
+  g.Update(0.2);
+  CHECK(g.Gain("music") < 0.8 * 0.3);
+  g.ClearActive();
+  g.Update(1.0);
+  CHECK(std::fabs(g.Gain("music") - 0.8) < 1e-9);
 }
 
 TEST(sound_path_counts_walls_and_closed_doors) {

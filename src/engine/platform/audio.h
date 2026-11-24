@@ -10,6 +10,7 @@
 
 #include "engine/audio/radio_fx.h"
 #include "engine/audio/reverb.h"
+#include "engine/audio/spatial.h"
 
 namespace mythos {
 // Stereo float mixer on an SDL audio stream. Clips are mono WAVs resampled to
@@ -36,7 +37,8 @@ class AudioEngine {
 
   // Plays a one-shot at `gain` (scaled by master x effects volume). `pitch` is
   // a playback-speed ratio, clamped to at least 0.25.
-  void Play(const std::string& name, float gain = 1.0f, float pitch = 1.0f);
+  void Play(const std::string& name, float gain = 1.0f, float pitch = 1.0f,
+            const std::string& group = "effects");
 
   // Crossfades to the ambience loop `name`; repeating the current one does
   // nothing.
@@ -44,7 +46,7 @@ class AudioEngine {
 
   // Adds a looping positional source and returns its id, or -1 on failure. Ids
   // are valid until ClearSources().
-  int AddSource(const std::string& name);
+  int AddSource(const std::string& name, const std::string& group = "ambience");
 
   // Sets a source's target left/right gains; the mixer eases toward them.
   void SetSource(int id, float left, float right);
@@ -78,6 +80,17 @@ class AudioEngine {
   // Length of a loaded clip in seconds, or 0 if unknown.
   [[nodiscard]] double ClipSeconds(const std::string& name) const;
 
+  // Mixer groups (audio/spatial.h `MixerGroups`). Every sound belongs to one:
+  // one-shots to "effects", loops and positional sources to "ambience", spoken
+  // lines to "voice" (`Play` and `AddSource` take another name, "music" say).
+  // A group's gain is its volume times its ducks; a group counts as active
+  // while any of its sounds plays, so `AddGroupDuck("ambience", "voice", 0.3)`
+  // lowers the ambience while a line is spoken. These come on top of
+  // `SetVolumes`.
+  void SetGroupVolume(const std::string& group, float volume);
+  void AddGroupDuck(const std::string& group, const std::string& by,
+                    float amount, float attack = 0.1f, float release = 0.6f);
+
   // The room's reverb: how much is added to the whole mix (0 off) and how long
   // the tail rings in seconds; eased, so walking between rooms does not click.
   // `ReverbForRoom` (audio/spatial.h) gives both from the size of a room.
@@ -100,6 +113,7 @@ class AudioEngine {
     float gain = 1.0f;
     bool loop = false;
     bool voice = false;
+    std::string group = "effects";
     float fade = 1.0f;
     float fade_rate = 0.0f;
     float pan_l = 0.7071f, pan_r = 0.7071f;
@@ -120,6 +134,7 @@ class AudioEngine {
     // Low-pass for occlusion: the muffle (0 clear .. 1 closed) and its target,
     // and the filter state.
     float muffle = 0, target_muffle = 0, lowpass = 0;
+    std::string group = "ambience";
   };
 
   // SDL pulls audio here on the audio thread.
@@ -142,6 +157,7 @@ class AudioEngine {
 
   [[nodiscard]] const Clip* FindClip(const std::string& name) const;
 
+  MixerGroups groups_;
   Reverb reverb_;
   SDL_AudioStream* stream_ = nullptr;
   int rate_ = 44100;

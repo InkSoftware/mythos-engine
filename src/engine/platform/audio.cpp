@@ -109,7 +109,7 @@ int AudioEngine::LoadDir(const std::string& dir,
 }
 
 void AudioEngine::Play(const std::string& name, const float gain,
-                       const float pitch) {
+                       const float pitch, const std::string& group) {
   if (!stream_) return;
   const Clip* clip = FindClip(name);
   if (!clip) return;
@@ -117,6 +117,7 @@ void AudioEngine::Play(const std::string& name, const float gain,
   v.clip = clip;
   v.step = std::max(kMinPitch, pitch);
   v.gain = gain * effect_scale_;
+  v.group = group;
   StartVoice(v);
 }
 
@@ -130,6 +131,7 @@ void AudioEngine::PlayVoice(const std::string& name, const float gain,
   v.clip = clip;
   v.gain = gain * effect_scale_;
   v.voice = true;
+  v.group = "voice";
   v.spatial = spatial;
   if (radio) {
     v.radio = std::make_shared<RadioFm>(rate_, 0x9e3779b9u * ++radio_lines_);
@@ -203,12 +205,13 @@ void AudioEngine::SetVolumes(const float master, const float ambience,
   SDL_UnlockAudioStream(stream_);
 }
 
-int AudioEngine::AddSource(const std::string& name) {
+int AudioEngine::AddSource(const std::string& name, const std::string& group) {
   if (!stream_) return -1;
   const Clip* clip = FindClip(name);
   if (!clip || clip->samples.empty()) return -1;
   Source s;
   s.clip = clip;
+  s.group = group;
   SDL_LockAudioStream(stream_);
   sources_.push_back(s);
   const int id = static_cast<int>(sources_.size()) - 1;
@@ -223,6 +226,23 @@ void AudioEngine::SetSource(const int id, const float left, const float right) {
     sources_[static_cast<size_t>(id)].target_l = std::max(0.0f, left);
     sources_[static_cast<size_t>(id)].target_r = std::max(0.0f, right);
   }
+  SDL_UnlockAudioStream(stream_);
+}
+
+void AudioEngine::SetGroupVolume(const std::string& group, const float volume) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  groups_.SetVolume(group, static_cast<double>(volume));
+  SDL_UnlockAudioStream(stream_);
+}
+
+void AudioEngine::AddGroupDuck(const std::string& group, const std::string& by,
+                               const float amount, const float attack,
+                               const float release) {
+  if (!stream_) return;
+  SDL_LockAudioStream(stream_);
+  groups_.AddDuck(group, by, static_cast<double>(amount),
+                  static_cast<double>(attack), static_cast<double>(release));
   SDL_UnlockAudioStream(stream_);
 }
 
@@ -263,6 +283,7 @@ void AudioEngine::PlayLoop(const std::string& name, const float gain) {
     Voice v;
     v.clip = clip;
     v.gain = gain;
+    v.group = "ambience";
     v.loop = true;
     v.fade = 0.0f;
     v.fade_rate = fade_per_sample;
@@ -291,6 +312,13 @@ void SDLCALL AudioEngine::Callback(void* const userdata,
 
 void AudioEngine::Mix(float* const out, const int frames) {
   const float duck_start = UpdateDuck(frames);
+  // A group is active while one of its sounds plays; its ducks follow.
+  groups_.ClearActive();
+  for (const auto& v : voices_) {
+    if (v.fade_rate >= 0.0f || v.fade > 0.0f) groups_.SetActive(v.group, true);
+  }
+  for (const auto& s : sources_) groups_.SetActive(s.group, true);
+  groups_.Update(static_cast<double>(frames) / static_cast<double>(rate_));
   MixVoices(out, frames, duck_start, duck_level_);
   MixSources(out, frames);
   RemoveFinishedVoices();
@@ -328,6 +356,7 @@ void AudioEngine::MixVoices(float* const out, const int frames,
       continue;
     }
     const auto& samples = v.clip->samples;
+    const auto group_gain = static_cast<float>(groups_.Gain(v.group));
     for (int i = 0; i < frames; ++i) {
       if (v.pos >= static_cast<double>(samples.size())) {
         if (!v.loop) break;
@@ -341,7 +370,7 @@ void AudioEngine::MixVoices(float* const out, const int frames,
       }
       float raw = samples[static_cast<size_t>(v.pos)];
       if (v.radio) raw = v.radio->Process(raw);
-      const float sample = raw * v.gain * v.fade * scale;
+      const float sample = raw * v.gain * v.fade * scale * group_gain;
       const size_t idx = static_cast<size_t>(i) * kChannels;
       if (v.spatial) {
         v.cur_l = EaseToward(v.cur_l, v.tgt_l, place_ease);
@@ -365,6 +394,7 @@ void AudioEngine::MixSources(float* const out, const int frames) {
     // The filter's coefficient is set once per block from the eased muffle.
     src.muffle = EaseToward(src.muffle, src.target_muffle,
                             std::min(1.0f, ease * static_cast<float>(frames)));
+    const auto group_gain = static_cast<float>(groups_.Gain(src.group));
     const bool filtered = src.muffle > 0.001f;
     const auto coefficient = static_cast<float>(LowpassCoefficient(
         MuffleCutoffHz(src.muffle), static_cast<double>(rate_)));
@@ -382,8 +412,8 @@ void AudioEngine::MixSources(float* const out, const int frames) {
         src.lowpass = sample;
       }
       const size_t idx = static_cast<size_t>(i) * kChannels;
-      out[idx] += sample * src.left;
-      out[idx + 1] += sample * src.right;
+      out[idx] += sample * src.left * group_gain;
+      out[idx + 1] += sample * src.right * group_gain;
       src.pos += 1.0;
     }
   }

@@ -199,8 +199,8 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   `MixerGroups` (volume and ducking); `world/sound_path.h` counts walls and closed doors between a source and the
   listener; `AudioEngine::SetSourceMuffle` low-passes a positional source (the template's hum in the back room is
   muffled by its walls and closed door); `audio/reverb.h` is the reverb and `AudioEngine::SetReverb` applies it, the
-  template sets it from the size of the room the player is in (`RoomDoors::RegionSize`). Not done: the mixer using
-  `MixerGroups` and a layered music crossfade; the reverb is one room-wide send on the whole mix (no per-sound send).
+  template sets it from the size of the room the player is in (`RoomDoors::RegionSize`). The mixer uses `MixerGroups` (`SetGroupVolume`, `AddGroupDuck`, a group per sound). Not done: a layered music
+  crossfade; the reverb is one room-wide send on the whole mix (no per-sound send).
 - **Where:** `audio/audio_math.h` gets cell-based occlusion (walls between
   source and listener, doors open or closed, a low-pass amount) and reverb
   zones from room size (`RoomDoors` regions). Mixer groups with volume and

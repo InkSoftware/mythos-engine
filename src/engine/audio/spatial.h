@@ -63,6 +63,8 @@ class MixerGroups {
   void AddDuck(const std::string& group, const std::string& by, double amount,
                double attack = 0.1, double release = 0.6);
   void SetActive(const std::string& group, bool active);
+  // Marks every group inactive (the mixer then marks the ones playing).
+  void ClearActive() { active_.clear(); }
 
   void Update(double dt);
 

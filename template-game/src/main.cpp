@@ -168,7 +168,9 @@ int main(const int argc, char** const argv) {
     audio.LoadDir(EngineAssets() + "/sounds",
                   {"step_wood1", "step_wood2", "step_wood3", "door_open",
                    "door_close", "wind"});
-    hum = audio.AddSource("wind");
+    hum = audio.AddSource("wind");  // the "ambience" group
+    // Door and step sounds ("effects") dip the ambience a little.
+    audio.AddGroupDuck("ambience", "effects", 0.6f, 0.05f, 0.8f);
   }
 
   // Input actions: the engine's default keys, with the player's rebinding laid
