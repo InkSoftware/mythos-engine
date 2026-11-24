@@ -286,7 +286,7 @@ double SampleCutsceneValue(const Cutscene& scene, const std::string& name,
   return player.Value(name, fallback);
 }
 
-void RegisterCutsceneCommands(CvarRegistry& reg, CutsceneHooks hooks) {
+void RegisterCutsceneCommands(CvarRegistry& reg, const CutsceneHooks& hooks) {
   const auto missing = [] { return CvarResult{false, "not available here"}; };
   reg.AddCommand(
       "cutscene.play",
@@ -323,7 +323,7 @@ void RegisterCutsceneCommands(CvarRegistry& reg, CutsceneHooks hooks) {
         if (!hooks.list) return missing();
         std::string text;
         for (const std::string& name : hooks.list()) {
-          if (!text.empty()) text += "\n";
+          if (!text.empty()) text += '\n';
           text += name;
         }
         return CvarResult{true, text.empty() ? "(none)" : text};

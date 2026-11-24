@@ -132,7 +132,7 @@ struct CutsceneHooks {
 // Registers `cutscene.play <name>`, `cutscene.skip`, `cutscene.stop` and
 // `cutscene.list` on a cvar registry (the debug console), so a cutscene can
 // be run and tested by hand. A missing hook makes its command report that.
-void RegisterCutsceneCommands(CvarRegistry& reg, CutsceneHooks hooks);
+void RegisterCutsceneCommands(CvarRegistry& reg, const CutsceneHooks& hooks);
 
 using CueCallback = std::function<void(const EventAction&)>;
 using AnimCallback = std::function<void(const AnimKey&)>;
