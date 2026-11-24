@@ -207,7 +207,7 @@ more than was built.
   muffled by its walls and closed door); `audio/reverb.h` is the reverb and `AudioEngine::SetReverb` applies it, the
   template sets it from the size of the room the player is in (`RoomDoors::RegionSize`). The mixer uses `MixerGroups` (`SetGroupVolume`, `AddGroupDuck`, a group per sound). Layered music (`audio/music.h`: `LayerFader`, `AudioEngine::StartMusic` / `SetMusicLayer` /
   `CrossfadeMusic` / `StopMusic`). Each sound has its own reverb share (`Play(..., reverb)`, `AddSource(..., reverb)`). Fades and crossfades can wait for the next bar line
-  (`NextBarTime`, `SetMusicLayerAtBar`). `TempoSection` maps with `NextBarTime(map, now)` and `NextPhraseTime(map, now, bars)` give bar and phrase ends across tempo changes (headless; a game feeds them to `LayerFader::FadeAt` / `CrossfadeAt`). Not done: `AudioEngine` calls that take a map directly.
+  (`NextBarTime`, `SetMusicLayerAtBar`). `TempoSection` maps with `NextBarTime(map, now)` and `NextPhraseTime(map, now, bars)` give bar and phrase ends across tempo changes (headless; a game feeds them to `LayerFader::FadeAt` / `CrossfadeAt`). `AudioEngine::SetMusicLayerAtPhrase` / `CrossfadeMusicAtPhrase` take a map and a phrase length.
 - **Where:** `audio/audio_math.h` gets cell-based occlusion (walls between
   source and listener, doors open or closed, a low-pass amount) and reverb
   zones from room size (`RoomDoors` regions). Mixer groups with volume and
@@ -326,7 +326,7 @@ Gaps named in the Progress lines, by area:
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   steering around moving obstacles and group behaviour for the AI.
-- **Audio:** `AudioEngine::SetMusicLayerAtBar` and friends taking a tempo map or a phrase length.
+- **Audio:** nothing named.
 - **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), linked prefabs
   and prefabs with triggers or decals, a visual event graph.
 - **Tools and data:** nothing named.

@@ -99,6 +99,16 @@ class AudioEngine {
                           double bpm, int beats_per_bar = 4);
   void CrossfadeMusicAtBar(const std::vector<std::string>& layers,
                            float seconds, double bpm, int beats_per_bar = 4);
+  // The same, waiting for the end of the current phrase of `bars_per_phrase`
+  // bars in a tempo map (audio/music.h `NextPhraseTime`; 1 bar = a bar line).
+  void SetMusicLayerAtPhrase(const std::string& layer, float gain,
+                             float seconds,
+                             const std::vector<TempoSection>& map,
+                             int bars_per_phrase = 1);
+  void CrossfadeMusicAtPhrase(const std::vector<std::string>& layers,
+                              float seconds,
+                              const std::vector<TempoSection>& map,
+                              int bars_per_phrase = 1);
   void StopMusic(float seconds = 1.0f);
 
   // Mixer groups (audio/spatial.h `MixerGroups`). Every sound belongs to one:
