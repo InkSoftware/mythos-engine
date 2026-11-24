@@ -97,6 +97,7 @@ add_library(mythos_engine STATIC
     src/engine/world/mirror.cpp
     src/engine/world/movement.cpp
     src/engine/world/body.cpp
+    src/engine/world/cutscene.cpp
     src/engine/world/free_cam.cpp
     src/engine/world/camera_fx.cpp
     src/engine/world/player.cpp

@@ -73,6 +73,7 @@
 #include "engine/world/ai.h"
 #include "engine/world/body.h"
 #include "engine/world/camera_fx.h"
+#include "engine/world/cutscene.h"
 #include "engine/world/event_graph.h"
 #include "engine/world/free_cam.h"
 #include "engine/world/gamepad.h"
@@ -4731,6 +4732,124 @@ TEST(prefab_captures_and_places_with_checks) {
   CHECK(r.furniture == 0 && r.decor == 0 && r.skipped == 3);
   CHECK(mythos::editor::SafePrefabName("my set/1") == "my_set_1");
   CHECK(mythos::editor::SafePrefabName("") == "prefab");
+}
+
+namespace {
+mythos::Cutscene TestScene() {
+  mythos::Cutscene s;
+  s.name = "intro";
+  s.camera = {{0, {0, 2, 0}, 0, 0, 1, mythos::Ease::kLinear},
+              {2, {4, 2, 0}, 1.0, 0.2, 1.2, mythos::Ease::kLinear}};
+  s.cues = {{1.0, {"message", "intro.line one"}},
+            {0.0, {"set_flag", "begun"}},
+            {1.5, {"set_flag", "half"}}};
+  s.values = {
+      {"fade", {{0, 1, mythos::Ease::kLinear}, {1, 0, mythos::Ease::kLinear}}}};
+  s.anims = {{1.0, "guide", "Wave", 0.3}};
+  return s;
+}
+}
+
+TEST(cutscene_file_round_trips_and_sorts) {
+  const mythos::Cutscene scene = TestScene();
+  mythos::Cutscene back;
+  std::string error;
+  CHECK(mythos::ParseCutscene(mythos::SerializeCutscene(scene), &back, &error));
+  // Keys come back sorted by time; the name is not in the file.
+  mythos::Cutscene sorted = scene;
+  std::ranges::stable_sort(sorted.cues, [](const auto& a, const auto& b) {
+    return a.time < b.time;
+  });
+  back.name = "intro";
+  CHECK(back == sorted);
+  CHECK(back.cues[1].action.argument == "intro.line one");  // spaces kept
+  CHECK_EQ(mythos::CutsceneLength(back), 2.0);
+  // Bad input is refused and changes nothing.
+  mythos::Cutscene kept = back;
+  CHECK(!mythos::ParseCutscene("[camera]\n0 1 2\n", &back, &error));
+  CHECK(!mythos::ParseCutscene("[camera]\n0 0 0 0 0 0 1 wobble\n", &back,
+                               &error));
+  CHECK(!mythos::ParseCutscene("[sound]\n", &back, &error));
+  CHECK(!mythos::ParseCutscene("duration -1\n", &back, &error));
+  CHECK(back == kept);
+  mythos::Ease e;
+  CHECK(mythos::ParseEase("out_back", &e) && e == mythos::Ease::kOutBack);
+  for (int i = 0; i < mythos::kEaseCount; ++i) {
+    CHECK(
+        mythos::ParseEase(mythos::EaseName(static_cast<mythos::Ease>(i)), &e));
+    CHECK_EQ(static_cast<int>(e), i);
+  }
+}
+
+TEST(cutscene_player_fires_cues_once_in_order_and_samples) {
+  const mythos::Cutscene scene = TestScene();
+  mythos::CutscenePlayer player;
+  CHECK(!player.Playing() && !player.Finished());
+  player.Start(&scene);
+  std::vector<std::string> fired, anims;
+  const auto cue = [&](const mythos::EventAction& a) {
+    fired.push_back(a.type + ":" + a.argument);
+  };
+  const auto anim = [&](const mythos::AnimKey& k) {
+    anims.push_back(k.actor + ":" + k.clip);
+  };
+  player.Update(0.0, cue, anim);  // the key at 0 fires at once
+  CHECK(fired.size() == 1 && fired[0] == "set_flag:begun");
+  player.Update(0.5, cue, anim);
+  CHECK_EQ(fired.size(), 1u);
+  mythos::CameraSample cam;
+  CHECK(player.Camera(&cam));
+  CHECK(std::fabs(cam.pos.x - 1.0) < 1e-9 && std::fabs(cam.yaw - 0.25) < 1e-9);
+  CHECK(std::fabs(player.Value("fade") - 0.5) < 1e-9);
+  CHECK_EQ(player.Value("nope", 7), 7.0);
+  player.Update(0.6, cue, anim);  // t = 1.1: the line and the wave
+  CHECK(fired.size() == 2 && fired[1] == "message:intro.line one");
+  CHECK(anims.size() == 1 && anims[0] == "guide:Wave");
+  player.Update(0.1, cue, anim);
+  CHECK_EQ(fired.size(), 2u);  // nothing fires twice
+  CHECK(player.Playing());
+  player.Update(5.0, cue, anim);  // past the end
+  CHECK(player.Finished() && !player.Playing());
+  CHECK(fired.size() == 3 && fired[2] == "set_flag:half");
+  CHECK_EQ(player.Time(), 2.0);
+  CHECK(player.Camera(&cam) && cam.pos.x == 4.0 && cam.fov_scale == 1.2);
+  CHECK_EQ(player.Value("fade"), 0.0);
+  player.Update(1.0, cue, anim);  // finished: no more
+  CHECK_EQ(fired.size(), 3u);
+}
+
+TEST(cutscene_skip_fires_the_rest_and_yaw_turns_the_short_way) {
+  mythos::Cutscene scene = TestScene();
+  mythos::CutscenePlayer player;
+  player.Start(&scene);
+  std::vector<std::string> fired;
+  const auto cue = [&](const mythos::EventAction& a) {
+    fired.push_back(a.argument);
+  };
+  player.Update(0.2, cue, {});
+  player.Skip(cue, {});
+  CHECK(player.Finished());
+  CHECK_EQ(fired.size(), 3u);  // all of them, once
+  player.Skip(cue, {});
+  CHECK_EQ(fired.size(), 3u);
+  // 350 degrees to 10 degrees goes through 0, not back round.
+  mythos::Cutscene turn;
+  turn.camera = {{0, {0, 0, 0}, 6.1086, 0, 1, mythos::Ease::kLinear},
+                 {1, {0, 0, 0}, 0.1745, 0, 1, mythos::Ease::kLinear}};
+  mythos::CutscenePlayer p2;
+  p2.Start(&turn);
+  p2.Update(0.5, {}, {});
+  mythos::CameraSample c;
+  CHECK(p2.Camera(&c));
+  CHECK(std::fabs(std::remainder(c.yaw, 2 * mythos::kPi)) < 0.01);
+  // A scene with no camera keys has no camera.
+  mythos::Cutscene none;
+  none.duration = 1;
+  mythos::CutscenePlayer p3;
+  p3.Start(&none);
+  CHECK(!p3.Camera(&c));
+  p3.Update(2.0, {}, {});
+  CHECK(p3.Finished());
 }
 
 }

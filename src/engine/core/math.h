@@ -18,6 +18,8 @@ struct Vec3 {
   double x = 0;
   double y = 0;
   double z = 0;
+
+  bool operator==(const Vec3&) const = default;
 };
 
 // Distance along the unit-length `dir` from `origin` to the point nearest a

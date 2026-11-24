@@ -180,6 +180,17 @@ int main(const int argc, char** const argv) {
   mythos::FileWatcher watcher;
   watcher.Add(GameAssets());
   watcher.Add(EngineShaders());
+  // The opening cutscene (`--no-intro` skips it).
+  bool intro = true;
+  for (int i = 1; i < argc; ++i) {
+    if (std::string(argv[i]) == "--no-intro") intro = false;
+  }
+  if (intro) {
+    std::string why;
+    if (!game.StartCutscene("intro", &why)) {
+      std::fprintf(stderr, "no intro: %s\n", why.c_str());
+    }
+  }
   mythos::FrameClock clock;
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false;
@@ -267,6 +278,16 @@ int main(const int argc, char** const argv) {
     cam.z = game.player().pos.y;
     cam.yaw = game.player().angle;
     cam.pitch = game.player().pitch;
+    // A cutscene takes the camera from the player.
+    mythos::CameraSample film;
+    if (game.CutsceneActive() && game.CutsceneCamera(&film)) {
+      cam.x = film.pos.x;
+      cam.z = film.pos.z;
+      cam.eye_height = film.pos.y;
+      cam.yaw = film.yaw;
+      cam.pitch = film.pitch;
+      cam.fov_scale = film.fov_scale;
+    }
     cam.time = clock.Seconds();
     cam.outdoor = outdoor;
     if (outdoor)
@@ -299,8 +320,13 @@ int main(const int argc, char** const argv) {
     pete.skin = mythos::SkinMatrices(guide.skeleton, game.guide_pose());
     cam.instances.push_back(pete);
 
-    // A little text on the overlay.
+    // A little text on the overlay, and the cutscene's fade over everything.
     std::ranges::fill(overlay.px, 0u);
+    if (game.CutsceneActive()) {
+      const double fade = std::clamp(game.CutsceneValue("fade"), 0.0, 1.0);
+      std::ranges::fill(overlay.px,
+                        mythos::Rgba(0, 0, 0, static_cast<int>(fade * 255)));
+    }
     mythos::DrawText(overlay, 8, 8, mythos::Tr("template.help"),
                      mythos::Rgba(255, 255, 255));
     if (rebinding) {

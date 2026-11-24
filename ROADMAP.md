@@ -258,6 +258,10 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
   overridden in the editor. Mirrors the level format so games need no code.
 
 ### 5.5 Cutscene sequencer (L)
+- **Progress:** `world/cutscene.h` (a text file of camera keys, cues, value tracks and animation keys, a `CutscenePlayer` with
+  `Skip`, tested); the template plays `assets/cutscenes/intro.cutscene` (camera glide, a fade, text, the guide's wave).
+  Not done: the editor's timeline panel, sound and tween-callback tracks beyond cues and values, a camera key picked
+  from the viewport, and a cutscene runner that other systems (the cvar console) can drive.
 - Timeline of camera, tween, sound, event and animation tracks, built on 1.4,
   2.1 and 3.1. Editor timeline panel.
 

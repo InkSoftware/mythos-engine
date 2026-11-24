@@ -15,6 +15,7 @@
 #include "engine/gfx/model.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/world/ai.h"
+#include "engine/world/cutscene.h"
 #include "engine/world/event_graph.h"
 #include "engine/world/interact.h"
 #include "engine/world/level.h"
@@ -43,6 +44,20 @@ class Game {
   // player stays where they are unless that is now inside a wall; doors start
   // closed as the file says. A file that does not parse changes nothing.
   bool ReloadLevel(std::string* error);
+
+  // Plays `assets/cutscenes/<name>.cutscene`: the camera, a fade, text and
+  // the guide's wave come from the file. Interact skips it (its cues still
+  // run, so the flags are set). The player cannot move meanwhile.
+  bool StartCutscene(const std::string& name, std::string* error);
+  [[nodiscard]] bool CutsceneActive() const {
+    return cutscene_player_.Playing();
+  }
+  [[nodiscard]] bool CutsceneCamera(mythos::CameraSample* out) const {
+    return cutscene_player_.Camera(out);
+  }
+  [[nodiscard]] double CutsceneValue(const std::string& name) const {
+    return cutscene_player_.Value(name);
+  }
 
   bool Save(const std::string& dir, int slot);
   // Returns false (and says why in the message) when there is nothing to load.
@@ -80,6 +95,8 @@ class Game {
  private:
   void UpdateGuide(double dt);
   void RunEvents(bool use_pressed);
+  // Carries out an action from a level rule or a cutscene cue.
+  void Act(const mythos::EventAction& action);
   void UseDoorAhead();
   void Restart();
 
@@ -112,6 +129,9 @@ class Game {
   double message_time_ = 0;
   mythos::Vec2 start_;
   std::string game_assets_;
+  mythos::Cutscene cutscene_;
+  mythos::CutscenePlayer cutscene_player_;
+  bool cutscene_wave_ = false;
 };
 }
 

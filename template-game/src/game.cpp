@@ -4,6 +4,7 @@
 #include <cmath>
 #include <memory>
 
+#include "engine/core/fileio.h"
 #include "engine/core/json.h"
 #include "engine/world/save_state.h"
 
@@ -219,14 +220,30 @@ void Game::RunEvents(const bool use_pressed) {
   mythos::EventGraphRuntime::Flags flags;
   for (const auto& [name, value] : progress_.flags) flags[name] = value != 0;
   events_.Sample({player_.pos.x, 0.0, player_.pos.y}, 0, use_pressed, flags,
-                 [this](const mythos::EventAction& action) {
-                   // The action types are ours: the engine only carries them.
-                   if (action.type == "set_flag") {
-                     progress_.flags[action.argument] = 1;
-                   } else if (action.type == "message") {
-                     Say(action.argument);
-                   }
-                 });
+                 [this](const mythos::EventAction& action) { Act(action); });
+}
+
+void Game::Act(const mythos::EventAction& action) {
+  // The action types are ours: the engine only carries them.
+  if (action.type == "set_flag") {
+    progress_.flags[action.argument] = 1;
+  } else if (action.type == "message") {
+    Say(action.argument);
+  }
+}
+
+bool Game::StartCutscene(const std::string& name, std::string* error) {
+  const std::string path =
+      Join(game_assets_, "cutscenes/" + name + ".cutscene");
+  const std::string text = mythos::ReadTextFile(path);
+  std::string why;
+  if (text.empty() || !mythos::ParseCutscene(text, &cutscene_, &why)) {
+    if (error != nullptr) *error = text.empty() ? "cannot read " + path : why;
+    return false;
+  }
+  cutscene_.name = name;
+  cutscene_player_.Start(&cutscene_);
+  return true;
 }
 
 void Game::UpdateGuide(const double dt) {
@@ -239,7 +256,9 @@ void Game::UpdateGuide(const double dt) {
   guide_moving_ = false;
   if (brain_) brain_->Tick(dt);
   anim_.SetBool("moving", guide_moving_);
-  anim_.SetBool("greet", guide_sees_player_ && !guide_saw_player_);
+  anim_.SetBool("greet",
+                (guide_sees_player_ && !guide_saw_player_) || cutscene_wave_);
+  cutscene_wave_ = false;
   guide_saw_player_ = guide_sees_player_;
   anim_.Update(dt);
 }
@@ -247,6 +266,23 @@ void Game::UpdateGuide(const double dt) {
 void Game::Update(const double dt, const mythos::MoveInput& move,
                   const mythos::ActionInput& act) {
   dt_ = dt;
+  if (cutscene_player_.Playing()) {
+    // The world carries on, the player watches: the guide still acts, the
+    // cues and animation keys are played, and interact skips.
+    const auto cue = [this](const mythos::EventAction& a) { Act(a); };
+    const auto anim = [this](const mythos::AnimKey& k) {
+      if (k.actor == "guide") cutscene_wave_ = true;
+    };
+    if (act.interact_pressed) {
+      cutscene_player_.Skip(cue, anim);
+    } else {
+      cutscene_player_.Update(dt, cue, anim);
+    }
+    UpdateGuide(dt);
+    message_time_ = std::max(0.0, message_time_ - dt);
+    if (message_time_ == 0) message_.clear();
+    return;
+  }
   mythos::ApplyLook(player_, move, params_);
   if (walker_.Update(level_, player_, dt, move, params_)) {
     static const char* const kSteps[] = {"step_wood1", "step_wood2",

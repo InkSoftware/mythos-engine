@@ -150,6 +150,41 @@ void TestPrefabPlacesIntoTheHall() {
   CHECK(doc.furniture.size() == before + 3);
 }
 
+void TestIntroCutscenePlaysAndSkips() {
+  template_game::Game game;
+  if (!LoadGame(game)) return ++g_failures, void();
+  std::string error;
+  CHECK(game.StartCutscene("intro", &error));
+  CHECK(game.CutsceneActive());
+  const mythos::Vec2 start = game.player().pos;
+  // Walking is ignored while it plays; the camera follows the file.
+  mythos::MoveInput forward;
+  forward.forward = true;
+  Step(game, 1.0, forward);
+  CHECK(game.CutsceneActive());
+  CHECK(game.player().pos.x == start.x && game.player().pos.y == start.y);
+  mythos::CameraSample cam;
+  CHECK(game.CutsceneCamera(&cam) && cam.pos.x < 7.5 && cam.pos.x > 2.5);
+  CHECK(game.CutsceneValue("fade") < 0.01);  // faded in after a second
+  CHECK(game.message() == "template.intro");
+  Step(game, 5.0);
+  CHECK(!game.CutsceneActive());
+  CHECK(game.progress().Flag("intro_seen"));
+  Step(game, 1.0, forward);
+  CHECK(game.player().pos.x != start.x || game.player().pos.y != start.y);
+
+  // Interact skips it, and the cues still run.
+  template_game::Game second;
+  if (!LoadGame(second)) return ++g_failures, void();
+  CHECK(second.StartCutscene("intro", &error));
+  mythos::ActionInput skip;
+  skip.interact_pressed = true;
+  Step(second, 1.0 / 60, {}, skip);
+  CHECK(!second.CutsceneActive());
+  CHECK(second.progress().Flag("intro_seen"));
+  CHECK(!second.StartCutscene("nope", &error) && !error.empty());
+}
+
 void TestSaveRoundTrip() {
   template_game::Game game;
   if (!LoadGame(game)) return ++g_failures, void();
@@ -177,6 +212,7 @@ int main() {
   TestGuidePatrolsAndAnimates();
   TestGuideWavesWhenSheSeesYou();
   TestPrefabPlacesIntoTheHall();
+  TestIntroCutscenePlaysAndSkips();
   TestSaveRoundTrip();
   std::printf("%d failure(s)\n", g_failures);
   return g_failures == 0 ? 0 : 1;

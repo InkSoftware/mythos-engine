@@ -1,0 +1,15 @@
+; The opening: the camera glides from the far corner of the first room to where
+; the player starts. Cues are the game's to carry out (see Game::Act).
+duration 4.5
+[camera]
+; time  x   eye  z    yaw    pitch  fov  ease
+0       7.5 2.2  4.5  -2.68  -0.15  1.2  smoothstep
+3.5     2.5 1.55 5.5  -1.249  0     1.0  smoothstep
+[cues]
+0.8 message template.intro
+4.0 set_flag intro_seen
+[values]
+fade 0 1 linear
+fade 1 0 linear
+[anims]
+2.8 guide Wave 0.2

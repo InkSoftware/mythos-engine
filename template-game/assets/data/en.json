@@ -8,6 +8,7 @@
       "rebind": "Press a key for Use (Esc cancels)",
       "rebound": "Use is rebound.",
       "east_room": "The back room. Somebody left the lamp on.",
+      "intro": "Someone is waiting in the hall.",
       "saved": "Saved.",
       "reloaded": "Reloaded.",
       "reload_failed": "Reload failed (see the console).",
