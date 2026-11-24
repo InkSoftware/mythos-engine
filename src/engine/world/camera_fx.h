@@ -9,13 +9,16 @@
 namespace mythos {
 // The offsets for one frame. Angles are radians added to the view's yaw and
 // pitch; `right` and `up` are metres in the camera's frame (`right` along the
-// view's right, `up` along y); `fov_scale` multiplies the field of view
-// (1 = unchanged).
+// view's right, `up` along y); `roll` is radians of tilt about the view
+// direction (positive drops the camera's right side, so the horizon turns
+// counter-clockwise on the screen);
+// `fov_scale` multiplies the field of view (1 = unchanged).
 struct CameraFxOffsets {
   double yaw = 0;
   double pitch = 0;
   double right = 0;
   double up = 0;
+  double roll = 0;
   double fov_scale = 1;
 };
 
@@ -25,6 +28,9 @@ struct ShakeParams {
   double max_pitch = 0.04;
   double max_right = 0.04;
   double max_up = 0.03;
+  // A shake can tilt the picture too: 0 (the default) keeps it level, as
+  // before roll existed.
+  double max_roll = 0.0;
   // How fast the noise moves, in cycles per second.
   double frequency = 14.0;
   // Trauma lost per second.
@@ -75,6 +81,15 @@ class CameraFx {
   double time_ = 0;
   double intensity_ = 1;
 };
+
+// The view's axes for a yaw, pitch and roll (radians; the player's convention:
+// forward is (cos yaw cos pitch, sin pitch, sin yaw cos pitch), and a roll of
+// 0 keeps `right` horizontal). `up` is perpendicular to both; a positive roll
+// drops `right` (and tips `up` toward the old `right`).
+struct ViewBasis {
+  double forward[3], right[3], up[3];
+};
+ViewBasis MakeViewBasis(double yaw, double pitch, double roll = 0.0);
 }  // namespace mythos
 
 #endif

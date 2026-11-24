@@ -53,6 +53,25 @@ void CameraFx::Clear() {
   fov_ = 0;
 }
 
+ViewBasis MakeViewBasis(const double yaw, const double pitch,
+                        const double roll) {
+  const double cy = std::cos(yaw), sy = std::sin(yaw);
+  const double cp = std::cos(pitch), sp = std::sin(pitch);
+  ViewBasis b{};
+  b.forward[0] = cy * cp;
+  b.forward[1] = sp;
+  b.forward[2] = sy * cp;
+  // Level: right on the x / z plane, up the view's own up.
+  const double r[3] = {-sy, 0.0, cy};
+  const double u[3] = {-cy * sp, cp, -sy * sp};
+  const double cr = std::cos(roll), sr = std::sin(roll);
+  for (int i = 0; i < 3; ++i) {
+    b.right[i] = r[i] * cr - u[i] * sr;
+    b.up[i] = u[i] * cr + r[i] * sr;
+  }
+  return b;
+}
+
 CameraFxOffsets CameraFx::Sample() const {
   CameraFxOffsets out;
   const double shake = std::pow(trauma_, params.power) * intensity_;
@@ -61,6 +80,7 @@ CameraFxOffsets CameraFx::Sample() const {
     out.pitch = params.max_pitch * shake * Noise1(seed_, 1, time_);
     out.right = params.max_right * shake * Noise1(seed_, 2, time_);
     out.up = params.max_up * shake * Noise1(seed_, 3, time_);
+    out.roll = params.max_roll * shake * Noise1(seed_, 4, time_);
   }
   out.fov_scale = 1.0 + fov_ * intensity_;
   return out;

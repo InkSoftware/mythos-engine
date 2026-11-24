@@ -273,7 +273,8 @@ more than was built.
 - **Progress:** `core/file_watch.h` (`FileWatcher`), `SceneRenderer::ReloadShaders` (loose GLSL, a failed compile keeps the
   old program) and `ReloadTextures` (in place); the template watches its level, its textures and the engine's shaders
   and reloads each (`Game::ReloadLevel`). Models (`ModelLibrary::LoadFile`, `SceneRenderer::ReplaceModel`) and sounds
-  (`AudioEngine::LoadDir` again) reload too. Not done: skinned `.glb` characters, and an editor hook.
+  (`AudioEngine::LoadDir` again) reload too. The editor needs no hook for levels: saving one writes the file the running game
+  watches (the template reloads it). Not done: skinned `.glb` characters.
 - Watch textures, shaders and levels and reload without a restart. Dev builds
   only; the shader embed step needs a loose-file mode.
 
@@ -327,7 +328,7 @@ Gaps named in the Progress lines, by area:
   steering around moving obstacles and group behaviour for the AI.
 - **Audio:** tempo changes and phrase-synchronised music transitions.
 - **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), linked prefabs
-  and prefabs with triggers or decals, a visual event graph, an editor hook for hot reload.
+  and prefabs with triggers or decals, a visual event graph.
 - **Tools and data:** furniture changes in a save.
 
 ## Out of scope for now

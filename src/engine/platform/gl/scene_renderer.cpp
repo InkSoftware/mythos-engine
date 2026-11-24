@@ -900,14 +900,18 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f) {
   Disable(kDepthTest);
   sky_program_.Use();
 
-  const float cos_pitch = std::cos(static_cast<float>(cam.pitch)),
-              sin_pitch = std::sin(static_cast<float>(cam.pitch));
-  const float cos_yaw = std::cos(static_cast<float>(cam.yaw)),
-              sin_yaw = std::sin(static_cast<float>(cam.yaw));
-  sky_program_.Set("uFwd", cos_yaw * cos_pitch, sin_pitch, sin_yaw * cos_pitch);
-  sky_program_.Set("uRight", -sin_yaw, 0.0f, cos_yaw);
-  sky_program_.Set("uUp", -cos_yaw * sin_pitch, cos_pitch,
-                   -sin_yaw * sin_pitch);
+  const ViewBasis basis = MakeViewBasis(
+      cam.yaw, cam.pitch,
+      std::isfinite(cam.roll) ? Clampd(cam.roll, -1.0, 1.0) : 0.0);
+  sky_program_.Set("uFwd", static_cast<float>(basis.forward[0]),
+                   static_cast<float>(basis.forward[1]),
+                   static_cast<float>(basis.forward[2]));
+  sky_program_.Set("uRight", static_cast<float>(basis.right[0]),
+                   static_cast<float>(basis.right[1]),
+                   static_cast<float>(basis.right[2]));
+  sky_program_.Set("uUp", static_cast<float>(basis.up[0]),
+                   static_cast<float>(basis.up[1]),
+                   static_cast<float>(basis.up[2]));
   const float tan_half_y = std::tan(f.fov_y * 0.5f);
   sky_program_.Set("uTan", tan_half_y * f.aspect, tan_half_y);
   sky_program_.Set("uTime", static_cast<float>(cam.time));
@@ -1708,7 +1712,13 @@ SceneRenderer::Frame SceneRenderer::MakeFrame(const CameraState& cam) const {
   f.materials = std::clamp(cam.materials, 0, 2);
   const float center[3] = {f.eye[0] + f.dir[0], f.eye[1] + f.dir[1],
                            f.eye[2] + f.dir[2]};
-  const float up[3] = {0, 1, 0};
+  float up[3] = {0, 1, 0};
+  if (cam.roll != 0.0 && std::isfinite(cam.roll)) {
+    // A tilted view: the up vector of the look-at is the rolled one.
+    const ViewBasis basis =
+        MakeViewBasis(cam.yaw, cam.pitch, Clampd(cam.roll, -1.0, 1.0));
+    for (int i = 0; i < 3; ++i) up[i] = static_cast<float>(basis.up[i]);
+  }
   Mat4LookAt(f.eye, center, up, f.view);
   Mat4Perspective(f.fov_y, f.aspect, kNearPlane, kFarPlane, f.proj);
   float view_proj[16];
@@ -1779,6 +1789,7 @@ DoorInstance MakeDoorInstance(const DoorState& d) {
 void ApplyCameraFx(const CameraFxOffsets& fx, CameraState& cam) {
   cam.yaw += fx.yaw;
   cam.pitch += fx.pitch;
+  cam.roll += fx.roll;
   // The view's right vector is (-sin yaw, cos yaw) on the x, z plane.
   cam.x += -std::sin(cam.yaw) * fx.right;
   cam.z += std::cos(cam.yaw) * fx.right;

@@ -5749,6 +5749,47 @@ TEST(probes_are_ambient_cubes_with_direction) {
   CHECK(!mythos::ParseProbes("probes6 0.5 1 1\n1 2 3\n", &old, &error));
 }
 
+TEST(camera_roll_basis_and_shake_roll) {
+  // Level: right on the horizontal plane, orthonormal axes.
+  const mythos::ViewBasis level = mythos::MakeViewBasis(0.7, 0.3);
+  CHECK(std::fabs(level.right[1]) < 1e-12);
+  const auto dot = [](const double* a, const double* b) {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  };
+  CHECK(std::fabs(dot(level.forward, level.right)) < 1e-12);
+  CHECK(std::fabs(dot(level.forward, level.up)) < 1e-12);
+  CHECK(std::fabs(dot(level.right, level.up)) < 1e-12);
+  CHECK(std::fabs(dot(level.up, level.up) - 1.0) < 1e-12);
+  // The same yaw / pitch as the sky used: forward and up of the old formulas.
+  CHECK(std::fabs(level.forward[0] - std::cos(0.7) * std::cos(0.3)) < 1e-12);
+  CHECK(std::fabs(level.up[1] - std::cos(0.3)) < 1e-12);
+  // A quarter turn of roll puts `right` where `up` was (and drops it).
+  const mythos::ViewBasis rolled =
+      mythos::MakeViewBasis(0.7, 0.3, mythos::kPi / 2);
+  for (int i = 0; i < 3; ++i) {
+    CHECK(std::fabs(rolled.right[i] + level.up[i]) < 1e-12);
+    CHECK(std::fabs(rolled.up[i] - level.right[i]) < 1e-12);
+    CHECK(std::fabs(rolled.forward[i] - level.forward[i]) < 1e-12);
+  }
+  CHECK(rolled.right[1] < 0);  // the right side dropped
+  // Shake: no roll by default (a level picture as before), a roll when asked.
+  mythos::CameraFx fx;
+  fx.AddShake(1.0);
+  fx.Update(0.05);
+  CHECK_EQ(fx.Sample().roll, 0.0);
+  mythos::CameraFx tilting;
+  tilting.params.max_roll = 0.05;
+  tilting.AddShake(1.0);
+  bool moved = false;
+  for (int i = 0; i < 40; ++i) {
+    tilting.Update(0.02);
+    const double r = tilting.Sample().roll;
+    CHECK(std::fabs(r) <= 0.05 + 1e-12);
+    if (std::fabs(r) > 1e-4) moved = true;
+  }
+  CHECK(moved);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

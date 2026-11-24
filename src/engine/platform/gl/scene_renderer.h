@@ -120,6 +120,10 @@ struct CameraState {
   // Multiplies the vertical field of view (1 = the engine's 62 degrees),
   // clamped to 0.5..1.5; `ApplyCameraFx` sets it for a kick.
   double fov_scale = 1;
+  // Tilt about the view direction in radians (see `MakeViewBasis` in
+  // world/camera_fx.h); 0 is level and the picture is as before.
+  // `ApplyCameraFx` adds a shake's roll to it.
+  double roll = 0;
   std::vector<DoorInstance> doors;
 
   // Ambient light color far from lamps and near them (linear RGB).
