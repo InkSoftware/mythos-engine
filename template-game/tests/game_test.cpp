@@ -106,6 +106,21 @@ void TestGuidePatrolsAndAnimates() {
   std::filesystem::remove_all(dir);
 }
 
+void TestGuideWavesWhenSheSeesYou() {
+  template_game::Game game;
+  if (!LoadGame(game)) return ++g_failures, void();
+  // The player stands in her room, so sooner or later her patrol turns her
+  // toward them: she waves once, then goes back to idle or walking.
+  bool waved = false;
+  for (int i = 0; i < 60 * 30 && !waved; ++i) {
+    Step(game, 1.0 / 60);
+    waved = game.guide_state() == "wave";
+  }
+  CHECK(waved);
+  Step(game, 3.0);
+  CHECK(game.guide_state() != "wave");
+}
+
 void TestSaveRoundTrip() {
   template_game::Game game;
   if (!LoadGame(game)) return ++g_failures, void();
@@ -131,6 +146,7 @@ int main() {
   TestWalkingAndWalls();
   TestDoorOpensAndTheTriggerSpeaks();
   TestGuidePatrolsAndAnimates();
+  TestGuideWavesWhenSheSeesYou();
   TestSaveRoundTrip();
   std::printf("%d failure(s)\n", g_failures);
   return g_failures == 0 ? 0 : 1;

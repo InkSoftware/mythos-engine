@@ -21,7 +21,7 @@ std::string Join(const std::string& dir, const std::string& rest) {
 }
 }
 
-Game::Game() : animator_(&guide_.skeleton) {
+Game::Game() : anim_(&guide_.skeleton, &guide_.clips) {
   params_.radius = 0.25;
   params_.walk_speed = 2.2;
   params_.run_speed = 4.0;
@@ -61,6 +61,23 @@ bool Game::Load(const std::string& engine_assets,
                        guide_, &why)) {
     return fail(why);
   }
+  // A glTF file does not say which clips loop: they all load looping, and the
+  // game marks the one-shots.
+  for (mythos::Clip& clip : guide_.clips) {
+    if (clip.name == "Wave") clip.loop = false;
+  }
+  // Her animation: idle and walk follow `moving`; a wave plays once when she
+  // first sees the player and then returns to idle by itself.
+  anim_.AddState("idle", "Idle");
+  anim_.AddState("walk", "Walk");
+  anim_.AddState("wave", "Wave");
+  // First: transitions are tried in order, and the greeting lasts one frame.
+  anim_.AddTransition({"*", "wave", {{"greet", mythos::AnimOp::kEqual, 1}}});
+  anim_.AddTransition(
+      {"idle", "walk", {{"moving", mythos::AnimOp::kEqual, 1}}});
+  anim_.AddTransition(
+      {"walk", "idle", {{"moving", mythos::AnimOp::kEqual, 0}}});
+  anim_.AddTransition({"wave", "idle", {}, true});
   Restart();
   return true;
 }
@@ -186,9 +203,10 @@ void Game::UpdateGuide(const double dt) {
   guide_sees_player_ = mythos::ai::CanSee(level_, sight, player_.pos);
   guide_moving_ = false;
   if (brain_) brain_->Tick(dt);
-  const mythos::Clip* clip = guide_.FindClip(guide_moving_ ? "Walk" : "Idle");
-  animator_.Play(clip, 0.2);
-  animator_.Update(dt);
+  anim_.SetBool("moving", guide_moving_);
+  anim_.SetBool("greet", guide_sees_player_ && !guide_saw_player_);
+  guide_saw_player_ = guide_sees_player_;
+  anim_.Update(dt);
 }
 
 void Game::Update(const double dt, const mythos::MoveInput& move,

@@ -41,6 +41,7 @@
 #include "engine/editor/history.h"
 #include "engine/editor/level_doc.h"
 #include "engine/editor/project.h"
+#include "engine/gfx/anim_state.h"
 #include "engine/gfx/flicker.h"
 #include "engine/gfx/font.h"
 #include "engine/gfx/gltf.h"
@@ -4369,6 +4370,51 @@ TEST(gltf_loads_the_shipped_character) {
   float top = -1e9f;
   for (const auto& v : m.batches[0].verts) top = std::max(top, v.py);
   CHECK(top > 0.5f && top < 4.0f);
+}
+
+TEST(anim_state_machine_transitions_on_params_and_finish) {
+  mythos::Bone root;
+  root.name = "root";
+  mythos::Skeleton skeleton;
+  CHECK(skeleton.Set({root}));
+  mythos::Clip idle, walk, wave;
+  idle.name = "Idle";
+  idle.duration = 1;
+  walk.name = "Walk";
+  walk.duration = 1;
+  wave.name = "Wave";
+  wave.duration = 0.5;
+  wave.loop = false;
+  const std::vector<mythos::Clip> clips = {idle, walk, wave};
+  mythos::AnimStateMachine m(&skeleton, &clips);
+  CHECK(!m.AddState("x", "Nope"));
+  CHECK(m.AddState("idle", "Idle") && m.AddState("walk", "Walk") &&
+        m.AddState("wave", "Wave"));
+  CHECK(!m.AddState("idle", "Idle"));
+  m.AddTransition({"idle", "walk", {{"speed", mythos::AnimOp::kGreater, 0.1}}});
+  m.AddTransition({"walk", "idle", {{"speed", mythos::AnimOp::kLess, 0.1}}});
+  m.AddTransition({"*", "wave", {{"greet", mythos::AnimOp::kEqual, 1}}});
+  m.AddTransition({"wave", "idle", {}, true});
+  CHECK(m.State() == "idle");
+  m.Update(0.1);
+  CHECK(m.State() == "idle");
+  m.SetFloat("speed", 1.0);
+  m.Update(0.1);
+  CHECK(m.State() == "walk");
+  m.SetFloat("speed", 0.0);
+  m.Update(0.1);
+  CHECK(m.State() == "idle");
+  // Any state can wave; the wave ends by itself and returns to idle.
+  m.SetBool("greet", true);
+  m.Update(0.1);
+  CHECK(m.State() == "wave");
+  m.SetBool("greet", false);
+  m.Update(0.2);
+  CHECK(m.State() == "wave");
+  m.Update(0.4);
+  m.Update(0.1);
+  CHECK(m.State() == "idle");
+  CHECK(m.CurrentPose().size() == 1u);
 }
 
 }

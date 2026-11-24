@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "engine/data/save.h"
+#include "engine/gfx/anim_state.h"
 #include "engine/gfx/gltf.h"
 #include "engine/gfx/model.h"
 #include "engine/gfx/skeleton.h"
@@ -51,9 +52,9 @@ class Game {
   // convention).
   [[nodiscard]] mythos::Vec2 guide_pos() const { return guide_pos_; }
   [[nodiscard]] double guide_angle() const { return guide_angle_; }
-  [[nodiscard]] mythos::Pose guide_pose() const {
-    return animator_.CurrentPose();
-  }
+  [[nodiscard]] mythos::Pose guide_pose() const { return anim_.CurrentPose(); }
+  // The guide's animation state: idle, walk or wave.
+  [[nodiscard]] const std::string& guide_state() const { return anim_.State(); }
   // The line to show, a translation key, and how long it has left.
   [[nodiscard]] const std::string& message() const { return message_; }
   [[nodiscard]] double message_time() const { return message_time_; }
@@ -84,7 +85,7 @@ class Game {
   // The guide: a skinned, animated character walking a patrol with a
   // behaviour tree.
   mythos::GltfModel guide_;
-  mythos::Animator animator_;
+  mythos::AnimStateMachine anim_;
   mythos::ai::NodePtr brain_;
   std::vector<mythos::NavCell> waypoints_, path_;
   size_t next_waypoint_ = 0, path_step_ = 0;
@@ -92,6 +93,7 @@ class Game {
   double guide_angle_ = 0;
   bool guide_sees_player_ = false;
   bool guide_moving_ = false;
+  bool guide_saw_player_ = false;
   double dt_ = 0;
 
   std::string message_;

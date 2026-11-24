@@ -62,6 +62,7 @@ add_library(mythos_engine STATIC
     src/engine/editor/adapter.cpp
     src/engine/editor/level_doc.cpp
     src/engine/editor/project.cpp
+    src/engine/gfx/anim_state.cpp
     src/engine/gfx/font.cpp
     src/engine/gfx/gltf.cpp
     src/engine/gfx/grade.cpp
