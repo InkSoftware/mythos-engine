@@ -165,9 +165,9 @@ struct CameraState {
 
   // A shadow from the sun (or the moon) in an `outdoor` scene: 0 off (the
   // default; the picture is as without it), above 0 on. One orthographic map
-  // follows the viewer in two cascades (16 m and 52 m across: sharp shadows
-  // near, reaching 26 m); the Shadows setting (`shadow_level`) at 0 turns it
-  // off.
+  // follows the viewer in three cascades (16, 52 and 160 m across: sharp
+  // shadows near, reaching 80 m); the Shadows setting (`shadow_level`) at 0
+  // turns it off.
   double sun_shadow = 0;
 
   // Reflection probes (`SceneRenderer::AddReflectionProbe`): 0 (off, the
@@ -454,8 +454,8 @@ class SceneRenderer {
   void DrawReflectionProbes(const CameraState& cam, const Frame& f);
   bool CaptureReflectionProbe(const CameraState& cam, const Frame& f,
                               int index);
-  // Two cascades: a close one (more detail near the viewer) and a far one.
-  static constexpr int kSunCascades = 2;
+  // Three cascades: close (more detail near the viewer), wide and far.
+  static constexpr int kSunCascades = 3;
   RenderTarget sun_target_[kSunCascades];
   float sun_view_proj_[kSunCascades][16] = {};
   float sun_texel_ = 0;

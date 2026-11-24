@@ -393,6 +393,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uProbeTex", 8);
   world_program_.Set("uSunShadowTex", 9);
   world_program_.Set("uSunShadowTexFar", 11);
+  world_program_.Set("uSunShadowTexFar2", 13);
   world_program_.Set("uReflectionEnv", 10);
   world_program_.Set("uReflectionEnv2", 12);
 }
@@ -1059,6 +1060,8 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
     sun_target_[0].DepthTexture().Bind();
     ActiveTexture(kTexture0 + 11);
     sun_target_[1].DepthTexture().Bind();
+    ActiveTexture(kTexture0 + 13);
+    sun_target_[2].DepthTexture().Bind();
     ActiveTexture(kTexture0);
   }
   Uniform3f(u.sun_color, f.sky.light_color[0], f.sky.light_color[1],

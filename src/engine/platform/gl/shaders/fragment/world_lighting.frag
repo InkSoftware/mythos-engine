@@ -33,9 +33,10 @@ uniform vec3 uEnvHalf;             // half the box of the room around it for par
 uniform sampler2DArray uProbeTex;  // baked light over the floor plan: a layer per face of the ambient cube (+x -x +y -y +z -z)
 uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
 uniform float uSunShadow;      // 1: a shadow map of the outdoor light is bound
-uniform mat4 uSunVP[2];        // world -> each cascade's clip space (0 close, 1 wide)
+uniform mat4 uSunVP[3];        // world -> each cascade's clip space (0 close, 1 wide, 2 far)
 uniform sampler2D uSunShadowTex;     // the close cascade
 uniform sampler2D uSunShadowTexFar;  // the wide one
+uniform sampler2D uSunShadowTexFar2; // the far one
 uniform float uSunTexel;       // one texel in uv
 uniform vec3 uSunColor;    // direct light outdoors (the moon's, unless a time of day is set)
 uniform vec3 uSkyAmbient;  // ambient light outdoors
@@ -134,7 +135,8 @@ float sunCascade(vec3 p, int cascade, out float inside) {
     for (int y = -1; y <= 1; ++y)
         for (int x = -1; x <= 1; ++x) {
             vec2 uv = s.xy + vec2(float(x), float(y)) * uSunTexel;
-            float d = cascade == 0 ? texture(uSunShadowTex, uv).r : texture(uSunShadowTexFar, uv).r;
+            float d = cascade == 0 ? texture(uSunShadowTex, uv).r
+                        : cascade == 1 ? texture(uSunShadowTexFar, uv).r : texture(uSunShadowTexFar2, uv).r;
             lit += (d + 0.0008 < s.z) ? 0.0 : 1.0;
         }
     return lit / 9.0;
@@ -143,11 +145,12 @@ float sunCascade(vec3 p, int cascade, out float inside) {
 // The close cascade where the point is well inside it, blending into the wide one toward its edge, and fading out
 // past the wide one's edge where there is no map.
 float sunShadowFactor(vec3 p) {
-    float in0, in1;
+    float in0, in1, in2;
     float near = sunCascade(p, 0, in0);
-    float far = sunCascade(p, 1, in1);
-    float shadow = mix(far, near, in0);
-    return mix(1.0, shadow, max(in0, in1));
+    float mid = sunCascade(p, 1, in1);
+    float far = sunCascade(p, 2, in2);
+    float shadow = mix(mix(far, mid, in1), near, in0);
+    return mix(1.0, shadow, max(max(in0, in1), in2));
 }
 
 vec3 bumpNormal(vec3 n) {

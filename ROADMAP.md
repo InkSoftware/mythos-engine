@@ -238,8 +238,8 @@ more than was built.
 ### 4.4 Sun and day/night (S to M) - first version
 - **Progress:** `gfx/sky.h` (`SkyAt(hour)`, `NightLook`) and `CameraState::time_of_day` drive the sun or moon's direction and
   light, ambient, the sky gradient, stars, clouds and haze of an outdoor scene; with it unset the night is as it was.
-  The template shows it (`--outdoor --hour H`). A sun shadow (`CameraState::sun_shadow`, two orthographic cascades around the viewer, 26 m reach,
-  `gfx/sun_shadow.h`) is done. Not done: shadows beyond 26 m (a third cascade or a per-level fit) and a sun-aware sky
+  The template shows it (`--outdoor --hour H`). A sun shadow (`CameraState::sun_shadow`, three orthographic cascades (reaching 80 m) around the viewer, 26 m reach,
+  `gfx/sun_shadow.h`) is done. Not done: a sun-aware sky
   for the mirror and glass panes.
 - **Where:** `CameraState::sun` (direction, colour, intensity), a time-of-day
   curve in `gfx/sky.h` (headless), one cascade or a single shadow map for
@@ -320,7 +320,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** sun shadows beyond 26 m; the mirror and glass panes with the sun-aware sky, ambient occlusion, baked light
+- **Rendering:** the mirror and glass panes with the sun-aware sky, ambient occlusion, baked light
   and reflection probes; HDR reflection probes, a probe per chunk, a real roughness filter;
   lightmaps and probes at several heights; instancing skinned models and LOD for baked world geometry; SSAO applied to
   the ambient term inside the world shader.

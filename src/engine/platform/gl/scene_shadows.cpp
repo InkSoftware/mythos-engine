@@ -185,12 +185,12 @@ uint64_t SceneRenderer::SceneKey(const CameraState& cam) const {
 }
 
 // The shadow maps of the light that lights an outdoor scene (the sun or the
-// moon): two orthographic depth maps centred on the viewer (a close, sharp one
-// and a wide one), each redrawn only when the scene, its snapped box or a
-// shadow caster changes.
+// moon): three orthographic depth maps centred on the viewer (a close, sharp
+// one, a wide one and a far one), each redrawn only when the scene, its snapped
+// box or a shadow caster changes.
 void SceneRenderer::DrawSunShadow(const CameraState& cam, const Frame& f) {
   constexpr int kSunMapSize = 2048;
-  constexpr float kExtents[kSunCascades] = {8.0f, 26.0f};
+  constexpr float kExtents[kSunCascades] = {8.0f, 26.0f, 80.0f};
   constexpr float kSunDepth = 80.0f;
   sun_on_ = false;
   if (!cam.outdoor || cam.sun_shadow <= 0.0 || cam.shadow_level <= 0 ||
