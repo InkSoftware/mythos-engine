@@ -4,6 +4,8 @@ in vec3 aNormal;
 in vec2 aUV;
 in vec4 aJoints;   // skinned batches only: bone indices and weights
 in vec4 aWeights;
+in mat4 aModel;      // per instance (locations 5..8), read when uInstanced is 1
+uniform int uInstanced;
 uniform int uSkinned;  // 1 when the batch carries a skin
 uniform mat4 uBones[64];
 uniform mat4 uView;
@@ -23,9 +25,10 @@ void main() {
         p = s * p;
         n = mat3(s) * n;
     }
-    vec4 w = uModel * p;
+    mat4 model = uInstanced == 1 ? aModel : uModel;
+    vec4 w = model * p;
     vWorld = w.xyz;
-    vNormal = mat3(uModel) * n;
+    vNormal = mat3(model) * n;
     vUV = aUV;
     gl_Position = uProj * uView * w;
 }

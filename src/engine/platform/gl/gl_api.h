@@ -95,6 +95,8 @@ constexpr GLenum kNearestFilter = 0x2600;
   X(void, DepthMask, GLboolean flag)                                         \
   X(void, PolygonOffset, GLfloat factor, GLfloat units)                      \
   X(void, DrawArrays, GLenum mode, GLint first, GLsizei count)               \
+  X(void, DrawArraysInstanced, GLenum mode, GLint first, GLsizei count,      \
+    GLsizei instance_count)                                                  \
   X(void, GenTextures, GLsizei n, GLuint* textures)                          \
   X(void, DeleteTextures, GLsizei n, const GLuint* textures)                 \
   X(void, TexSubImage2D, GLenum target, GLint level, GLint x, GLint y,       \
@@ -121,6 +123,7 @@ constexpr GLenum kNearestFilter = 0x2600;
     GLenum usage)                                                            \
   X(void, EnableVertexAttribArray, GLuint index)                             \
   X(void, DisableVertexAttribArray, GLuint index)                            \
+  X(void, VertexAttribDivisor, GLuint index, GLuint divisor)                 \
   X(void, VertexAttribPointer, GLuint index, GLint size, GLenum type,        \
     GLboolean normalized, GLsizei stride, const void* pointer)               \
   X(void, BindAttribLocation, GLuint program, GLuint index,                  \

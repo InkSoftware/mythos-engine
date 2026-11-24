@@ -247,7 +247,8 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ### 5.2 Instancing and LOD (M)
 - **Progress:** `gfx/lod.h` plans each pass's model instances: a distance cull (`ModelInstance::max_distance`), a far model
   swapped in beyond a distance (`SceneRenderer::SetModelLod`) and a sort by model. Shadow casters are never culled or
-  swapped. Not done: GPU instancing (one draw for many matrices) and LOD for the baked world geometry.
+  swapped. GPU instancing: runs of static instances of one model draw as one instanced draw per batch (200 chairs:
+  13 draw calls instead of 212). Not done: instancing skinned models and LOD for the baked world geometry.
 - Instanced draw for repeated props (same model, many matrices) and a
   distance LOD or cull per model. The 8-cell chunking already helps; this
   removes per-prop draw calls.

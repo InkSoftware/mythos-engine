@@ -221,12 +221,13 @@ void SceneRenderer::DrawSunShadow(const CameraState& cam, const Frame& f) {
 
   const GLint saved_model = u_model_, saved_emissive = u_emissive_,
               saved_alpha = u_alpha_test_, saved_skinned = u_skinned_,
-              saved_bones = u_bones_;
+              saved_bones = u_bones_, saved_instanced = u_instanced_;
   u_model_ = shadow_program_.Uniform("uModel");
   u_emissive_ = -1;
   u_alpha_test_ = shadow_program_.Uniform("uAlphaTest");
   u_skinned_ = shadow_program_.Uniform("uSkinned");
   u_bones_ = shadow_program_.Uniform("uBones");
+  u_instanced_ = shadow_program_.Uniform("uInstanced");
   bind_normals_ = false;
   shadow_program_.Use();
   shadow_program_.Set("uTex", 0);
@@ -250,6 +251,7 @@ void SceneRenderer::DrawSunShadow(const CameraState& cam, const Frame& f) {
   u_alpha_test_ = saved_alpha;
   u_skinned_ = saved_skinned;
   u_bones_ = saved_bones;
+  u_instanced_ = saved_instanced;
   bind_normals_ = true;
 }
 
@@ -282,12 +284,13 @@ void SceneRenderer::DrawShadows(const CameraState& cam) {
   // Borrow the batch drawing machinery for the shadow program; restored below.
   const GLint saved_model = u_model_, saved_emissive = u_emissive_,
               saved_alpha = u_alpha_test_, saved_skinned = u_skinned_,
-              saved_bones = u_bones_;
+              saved_bones = u_bones_, saved_instanced = u_instanced_;
   u_model_ = shadow_program_.Uniform("uModel");
   u_emissive_ = -1;
   u_alpha_test_ = shadow_program_.Uniform("uAlphaTest");
   u_skinned_ = shadow_program_.Uniform("uSkinned");
   u_bones_ = shadow_program_.Uniform("uBones");
+  u_instanced_ = shadow_program_.Uniform("uInstanced");
   bind_normals_ = false;
   shadow_program_.Use();
   shadow_program_.Set("uTex", 0);
@@ -312,6 +315,7 @@ void SceneRenderer::DrawShadows(const CameraState& cam) {
   u_alpha_test_ = saved_alpha;
   u_skinned_ = saved_skinned;
   u_bones_ = saved_bones;
+  u_instanced_ = saved_instanced;
   bind_normals_ = true;
 }
 

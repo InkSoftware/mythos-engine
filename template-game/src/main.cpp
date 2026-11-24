@@ -99,6 +99,8 @@ int main(const int argc, char** const argv) {
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
   // `--controls` opens the controls page at the start (for a screenshot).
+  // `--crowd N` scatters N chairs as model instances (a stress test for
+  // instancing; `--no-instancing` draws them one by one to compare).
   // `--sun-shadow` (with `--outdoor`) adds the shadow of the sun or the moon.
   // `--baked` bakes the lamps into light probes instead of lighting with them
   // live (no shadows from them, no 32-lamp limit).
@@ -110,6 +112,8 @@ int main(const int argc, char** const argv) {
   bool ssao = false;
   bool baked = false;
   bool sun_shadow = false;
+  int crowd = 0;
+  bool instancing = true;
   bool start_controls = false;
   double hour = 20.0;
   for (int i = 1; i < argc; ++i) {
@@ -118,6 +122,8 @@ int main(const int argc, char** const argv) {
     if (arg == "--ssao") ssao = true;
     if (arg == "--baked") baked = true;
     if (arg == "--sun-shadow") sun_shadow = true;
+    if (arg == "--no-instancing") instancing = false;
+    if (i + 1 < argc && arg == "--crowd") crowd = std::atoi(argv[i + 1]);
     if (arg == "--controls") start_controls = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (i + 1 < argc && arg == "--hour")
@@ -159,6 +165,11 @@ int main(const int argc, char** const argv) {
       mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
   renderer.UploadDoorPanel(mythos::BuildDoorPanel());
   const int guide_model = renderer.UploadModel(guide.batches);
+  renderer.SetInstancing(instancing);
+  int chair_model = -1;
+  if (const mythos::Model* chair = game.models().Find("chair")) {
+    chair_model = renderer.UploadModel(chair->batches);
+  }
 
   // Baked light: the static lamps of the level become a probe grid, and are
   // then left out of the frame's live lights.
@@ -389,6 +400,16 @@ int main(const int argc, char** const argv) {
                 pete.matrix);
     pete.skin = mythos::SkinMatrices(guide.skeleton, game.guide_pose());
     cam.instances.push_back(pete);
+    // The crowd: the same chair many times, a different spot and turn each.
+    for (int i = 0; chair_model >= 0 && i < crowd; ++i) {
+      mythos::ModelInstance chair;
+      chair.model = chair_model;
+      chair.views = mythos::ModelInstance::kMain;
+      const double x = 1.5 + 7.0 * ((i * 37) % 101) / 101.0;
+      const double z = 1.5 + 3.5 * ((i * 61) % 103) / 103.0;
+      PlaceMatrix(x, z, i * 0.7, chair.matrix);
+      cam.instances.push_back(chair);
+    }
 
     // A little text on the overlay, and the cutscene's fade over everything.
     std::ranges::fill(overlay.px, 0u);
@@ -437,6 +458,8 @@ int main(const int argc, char** const argv) {
     renderer.Render(cam, w, h, &overlay, &text_layer);
     if (!screenshot.empty() && frame == 90) {
       mythos::WriteFramebufferPpm(screenshot, w, h);
+      std::fprintf(stderr, "draw calls: %d, triangles: %d\n",
+                   renderer.Stats().draw_calls, renderer.Stats().triangles);
       break;
     }
     window.Swap();

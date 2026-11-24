@@ -285,6 +285,12 @@ class SceneRenderer {
   bool ReloadShaders(const std::string& dir);
   void ReloadTextures(const TextureLibrary& textures);
 
+  // Draws a run of instances of one static model (two or more in a row, no
+  // skin) as one instanced draw per batch instead of one draw each: the
+  // default. Off draws each separately (for comparison and debugging; the
+  // picture is the same).
+  void SetInstancing(bool on) { instancing_ = on; }
+
   void SetModelLod(int model, int far_model, double distance) {
     lods_.Set(model, far_model, distance);
   }
@@ -391,6 +397,12 @@ class SceneRenderer {
   void DrawInstances(const CameraState& cam, unsigned views);
   void UploadSkinnedBatch(BatchList& dst, const Batch& b);
   bool BuildPrograms();
+  GlBuffer instance_vbo_;  // one matrix per instance of a run, 16 floats each
+  std::vector<float> instance_data_;
+  int instance_count_ = 0;  // > 0 while DrawTris draws a run as instances
+  bool instancing_ = true;
+  gl::GLint u_instanced_ = -1;
+  void SetInstanceLayout();
   [[nodiscard]] const char* ShaderSource(const char* embedded) const;
   void StoreTexture(std::vector<std::pair<std::string, GlTexture>>& list,
                     const std::string& name, int w, int h, const void* rgba,

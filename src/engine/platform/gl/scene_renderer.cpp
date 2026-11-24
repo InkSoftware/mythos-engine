@@ -137,6 +137,8 @@ constexpr int kFirstShadowUnit = 1, kHandShadowUnit = 5;
 
 // A skinned vertex is a Vertex followed by SkinWeights: joints (4 floats) and
 // weights (4 floats).
+constexpr float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0,
+                                 0, 0, 1, 0, 0, 0, 0, 1};
 constexpr GLsizei kSkinnedVertexStride = 64;
 
 struct SkinnedVertex {
@@ -230,7 +232,8 @@ bool SceneRenderer::BuildPrograms() {
     }
   };
   const std::initializer_list<GlProgram::Attrib> world_attribs = {
-      {0, "aPos"}, {1, "aNormal"}, {2, "aUV"}, {3, "aJoints"}, {4, "aWeights"}};
+      {0, "aPos"},    {1, "aNormal"},  {2, "aUV"},
+      {3, "aJoints"}, {4, "aWeights"}, {5, "aModel"}};
   const std::initializer_list<GlProgram::Attrib> quad_attribs = {{0, "aPos"},
                                                                  {2, "aUV"}};
   build(world_program_, shaders::kWorldGeometryVert,
@@ -280,6 +283,10 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
   BuildFullscreenQuad();
   UploadTextures(textures);
 
+  {
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    instance_vbo_.Upload(identity, sizeof(identity), kDynamicDraw);
+  }
   mirror_vbo_.Upload(nullptr, 6 * sizeof(Vertex), kDynamicDraw);
   mirror_vao_.Create();
   mirror_vao_.Bind();
@@ -317,6 +324,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u_alpha_test_ = world_program_.Uniform("uAlphaTest");
   u_opacity_ = world_program_.Uniform("uOpacity");
   u_skinned_ = world_program_.Uniform("uSkinned");
+  u_instanced_ = world_program_.Uniform("uInstanced");
   u_bones_ = world_program_.Uniform("uBones");
   u_decal_ = world_program_.Uniform("uDecal");
   WorldUniforms& u = world_u_;
@@ -552,6 +560,7 @@ void SceneRenderer::UploadBatches(BatchList& dst,
     g.vao.Create();
     g.vao.Bind();
     SetVertexLayout(g.vbo.Id());
+    SetInstanceLayout();
     BindVertexArray(0);
     g.texture = TextureFor(b.texture);
     g.normal = NormalMapFor(b.texture);
@@ -591,6 +600,7 @@ void SceneRenderer::UploadSkinnedBatch(BatchList& dst, const Batch& b) {
   g.vao.Create();
   g.vao.Bind();
   SetVertexLayout(g.vbo.Id(), true);
+  SetInstanceLayout();
   BindVertexArray(0);
   g.texture = TextureFor(b.texture);
   g.normal = NormalMapFor(b.texture);
@@ -701,12 +711,31 @@ void SceneRenderer::BindBatchState(const GpuBatch& b) {
 }
 
 void SceneRenderer::DrawTris(const gl::GLint first, const GLsizei count) {
-  DrawArrays(kTriangles, first, count);
+  const int copies = std::max(1, instance_count_);
+  if (instance_count_ > 0) {
+    gl::DrawArraysInstanced(kTriangles, first, count, instance_count_);
+  } else {
+    DrawArrays(kTriangles, first, count);
+  }
   if (counting_shadows_) {
     ++stats_.shadow_draw_calls;
   } else {
     ++stats_.draw_calls;
-    stats_.triangles += count / 3;
+    stats_.triangles += count / 3 * copies;
+  }
+}
+
+// The per-instance model matrix: attributes 5..8 (a mat4 takes four
+// locations), one value per instance. Every world VAO carries them, reading
+// the shared `instance_vbo_`; a draw that is not instanced ignores them (the
+// shader reads `uModel` unless `uInstanced` is 1).
+void SceneRenderer::SetInstanceLayout() {
+  BindBuffer(kArrayBuffer, instance_vbo_.Id());
+  for (GLuint k = 0; k < 4; ++k) {
+    EnableVertexAttribArray(5 + k);
+    VertexAttribPointer(5 + k, 4, kFloat, kFalse, 16 * sizeof(float),
+                        reinterpret_cast<const void*>(k * 4 * sizeof(float)));
+    gl::VertexAttribDivisor(5 + k, 1);
   }
 }
 
@@ -999,9 +1028,42 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
     lod_requests_.push_back(r);
     lod_instances_.push_back(&inst);
   }
-  for (const LodDraw& draw : PlanDraws(lod_requests_, lod ? lods_ : no_lods_)) {
+  const std::vector<LodDraw> plan =
+      PlanDraws(lod_requests_, lod ? lods_ : no_lods_);
+  const float* const identity = kIdentity;
+  for (size_t i = 0; i < plan.size();) {
+    const LodDraw& draw = plan[i];
     const ModelInstance& inst = *lod_instances_[draw.request];
-    if (std::cmp_greater_equal(draw.model, models_.size())) continue;
+    if (std::cmp_greater_equal(draw.model, models_.size())) {
+      ++i;
+      continue;
+    }
+    const BatchList& batches = models_[static_cast<size_t>(draw.model)];
+    // A run of static instances of one model (the plan is sorted by model)
+    // is one instanced draw per batch: the matrices go up in one buffer.
+    size_t run = 1;
+    if (instancing_ && inst.skin.empty()) {
+      while (i + run < plan.size() && plan[i + run].model == draw.model &&
+             lod_instances_[plan[i + run].request]->skin.empty()) {
+        ++run;
+      }
+    }
+    if (run >= 2) {
+      instance_data_.clear();
+      for (size_t k = 0; k < run; ++k) {
+        const float* m = lod_instances_[plan[i + k].request]->matrix;
+        instance_data_.insert(instance_data_.end(), m, m + 16);
+      }
+      instance_vbo_.Upload(instance_data_.data(),
+                           instance_data_.size() * sizeof(float), kDynamicDraw);
+      Uniform1i(u_instanced_, 1);
+      instance_count_ = static_cast<int>(run);
+      DrawBatches(batches, identity);
+      instance_count_ = 0;
+      Uniform1i(u_instanced_, 0);
+      i += run;
+      continue;
+    }
     // The bone matrices (at most kMaxBones) go up once per instance; static
     // batches of the same model ignore them.
     const bool skinned = !inst.skin.empty();
@@ -1011,8 +1073,9 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
       Uniform1i(u_skinned_, 1);
       UniformMatrix4fv(u_bones_, count, kFalse, inst.skin[0].data());
     }
-    DrawBatches(models_[static_cast<size_t>(draw.model)], inst.matrix);
+    DrawBatches(batches, inst.matrix);
     if (skinned) Uniform1i(u_skinned_, 0);
+    ++i;
   }
 }
 
