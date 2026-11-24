@@ -12,6 +12,10 @@ Wavefront OBJ whose material names are texture names, so for each model this too
      texture, named after the file; the engine reads the <tex>_nrm / _rough / _metal / _ao companions by name),
   4. records the sources in CREDITS.md and in the credits data.
 
+A rigged, animated model is not baked to OBJ (that drops the skin): give its Spec `skinned=True` and the tool keeps it as
+one binary glTF, assets/characters/<name>.glb, for the engine's `LoadGlb` (see `pack_glb`; the tests are
+tools/test_mythos_models.py).
+
 Two callers use it: the engine's own tools/fetch_cc0_models.py (the basic models of houses and offices, shipped in
 the engine's assets) and a game's (its own models, laid over the engine's). Either gives `main` its MODELS
 (game name -> Spec) and its root folder.
@@ -40,13 +44,14 @@ import tempfile
 import urllib.request
 
 ROOT = None  # the repository the models are written into: set by configure()
-MODELS_DIR = TEX_DIR = CREDITS = None
+MODELS_DIR = TEX_DIR = CREDITS = CHARACTERS_DIR = None
 
 
 def configure(root):
     """Writes into <root>/assets/models and <root>/assets/modeltex, and credits into <root>/CREDITS.md."""
-    global ROOT, MODELS_DIR, TEX_DIR, CREDITS
+    global ROOT, MODELS_DIR, TEX_DIR, CREDITS, CHARACTERS_DIR
     ROOT = root
+    CHARACTERS_DIR = os.path.join(root, "assets", "characters")
     MODELS_DIR = os.path.join(root, "assets", "models")
     TEX_DIR = os.path.join(root, "assets", "modeltex")
     CREDITS = os.path.join(root, "CREDITS.md")
@@ -86,11 +91,16 @@ class Spec:
     what    what it is in the game, for the credits
     local   a glTF file you downloaded yourself (then `ph` is only a label); needs `credit`
     credit  (name, author, license, url) of a local model
+    skinned True keeps a rigged, animated model as it is: instead of an OBJ it writes assets/characters/<name>.glb (one
+            binary glTF with its skin and animations, for the engine's `LoadGlb`). Nothing is rotated, scaled or
+            baked (scale, yaw, ... are ignored): what the author made is what the game gets. The loader reads the
+            material colours, not the textures, so the images are left out; `size`, `art`, `glass` and `cutout` do nothing
     """
 
     def __init__(self, ph, scale=None, fit=(CELL, CELL), height=None, yaw=0, stretch=1.35, what="", local=None,
-                 credit=None, pitch=0, size=None, roll=0, glass=True, art=None, cutout=False):
+                 credit=None, pitch=0, size=None, roll=0, glass=True, art=None, cutout=False, skinned=False):
         self.pitch, self.size, self.roll = pitch, size, roll
+        self.skinned = skinned
         self.glass, self.art, self.cutout = glass, art, cutout
         self.ph, self.scale, self.fit, self.height, self.yaw, self.stretch, self.what = ph, scale, fit, height, yaw, stretch, what
         self.local, self.credit = local, credit
@@ -132,6 +142,56 @@ def download(ph, cache):
 
 
 # ---------------------------------------------------------------- glTF
+
+def pack_glb(gltf_path):
+    """A .gltf with its external buffers as the bytes of one binary glTF (.glb), keeping the skins and animations.
+    The buffers are joined into a single one (the buffer views are moved to match) and the images, textures and
+    samplers are dropped, with the material references to them: the engine's loader reads base colours only."""
+    with open(gltf_path, encoding="utf-8") as f:
+        gltf = json.load(f)
+    folder = os.path.dirname(gltf_path)
+    blobs = []
+    for b in gltf.get("buffers", []):
+        uri = b.get("uri")
+        if uri is None:
+            sys.exit(f"{gltf_path}: a buffer without a uri (already a .glb?)")
+        if uri.startswith("data:"):
+            import base64
+            blobs.append(base64.b64decode(uri.split(",", 1)[1]))
+        else:
+            with open(os.path.join(folder, urllib.request.url2pathname(uri)), "rb") as f:
+                blobs.append(f.read())
+    binary = bytearray()
+    starts = []
+    for blob in blobs:
+        while len(binary) % 4:
+            binary.append(0)
+        starts.append(len(binary))
+        binary += blob
+    for view in gltf.get("bufferViews", []):
+        view["byteOffset"] = view.get("byteOffset", 0) + starts[view.get("buffer", 0)]
+        view["buffer"] = 0
+    gltf["buffers"] = [{"byteLength": len(binary)}]
+    for key in ("images", "textures", "samplers"):
+        gltf.pop(key, None)
+
+    def strip(node):
+        if isinstance(node, dict):
+            for key in [k for k in node if k.endswith("Texture")]:
+                del node[key]
+            for value in node.values():
+                strip(value)
+        elif isinstance(node, list):
+            for value in node:
+                strip(value)
+    strip(gltf.get("materials", []))
+    text = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    text += b" " * (-len(text) % 4)
+    binary += b"\0" * (-len(binary) % 4)
+    total = 12 + 8 + len(text) + 8 + len(binary)
+    return (b"glTF" + struct.pack("<II", 2, total) + struct.pack("<II", len(text), 0x4E4F534A) + text +
+            struct.pack("<II", len(binary), 0x004E4942) + bytes(binary))
+
 
 COMPONENT = {5120: ("b", 1), 5121: ("B", 1), 5122: ("h", 2), 5123: ("H", 2), 5125: ("I", 4), 5126: ("f", 4)}
 WIDTH = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
@@ -340,6 +400,13 @@ def convert(name, spec, cache, size):
         gltf_path, info = download(spec.ph, cache)
         info["license"] = "CC0 1.0"
         info["url"] = f"https://polyhaven.com/a/{spec.ph}"
+    if spec.skinned:
+        os.makedirs(CHARACTERS_DIR, exist_ok=True)
+        data = pack_glb(gltf_path)
+        with open(os.path.join(CHARACTERS_DIR, name + ".glb"), "wb") as f:
+            f.write(data)
+        print(f"{name:10} <- {spec.ph:28} skinned, kept as a glb ({len(data) // 1024} KB)")
+        return info
     gltf, groups = load_geometry(gltf_path)
     if not spec.glass and not spec.cutout:
         groups = {mi: t for mi, t in groups.items()
@@ -446,11 +513,11 @@ def write_credits(done, tool, inherit=None):
     assets/data/model_credits.json (the engine's, for the games to list)."""
     begin, end = "<!-- cc0-models:begin -->", "<!-- cc0-models:end -->"
     rows = [begin, "", "## 3D models — [Poly Haven](https://polyhaven.com) (CC0) and others", "",
-            f"Converted to OBJ and BMP by `{tool}` (textures in `assets/modeltex/`).", "",
+            f"Converted to OBJ and BMP by `{tool}` (textures in `assets/modeltex/`); a rigged model is kept as a `.glb` in `assets/characters/`.", "",
             "| Model | Source model | Author | Licence | Used for |", "| --- | --- | --- | --- | --- |"]
     for name, (spec, info) in sorted(done.items()):
         authors = ", ".join(info.get("authors", {}).keys()) or "Poly Haven"
-        rows.append(f"| `{name}.obj` | [{info.get('name', spec.ph)}]({info['url']}) | {authors} | {info['license']} | {spec.what} |")
+        rows.append(f"| `{name}.{'glb' if spec.skinned else 'obj'}` | [{info.get('name', spec.ph)}]({info['url']}) | {authors} | {info['license']} | {spec.what} |")
     rows += ["", end]
     text = open(CREDITS, encoding="utf-8").read()
     block = "\n".join(rows)
