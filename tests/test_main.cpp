@@ -51,6 +51,7 @@
 #include "engine/gfx/particles.h"
 #include "engine/gfx/pbr.h"
 #include "engine/gfx/render_stats.h"
+#include "engine/gfx/skeleton.h"
 #include "engine/gfx/surface.h"
 #include "engine/gfx/text.h"
 #include "engine/gfx/textures.h"
@@ -4092,6 +4093,103 @@ TEST(ai_sight_and_hearing) {
   CHECK(mythos::ai::CanHear(l, {1.5, 1.5}, 2.0, n));
   CHECK(mythos::ai::CanHear(l, {4.5, 3.5}, 1.0, n));
   CHECK(!mythos::ai::CanHear(l, {4.5, 3.5}, 0.0, n));
+}
+
+namespace {
+// Two bones: a root at the origin and a child one metre up.
+mythos::Skeleton TwoBones() {
+  mythos::Bone root;
+  root.name = "root";
+  mythos::Bone arm;
+  arm.name = "arm";
+  arm.parent = 0;
+  arm.bind.t = {0, 1, 0};
+  mythos::Skeleton s;
+  CHECK(s.Set({root, arm}));
+  return s;
+}
+
+mythos::Clip SwingClip() {
+  mythos::Clip c;
+  c.name = "swing";
+  c.duration = 2.0;
+  mythos::BoneTrack t;
+  t.bone = 0;
+  t.rotation = {{0.0, {}},
+                {2.0, mythos::QuatAxisAngle({0, 0, 1}, mythos::kPi / 2)}};
+  t.translation = {{0.0, {0, 0, 0}}, {2.0, {4, 0, 0}}};
+  c.tracks.push_back(t);
+  return c;
+}
+}
+
+TEST(skeleton_validates_and_bind_pose_skins_to_identity) {
+  mythos::Skeleton s = TwoBones();
+  CHECK_EQ(s.Count(), 2);
+  CHECK_EQ(s.Find("arm"), 1);
+  CHECK_EQ(s.Find("none"), -1);
+  mythos::Bone bad;
+  bad.parent = 0;  // a parent that does not come first
+  CHECK(!s.Set({bad}));
+  CHECK_EQ(s.Count(), 2);
+  const auto skin = mythos::SkinMatrices(s, mythos::BindPose(s));
+  CHECK_EQ(skin.size(), 2u);
+  for (const auto& m : skin) {
+    for (int i = 0; i < 16; ++i) {
+      CHECK(std::fabs(m[static_cast<size_t>(i)] - ((i % 5 == 0) ? 1.f : 0.f)) <
+            1e-5);
+    }
+  }
+}
+
+TEST(skeleton_samples_keys_and_moves_children) {
+  const mythos::Skeleton s = TwoBones();
+  const mythos::Clip c = SwingClip();
+  const mythos::Pose mid = mythos::SamplePose(s, c, 1.0);
+  CHECK(std::fabs(mid[0].t.x - 2.0) < 1e-9);
+  // Looping wraps; the end of the loop is the start again.
+  CHECK(std::fabs(mythos::SamplePose(s, c, 3.0)[0].t.x - 2.0) < 1e-9);
+  mythos::Clip once = c;
+  once.loop = false;
+  CHECK(std::fabs(mythos::SamplePose(s, once, 9.0)[0].t.x - 4.0) < 1e-9);
+  // At the end the root is turned 90 degrees about z: the child that stood at
+  // (0,1,0) above it ends up at (-1,0,0) from the root, so (3,0,0) overall.
+  const auto skin = mythos::SkinMatrices(s, mythos::SamplePose(s, once, 2.0));
+  const auto& m = skin[1];             // maps the bind position of the arm bone
+  const float x = m[12] + m[4] * 1.f;  // bind-space point (0,1,0)
+  const float y = m[13] + m[5] * 1.f;
+  CHECK(std::fabs(x - 3.0) < 1e-4 && std::fabs(y - 0.0) < 1e-4);
+  // A track for a bone that is not there is ignored.
+  mythos::Clip stray = c;
+  stray.tracks[0].bone = 7;
+  CHECK(std::fabs(mythos::SamplePose(s, stray, 1.0)[0].t.x) < 1e-9);
+}
+
+TEST(skeleton_blend_slerp_and_crossfade) {
+  const mythos::Quat a, b = mythos::QuatAxisAngle({0, 0, 1}, mythos::kPi);
+  const mythos::Quat h = mythos::Slerp(a, b, 0.5);
+  CHECK(std::fabs(h.z - std::sin(mythos::kPi / 4)) < 1e-9);
+  // The long way round is avoided.
+  const mythos::Quat neg{-a.x, -a.y, -a.z, -a.w};
+  CHECK(std::fabs(mythos::Slerp(a, neg, 0.5).w) > 0.99);
+
+  const mythos::Skeleton s = TwoBones();
+  mythos::Clip swing = SwingClip();
+  swing.loop = false;  // holds its last pose while fading out
+  mythos::Clip still;
+  still.duration = 1.0;
+  mythos::Animator anim(&s);
+  anim.Play(&swing);
+  anim.Update(2.0 - 1e-9);  // root.x nearly 4
+  anim.Play(&still, 1.0);
+  CHECK(anim.Current() == &still);
+  CHECK(std::fabs(anim.CurrentPose()[0].t.x - 4.0) < 1e-6);
+  anim.Update(0.5);  // halfway through the fade
+  const double mid = anim.CurrentPose()[0].t.x;
+  CHECK(std::fabs(mid - 2.0) < 1e-6);
+  anim.Update(0.6);
+  CHECK(std::fabs(anim.CurrentPose()[0].t.x) < 1e-9);
+  CHECK(!anim.Finished());
 }
 
 }

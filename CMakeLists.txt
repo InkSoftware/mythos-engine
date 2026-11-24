@@ -65,6 +65,7 @@ add_library(mythos_engine STATIC
     src/engine/gfx/grade.cpp
     src/engine/gfx/materials.cpp
     src/engine/gfx/mesh.cpp
+    src/engine/gfx/skeleton.cpp
     src/engine/gfx/model.cpp
     src/engine/gfx/normalmap.cpp
     src/engine/gfx/particles.cpp

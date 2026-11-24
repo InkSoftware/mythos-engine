@@ -141,6 +141,11 @@ Size guide: S is up to about 2 days, M about a week, L two weeks or more.
 ## Phase 3: Life (the largest, so it comes after the cheap work)
 
 ### 3.1 Skeletal animation (L)
+- **Progress:** `gfx/skeleton.h` has the bone hierarchy (at most 64, parents
+  first), keyframed clips, a sampler (loop or clamp), pose blending, an
+  `Animator` crossfade and `SkinMatrices` (headless, tested). Not done: the
+  glTF loader, GPU skinning in the shaders (and shadow pass), `ModelInstance`
+  pose handles, an animation state machine, `mythos_models.py` keeping skins.
 - **Why:** models are static OBJ, so no animated NPCs, creatures or doors.
 - **Where:** `gfx/skeleton.h` (bones, skin weights, clips, sampler, blend,
   crossfade, all CPU and tested), a glTF 2.0 loader for skins and clips
