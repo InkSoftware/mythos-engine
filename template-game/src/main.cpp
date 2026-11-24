@@ -103,6 +103,8 @@ int main(const int argc, char** const argv) {
   // screenshot).
   // `--crowd N` scatters N chairs as model instances (a stress test for
   // instancing; `--no-instancing` draws them one by one to compare).
+  // `--reflections` captures a reflection probe in each room: shiny things
+  // (the toolbox, the bucket) then reflect the room.
   // `--sun-shadow` (with `--outdoor`) adds the shadow of the sun or the moon.
   // `--baked` bakes the lamps into light probes instead of lighting with them
   // live (no shadows from them, no 32-lamp limit).
@@ -114,6 +116,7 @@ int main(const int argc, char** const argv) {
   bool ssao = false;
   bool baked = false;
   bool sun_shadow = false;
+  bool reflections = false;
   int crowd = 0;
   bool instancing = true;
   bool start_controls = false;
@@ -125,6 +128,7 @@ int main(const int argc, char** const argv) {
     if (arg == "--ssao") ssao = true;
     if (arg == "--baked") baked = true;
     if (arg == "--sun-shadow") sun_shadow = true;
+    if (arg == "--reflections") reflections = true;
     if (arg == "--no-instancing") instancing = false;
     if (i + 1 < argc && arg == "--crowd")
       crowd = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
@@ -171,6 +175,10 @@ int main(const int argc, char** const argv) {
   renderer.UploadDoorPanel(mythos::BuildDoorPanel());
   const int guide_model = renderer.UploadModel(guide.batches);
   renderer.SetInstancing(instancing);
+  if (reflections) {
+    renderer.AddReflectionProbe(5.0, 1.2, 3.0);   // the first room
+    renderer.AddReflectionProbe(14.0, 1.2, 3.0);  // the back room
+  }
   int chair_model = -1;
   if (const mythos::Model* chair = game.models().Find("chair")) {
     chair_model = renderer.UploadModel(chair->batches);
@@ -408,6 +416,7 @@ int main(const int argc, char** const argv) {
     cam.time = clock.Seconds();
     cam.outdoor = outdoor;
     cam.sun_shadow = sun_shadow ? 1.0 : 0.0;
+    cam.reflections = reflections ? 1.0 : 0.0;
     if (outdoor)
       cam.time_of_day = std::fmod(hour + clock.Seconds() / 10.0, 24.0);
     for (const mythos::Vec3& p :

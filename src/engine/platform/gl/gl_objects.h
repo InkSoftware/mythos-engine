@@ -214,6 +214,41 @@ class DepthBuffer {
   gl::GLuint id_ = 0;
 };
 
+// A cube map of the scene seen from a point (RGBA8, with mip levels for blurry
+// reflections of rough surfaces) and a framebuffer to draw its faces into.
+// Uses an external depth buffer of the same size, which must outlive it.
+class ReflectionCube {
+ public:
+  ReflectionCube() = default;
+
+  ~ReflectionCube() { Reset(); }
+
+  ReflectionCube(const ReflectionCube&) = delete;
+
+  ReflectionCube& operator=(const ReflectionCube&) = delete;
+
+  void Create(int size, const DepthBuffer& depth);
+
+  void Reset();
+
+  // Binds the framebuffer with face 0..5 (+X, -X, +Y, -Y, +Z, -Z) as the
+  // colour attachment and sets the viewport to the whole face.
+  void BindFace(int face) const;
+
+  // Builds the mip chain after all six faces are drawn.
+  void BuildMips() const;
+
+  [[nodiscard]] gl::GLuint Texture() const { return tex_; }
+  [[nodiscard]] int Size() const { return size_; }
+  [[nodiscard]] bool Valid() const { return fbo_ != 0; }
+  // Number of mip levels (the highest level index is one less).
+  [[nodiscard]] int Levels() const;
+
+ private:
+  gl::GLuint tex_ = 0, fbo_ = 0;
+  int size_ = 0;
+};
+
 // A cube map of R32F distances with a framebuffer; a face is chosen with
 // BindFace(). Uses an external depth buffer, which must outlive it and match
 // its size.

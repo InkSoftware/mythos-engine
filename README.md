@@ -13,7 +13,7 @@ listen to and pick up, menus, and a bit of procedural art.
   `AppendSceneGeometry`; tile flags `openCeiling` / `openFloor` leave a stairwell open between two floors, and a
   door panel carries its floor's height: `DoorInstance::y`). The engine has no stairs and no height for the player:
   walking up is the game's rule.
-- **Rendering** (OpenGL 4.1 core): per-pixel lighting with up to 32 lamps a frame plus baked light probes for the static ones (`gfx/probes.h`) and a hand light (torch or lighter), shadows from
+- **Rendering** (OpenGL 4.1 core): per-pixel lighting with up to 32 lamps a frame plus reflection probes (`CameraState::reflections`) and baked light probes for the static ones (`gfx/probes.h`) and a hand light (torch or lighter), shadows from
   distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect with bloom (the Visual effects setting) and a camcorder (VHS tape) look with a REC / PLAY / battery display and timecode (the Camcorder setting, `CameraState::tape` / `tape_time`), ambient occlusion (a setting, off by default), light scattered in the air (lamp glow, a visible torch beam), a battery-failing tint for the hand light (`CameraState::torch_tint`), render scale from 300 to 2160
   lines, a night sky that becomes a day (`CameraState::time_of_day`: sun, dawn and dusk colours, clouds, haze, and a shadow from the sun or moon, `CameraState::sun_shadow`), a flash of lightning (`CameraState::lightning` lights the world and the sky; with `lightning_zoned` only inside
   `lightning_zones`, the rooms that have a window), culled world

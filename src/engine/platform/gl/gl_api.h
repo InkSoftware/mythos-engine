@@ -69,6 +69,7 @@ constexpr GLint kClampToEdge = 0x812F;
 constexpr GLenum kTexture0 = 0x84C0;
 constexpr GLenum kTexture1 = 0x84C1;
 constexpr GLenum kTextureCubeMap = 0x8513;
+constexpr GLenum kTextureCubeMapSeamless = 0x884F;
 constexpr GLenum kTextureCubeMapPositiveX = 0x8515;
 constexpr GLenum kR32F = 0x822E;
 constexpr GLenum kFramebuffer = 0x8D40;

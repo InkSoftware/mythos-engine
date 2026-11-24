@@ -15,6 +15,8 @@
 14 3 chair 270
 17 5 crate 0
 3 1 bench 180
+5 3 toolbox 0
+6 5 bucket 0
 
 [triggers]
 visit_east cell enter 1 12 3 0

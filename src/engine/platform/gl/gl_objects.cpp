@@ -329,6 +329,62 @@ void ShadowCube::Reset() {
   size_ = 0;
 }
 
+void ReflectionCube::Create(const int size, const DepthBuffer& depth) {
+  Reset();
+  size_ = size;
+  GenTextures(1, &tex_);
+  BindTexture(kTextureCubeMap, tex_);
+  for (int face = 0; face < kCubeFaces; ++face) {
+    TexImage2D(kTextureCubeMapPositiveX + static_cast<GLenum>(face), 0, kRgba8,
+               size, size, 0, kRgba, kUnsignedByte, nullptr);
+  }
+  TexParameteri(kTextureCubeMap, kTextureMinFilter, gl::kLinearMipmapLinear);
+  TexParameteri(kTextureCubeMap, kTextureMagFilter, kLinear);
+  TexParameteri(kTextureCubeMap, kTextureWrapS, kClampToEdge);
+  TexParameteri(kTextureCubeMap, kTextureWrapT, kClampToEdge);
+  GenFramebuffers(1, &fbo_);
+  BindFramebuffer(kFramebuffer, fbo_);
+  FramebufferRenderbuffer(kFramebuffer, kDepthAttachment, kRenderbuffer,
+                          depth.Id());
+  FramebufferTexture2D(kFramebuffer, kColorAttachment0,
+                       kTextureCubeMapPositiveX, tex_, 0);
+  if (CheckFramebufferStatus(kFramebuffer) != kFramebufferComplete) {
+    SDL_Log("reflection cube framebuffer incomplete: reflections off");
+    BindFramebuffer(kFramebuffer, 0);
+    Reset();
+    return;
+  }
+  BindFramebuffer(kFramebuffer, 0);
+}
+
+void ReflectionCube::Reset() {
+  if (gl::Loaded()) {
+    if (fbo_) DeleteFramebuffers(1, &fbo_);
+    if (tex_) DeleteTextures(1, &tex_);
+  }
+  tex_ = fbo_ = 0;
+  size_ = 0;
+}
+
+void ReflectionCube::BindFace(const int face) const {
+  BindFramebuffer(kFramebuffer, fbo_);
+  FramebufferTexture2D(kFramebuffer, kColorAttachment0,
+                       kTextureCubeMapPositiveX + static_cast<GLenum>(face),
+                       tex_, 0);
+  Viewport(0, 0, size_, size_);
+}
+
+void ReflectionCube::BuildMips() const {
+  BindTexture(kTextureCubeMap, tex_);
+  gl::GenerateMipmap(kTextureCubeMap);
+}
+
+int ReflectionCube::Levels() const {
+  int levels = 1;
+  for (int s = size_; s > 1; s /= 2) ++levels;
+  return levels;
+}
+
 void ShadowCube::BindFace(const int face) const {
   BindFramebuffer(kFramebuffer, fbo_);
   FramebufferTexture2D(kFramebuffer, kColorAttachment0,

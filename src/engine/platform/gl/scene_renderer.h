@@ -165,6 +165,12 @@ struct CameraState {
   // Shadows setting (`shadow_level`) at 0 turns it off.
   double sun_shadow = 0;
 
+  // Reflection probes (`SceneRenderer::AddReflectionProbe`): 0 (off, the
+  // default: the analytic ambient reflection as before) to 1. Shiny and
+  // glossy surfaces then reflect the room as captured at the probe nearest
+  // the viewer instead.
+  double reflections = 0;
+
   // Camcorder tape look, drawn in the composite pass (HUD included).
   bool tape = false;
 
@@ -265,6 +271,17 @@ class SceneRenderer {
   // instances of `id` draw the new one from the next frame. Returns false for
   // an id that was never uploaded.
   bool ReplaceModel(int id, const std::vector<Batch>& batches);
+
+  // A reflection probe: a cube capture of the scene (128 x 128 a face, blurred
+  // by mip level for rough surfaces) taken at a point, drawn the first frame
+  // it is needed and again when the scene changes, not every frame. Up to
+  // kMaxReflectionProbes; the one nearest the viewer is used (a surface
+  // reflects it as if it were at infinity: no parallax). Models that move, the
+  // sky, glass and particles are not in the capture. Returns the probe's index
+  // or -1 when full.
+  static constexpr int kMaxReflectionProbes = 4;
+  int AddReflectionProbe(double x, double y, double z);
+  void ClearReflectionProbes();
 
   // Uploads baked light (`BakeProbes`, gfx/probes.h): every surface gets the
   // probes' colour at its position as one more light term, with no shadow and
@@ -409,6 +426,17 @@ class SceneRenderer {
                     gl::GLenum internal_format = gl::kRgba8);
   std::map<std::string, std::string> loose_shaders_;
   ModelLods lods_;
+  struct ReflectionProbe {
+    float pos[3] = {0, 0, 0};
+    ReflectionCube cube;
+    uint64_t key = 0;
+  };
+  ReflectionProbe reflection_[kMaxReflectionProbes];
+  int reflection_count_ = 0;
+  int env_probe_ = -1;  // the probe this frame's world pass reflects
+  bool capturing_probe_ = false;
+  DepthBuffer reflection_depth_;
+  void DrawReflectionProbes(const CameraState& cam, const Frame& f);
   RenderTarget sun_target_;
   float sun_view_proj_[16] = {};
   float sun_texel_ = 0;
@@ -585,7 +613,7 @@ class SceneRenderer {
     gl::GLint view = -1, proj = -1, cam = -1, flash_dir = -1, flash_on = -1,
               lighter = -1, torch_warm = -1, outdoor = -1, moon_dir = -1,
               sun_color = -1, probe = -1, sun_shadow = -1, sun_vp = -1,
-              sun_texel = -1, sky_ambient = -1, fog_color = -1,
+              env = -1, sun_texel = -1, sky_ambient = -1, fog_color = -1,
               fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
               lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
               light_count = -1, light_pos = -1, light_color = -1,

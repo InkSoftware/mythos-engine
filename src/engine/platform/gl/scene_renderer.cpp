@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <map>
 #include <numbers>
@@ -287,6 +288,7 @@ bool SceneRenderer::Init(const TextureLibrary& textures) {
     const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     instance_vbo_.Upload(identity, sizeof(identity), kDynamicDraw);
   }
+  gl::Enable(gl::kTextureCubeMapSeamless);
   mirror_vbo_.Upload(nullptr, 6 * sizeof(Vertex), kDynamicDraw);
   mirror_vao_.Create();
   mirror_vao_.Bind();
@@ -342,6 +344,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.moon_dir = world_program_.Uniform("uMoonDir");
   u.sun_color = world_program_.Uniform("uSunColor");
   u.probe = world_program_.Uniform("uProbe");
+  u.env = world_program_.Uniform("uEnv");
   u.sun_shadow = world_program_.Uniform("uSunShadow");
   u.sun_vp = world_program_.Uniform("uSunVP");
   u.sun_texel = world_program_.Uniform("uSunTexel");
@@ -384,6 +387,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uMaterialTex", 7);
   world_program_.Set("uProbeTex", 8);
   world_program_.Set("uSunShadowTex", 9);
+  world_program_.Set("uReflectionEnv", 10);
 }
 
 void SceneRenderer::BuildFullscreenQuad() {
@@ -644,6 +648,101 @@ void SceneRenderer::UploadProbes(const ProbeGrid& grid) {
   probe_scale_[1] = static_cast<float>(1.0 / (grid.depth * grid.spacing));
 }
 
+int SceneRenderer::AddReflectionProbe(const double x, const double y,
+                                      const double z) {
+  if (reflection_count_ >= kMaxReflectionProbes) return -1;
+  ReflectionProbe& p = reflection_[reflection_count_];
+  p.pos[0] = static_cast<float>(x);
+  p.pos[1] = static_cast<float>(y);
+  p.pos[2] = static_cast<float>(z);
+  p.key = 0;  // not captured yet
+  return reflection_count_++;
+}
+
+void SceneRenderer::ClearReflectionProbes() {
+  for (int i = 0; i < reflection_count_; ++i) reflection_[i].cube.Reset();
+  reflection_count_ = 0;
+  env_probe_ = -1;
+}
+
+// Captures the probe nearest the viewer when it is new or the scene changed:
+// six faces of the world drawn with the usual world pass (without what moves,
+// the hand light, the vignette and the grain), then the mip chain.
+void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
+                                         const Frame& f) {
+  constexpr int kProbeSize = 128;
+  env_probe_ = -1;
+  if (cam.reflections <= 0.0 || reflection_count_ == 0 ||
+      !world_program_.Valid()) {
+    return;
+  }
+  float best = 1e30f;
+  for (int i = 0; i < reflection_count_; ++i) {
+    const float dx = reflection_[i].pos[0] - f.eye[0],
+                dy = reflection_[i].pos[1] - f.eye[1],
+                dz = reflection_[i].pos[2] - f.eye[2];
+    const float d = dx * dx + dy * dy + dz * dz;
+    if (d < best) {
+      best = d;
+      env_probe_ = i;
+    }
+  }
+  if (env_probe_ < 0) return;  // (a position that is not a number)
+  ReflectionProbe& probe = reflection_[env_probe_];
+  if (!probe.cube.Valid()) {
+    if (reflection_depth_.Id() == 0) {
+      reflection_depth_.Create(kProbeSize, kProbeSize);
+    }
+    probe.cube.Create(kProbeSize, reflection_depth_);
+    if (!probe.cube.Valid()) {
+      env_probe_ = -1;
+      return;
+    }
+    probe.key = 0;
+  }
+  uint64_t key = SceneKey(cam);
+  for (const float v : probe.pos) {  // fold the position into the key (FNV-1a)
+    uint32_t bits = 0;
+    std::memcpy(&bits, &v, sizeof(bits));
+    key = (key ^ bits) * 1099511628211ull;
+  }
+  key |= 1;
+  if (key == probe.key) return;
+  probe.key = key;
+
+  CameraState pc = cam;
+  pc.instances.clear();
+  pc.glass.clear();
+  pc.particles.clear();
+  pc.flash_on = false;
+  pc.mirror.on = false;
+  pc.reflections = 0.0;
+  pc.sun_shadow = 0.0;
+  capturing_probe_ = true;
+  for (int face = 0; face < 6; ++face) {
+    Frame ff = f;
+    for (int i = 0; i < 3; ++i) ff.eye[i] = probe.pos[i];
+    CubeFaceView(face, probe.pos, ff.view);
+    Mat4Perspective(1.5707963f, 1.0f, kNearPlane, kFarPlane, ff.proj);
+    float view_proj[16];
+    Mat4Multiply(ff.proj, ff.view, view_proj);
+    FrustumPlanes(view_proj, ff.planes);
+    ff.views = ModelInstance::kMain;
+    ff.grade.vignette = 0.0f;
+    ff.grain = 0.0f;
+    ff.clip[0] = ff.clip[1] = ff.clip[2] = 0.0f;
+    ff.clip[3] = 1.0f;
+    probe.cube.BindFace(face);
+    ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    Clear(kColorBufferBit | kDepthBufferBit);
+    Disable(kBlend);
+    draw_state_ = DrawState{};
+    DrawWorld(pc, ff);
+  }
+  capturing_probe_ = false;
+  probe.cube.BuildMips();
+}
+
 bool SceneRenderer::ReplaceModel(const int id,
                                  const std::vector<Batch>& batches) {
   if (id < 0 || std::cmp_greater_equal(id, models_.size())) return false;
@@ -877,6 +976,20 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
     if (probes) {
       ActiveTexture(kTexture0 + 8);
       probe_tex_.Bind();
+      ActiveTexture(kTexture0);
+    }
+  }
+  {
+    const bool env = env_probe_ >= 0 && !capturing_probe_ &&
+                     cam.reflections > 0.0 &&
+                     reflection_[env_probe_].cube.Valid();
+    Uniform2f(
+        u.env, env ? static_cast<float>(std::min(cam.reflections, 1.0)) : 0.0f,
+        env ? static_cast<float>(reflection_[env_probe_].cube.Levels() - 1)
+            : 0.0f);
+    if (env) {
+      ActiveTexture(kTexture0 + 10);
+      BindTexture(gl::kTextureCubeMap, reflection_[env_probe_].cube.Texture());
       ActiveTexture(kTexture0);
     }
   }
@@ -1612,6 +1725,7 @@ void SceneRenderer::Render(const CameraState& cam, const int window_w,
   stats_.shadow_casters = shadow_count_ + (hand_shadow_on_ ? 1 : 0);
   DrawShadows(cam);
   DrawSunShadow(cam, f);
+  DrawReflectionProbes(cam, f);
   const bool mirrored = MirrorVisible(cam, f);
   stats_.mirror = mirrored;
   if (mirrored) {
