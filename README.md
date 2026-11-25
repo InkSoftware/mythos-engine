@@ -13,14 +13,14 @@ listen to and pick up, menus, and a bit of procedural art.
   `AppendSceneGeometry`; tile flags `openCeiling` / `openFloor` leave a stairwell open between two floors, and a
   door panel carries its floor's height: `DoorInstance::y`). The engine has no stairs and no height for the player:
   walking up is the game's rule.
-- **Rendering** (OpenGL 4.1 core): per-pixel lighting with up to 32 lamps a frame plus reflection probes (`CameraState::reflections`) and baked light probes (ambient cubes) for the static ones (`gfx/probes.h`) and a hand light (torch or lighter), shadows from
-  distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect with bloom (the Visual effects setting) and a camcorder (VHS tape) look with a REC / PLAY / battery display and timecode (the Camcorder setting, `CameraState::tape` / `tape_time`), ambient occlusion (a setting, off by default), light scattered in the air (lamp glow, a visible torch beam), a battery-failing tint for the hand light (`CameraState::torch_tint`), render scale from 300 to 2160
+- **Rendering** (OpenGL 4.1 core): per-pixel lighting with up to 32 lamps a frame plus reflection probes (`CameraState::reflections`) and baked light for the static ones (probes at several heights, `gfx/probes.h`; lightmaps with sharp shadows for walls, floors, ceilings and thin walls, `gfx/lightmap.h`) and a hand light (torch or lighter), shadows from
+  distance cube maps (off to "ultra max"), MSAA or FXAA, motion blur, a lens effect with bloom (the Visual effects setting) and a camcorder (VHS tape) look with a REC / PLAY / battery display and timecode (the Camcorder setting, `CameraState::tape` / `tape_time`), ambient occlusion (a setting, off by default; `CameraState::ssao_ambient` applies it to the ambient light and in the mirror), HDR reflection probes with a GGX filter (up to 32 a level, the sky and models in the capture), three sun-shadow cascades, a mirror that shows the sky, glass that reflects the time of day, light scattered in the air (lamp glow, a visible torch beam), a battery-failing tint for the hand light (`CameraState::torch_tint`), render scale from 300 to 2160
   lines, a night sky that becomes a day (`CameraState::time_of_day`: sun, dawn and dusk colours, clouds, haze, and a shadow from the sun or moon, `CameraState::sun_shadow`), a flash of lightning (`CameraState::lightning` lights the world and the sky; with `lightning_zoned` only inside
   `lightning_zones`, the rooms that have a window), culled world
-  geometry, camera roll, cutscenes (`world/cutscene.h`: a timeline of camera, cues, values and animation), a distance cull, level of detail and GPU instancing for model instances (`gfx/lod.h`), SDF text, and hot reload of shaders and textures in development (`FileWatcher`, `SceneRenderer::ReloadShaders` / `ReloadTextures`).
+  geometry, camera roll, cutscenes (`world/cutscene.h`: a timeline of camera, cues, values and animation), a distance cull, level of detail and GPU instancing for model instances, skinned ones too (`gfx/lod.h`), a far version of the baked world with joined quads and boxes for furniture (`gfx/simplify.h`, `SceneRenderer::UploadWorldLod`), SDF text, and hot reload of shaders and textures in development (`FileWatcher`, `SceneRenderer::ReloadShaders` / `ReloadTextures`).
 - **Life and logic** (headless, tested): skeletal animation (`gfx/skeleton.h`: bones, clips, blending, crossfade, `AnimStateMachine`;
-  `gfx/gltf.h` loads a skinned `.glb` or `.gltf`; the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
-  perception (`world/ai.h`), A* (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned
+  `gfx/gltf.h` loads a skinned `.glb` or `.gltf` (several skins, PBR maps, morph targets with weight animations: `gfx/morph.h`); the renderer skins on the GPU through `ModelInstance::skin`), a behaviour tree and
+  perception (`world/ai.h`), A*, local avoidance, flocking and formations (`world/nav.h`), triggers and event rules (`world/trigger.h`, `core/events.h`), versioned
   save files with slots (`data/save.h`, `world/save_state.h`) and rebindable input actions (`ui/input_map.h`, `ProbeBinding` / `ApplyActions` in `platform/input.h`) with a controls page to rebind them (`ui/controls_ui.h`).
 - **Everything around a game**: a settings system (pages, drawing, saving, applying), localisation with built-in
   English and Greek strings, JSON loaders for sounds, translations, achievements and credits, positional audio with occlusion and room reverb (`audio/spatial.h`, `audio/reverb.h`), layered music (`audio/music.h`), packed
@@ -108,7 +108,7 @@ The engine gives mechanisms; a game gives meaning.
   The engine reads the shared formats for you: `LoadSoundBank`, `LoadTranslation`, `LoadAchievementDefs`,
   `LoadCredits`, `LoadPlayerParams`, `LoadFontFiles`, `ParseTileSet`.
 - **Settings**: `GameSettings` with its pages (`UpdateSettingsPage`), `DrawSettingsPage` (give it a `MenuTheme`),
-  and `platform/apply_settings.h` (`LoadSettings`, `SaveSettings`, `ApplySettings`). Their English and Greek
+  and `platform/apply_settings.h` (`LoadSettings`, `SaveSettings`, `ApplySettings`); `controls_page` adds a Controls row and `quit_row` a Quit row (`quit_requested`). Their English and Greek
   strings are built in (`engine_strings.cpp`); the game's own tables override any of them.
 - **Assets**: `assets/` holds fonts, common sounds (steps, doors, torch, battery, tick, static, wind) and eight
   common textures. A game merges it under its own assets (the game's file of the same name wins);
@@ -209,7 +209,7 @@ defaults match.
   placing models; furniture is solid in the cell its centre is in but is placed freely inside it, by drag, nudge or
   the Inspector's Offset and Lift, so a piece can touch a wall) with dockable panels around it: Levels, Outliner, Inspector (every key of a game's JSON object),
   Tiles, Assets, Problems (furniture in walls, missing models, stairwells without a hole), Console and a **Game
-  Preview** that runs the game's own screenshot mode on a copy of its assets holding the *unsaved* edits. It has undo
+  Preview** that runs the game's own screenshot mode on a copy of its assets holding the *unsaved* edits. Prefabs (furniture, decor, decals, triggers and rules; placed as links that update from the file without losing your edits), a cutscene panel with a draggable timeline and an event graph panel (View > Event graph) sit beside them. It has undo
   and redo, duplicate, delete, new level and resize, and saves only what changed (a level is stamped `map_editor` so a
   generator script leaves it alone; the data files round-trip byte for byte). It is built with Dear ImGui (docking,
   fetched at `MYTHOS_IMGUI_TAG`) and is on by default when the engine is the top-level project
@@ -238,7 +238,7 @@ defaults match.
   The adapter is pure logic over JSON (`DataSet` is the files by name, and the editor loads, saves and undoes them),
   so it is unit-tested without a window; the engine's own tests do it with a small fake adapter. Every virtual has a
   default, so an adapter overrides only what its game has. `--shot out.ppm [--size W H] [--frames N] [--camera ...]
-  [--top] [--select furniture:N] [--tool paint] [--preview]` renders the window headless, for checking the UI.
+  [--top] [--select furniture:N] [--tool paint] [--preview]` renders the window headless, for checking the UI. `--script file` drives the UI with synthetic input and `expect` checks (`tools/editor-scripts/`).
 - **`mythos_pack <out.pak> <assets dir> <key text>`**: packs every file under the folder into one file. At run time,
   `mythos::vfs::mount` serves reads below a root from the pack, and anything outside falls through to the disk. This is
   obfuscation to stop casual editing, not DRM: the key is in the executable.

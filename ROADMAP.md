@@ -319,9 +319,10 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; thin walls have tiles too; not for doors, models or stacked floors, a `MYLM1` file format); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
+- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls included, a `MYLM1` file) do not cover doorway frames, window glass and frames, models or stacked floors; `ssao_ambient` draws the world twice (a single pass is not done); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets are applied on the CPU (a GPU path for many morphing models is not done), and only skinned mesh nodes are read.
 - **Audio:** nothing named.
+- **Checks:** the editor's panels have scripts (`tools/editor-scripts/`, `--script`); the template game has no script driver (its Quit row, steering and music sync are unit-tested only).
 - **Editor:** the event graph panel edits a rule's starting event, conditions and `set_flag` actions and creates and deletes rules, but not other actions or triggers.
 - **Tools and data:** nothing named.
 
