@@ -20,6 +20,7 @@
 #include "engine/editor/adapter.h"
 #include "engine/gfx/font.h"
 #include "engine/gfx/materials.h"
+#include "engine/gfx/simplify.h"
 #include "engine/platform/app.h"
 #include "engine/platform/apply_settings.h"
 #include "engine/platform/gl/scene_renderer.h"
@@ -199,10 +200,12 @@ int main(const int argc, char** const argv) {
     renderer.UploadWorld(
         mythos::BuildSceneGeometry(game.level(), game.models(), outdoor));
     if (world_lod > 0) {
-      renderer.UploadWorldLod(
-          mythos::BuildSceneGeometry(game.level(),
-                                     game.models().BoundingBoxes(), outdoor),
-          world_lod);
+      // The far set: boxes for the furniture, and the walls, floors and
+      // ceilings joined into larger quads.
+      mythos::SceneGeometry far_world = mythos::BuildSceneGeometry(
+          game.level(), game.models().BoundingBoxes(), outdoor);
+      mythos::SimplifyGeometry(far_world);
+      renderer.UploadWorldLod(far_world, world_lod);
     }
   };
   upload_world();

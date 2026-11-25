@@ -60,6 +60,7 @@
 #include "engine/gfx/pbr.h"
 #include "engine/gfx/probes.h"
 #include "engine/gfx/render_stats.h"
+#include "engine/gfx/simplify.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/gfx/sky.h"
 #include "engine/gfx/sun_shadow.h"
@@ -5937,6 +5938,61 @@ TEST(camera_roll_basis_and_shake_roll) {
     if (std::fabs(r) > 1e-4) moved = true;
   }
   CHECK(moved);
+}
+
+namespace {
+// Total area of the triangles of the batches, by texture.
+std::map<std::string, double> AreaByTexture(
+    const std::vector<mythos::Batch>& batches) {
+  std::map<std::string, double> area;
+  for (const auto& b : batches) {
+    for (size_t i = 0; i + 2 < b.verts.size(); i += 3) {
+      const auto &a = b.verts[i], &p = b.verts[i + 1], &q = b.verts[i + 2];
+      const double ux = p.px - a.px, uy = p.py - a.py, uz = p.pz - a.pz;
+      const double vx = q.px - a.px, vy = q.py - a.py, vz = q.pz - a.pz;
+      const double cx = uy * vz - uz * vy, cy = uz * vx - ux * vz,
+                   cz = ux * vy - uy * vx;
+      area[b.texture] += 0.5 * std::sqrt(cx * cx + cy * cy + cz * cz);
+    }
+  }
+  return area;
+}
+}
+
+TEST(simplify_joins_coplanar_quads_and_keeps_the_area) {
+  mythos::Level level;
+  CHECK(level.Parse({"####################", "#..................#",
+                     "#..................#", "#..................#",
+                     "####################"}));
+  mythos::ModelLibrary models;
+  mythos::SceneGeometry g = mythos::BuildSceneGeometry(level, models, false);
+  const auto before = AreaByTexture(g.world);
+  const mythos::SimplifyStats stats = mythos::SimplifyGeometry(g);
+  CHECK(stats.triangles_after < stats.triangles_before / 2);
+  const auto after = AreaByTexture(g.world);
+  CHECK_EQ(before.size(), after.size());
+  for (const auto& [texture, area] : before) {
+    CHECK(std::fabs(after.at(texture) - area) < 1e-3 * area + 1e-6);
+  }
+  // Without the column limit it joins more, and a merged quad stays in the
+  // 8-cell column of its first corner.
+  mythos::SceneGeometry open = mythos::BuildSceneGeometry(level, models, false);
+  const auto free_stats = mythos::SimplifyGeometry(open, 0.0f);
+  CHECK(free_stats.triangles_after <= stats.triangles_after);
+  // Texture coordinates survive: a floor vertex's u, v still equal its x, z
+  // up to the repeat (the floor maps one repeat a cell).
+  for (const auto& b : g.world) {
+    if (b.texture != "floor" && b.texture != "wood") continue;
+    for (const auto& v : b.verts) {
+      if (v.ny > 0.5f) {
+        const double du = v.u - v.px, dv = v.v - v.pz;
+        CHECK(std::fabs(du - std::round(du)) < 1e-3 ||
+              std::fabs(v.u - v.pz - std::round(v.u - v.pz)) < 1e-3);
+        CHECK(std::fabs(dv - std::round(dv)) < 1e-3 ||
+              std::fabs(v.v - v.px - std::round(v.v - v.px)) < 1e-3);
+      }
+    }
+  }
 }
 
 }

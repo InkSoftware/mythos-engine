@@ -263,7 +263,7 @@ more than was built.
 - **Progress:** `gfx/lod.h` plans each pass's model instances: a distance cull (`ModelInstance::max_distance`), a far model
   swapped in beyond a distance (`SceneRenderer::SetModelLod`) and a sort by model. Shadow casters are never culled or
   swapped. GPU instancing: runs of static instances of one model draw as one instanced draw per batch (200 chairs:
-  13 draw calls instead of 212). Skinned models instance too (bones in a texture, `--clones N` in the template). `UploadWorldLod` draws a far version of the baked world (cheaper furniture, e.g. boxes) beyond a distance (`--lod D` in the template). Not done: automatic simplification of the walls and the mesher's own detail.
+  13 draw calls instead of 212). Skinned models instance too (bones in a texture, `--clones N` in the template). `UploadWorldLod` draws a far version of the baked world (cheaper furniture, e.g. boxes) beyond a distance (`--lod D` in the template). Flat quads of the far set are joined (`SimplifyBatches`). Not done: simplifying the mesher's own detail (window frames, thin walls).
 - Instanced draw for repeated props (same model, many matrices) and a
   distance LOD or cull per model. The 8-cell chunking already helps; this
   removes per-prop draw calls.
@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps; automatic simplification of walls and mesher detail for LOD.
+- **Rendering:** lightmaps; simplifying the mesher's own detail (window frames, thin walls) for LOD (flat quads are joined: `SimplifyBatches`).
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   formations for the AI.
 - **Audio:** nothing named.
