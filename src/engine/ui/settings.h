@@ -86,6 +86,12 @@ struct GameSettings {
   // Not saved: a game that shows the controls page (ui/controls_ui.h) sets it,
   // and the main page then has a Controls row that opens it.
   bool controls_page = false;
+
+  // Not saved: a game that lets the player quit from the menu sets
+  // `quit_row`, the main page then has a Quit row, and choosing it sets
+  // `quit_requested` (and leaves the menu); the game ends its loop on it.
+  bool quit_row = false;
+  bool quit_requested = false;
 };
 
 // Rows of the settings menu. A page shows a subset, in the order given by
@@ -112,6 +118,7 @@ enum SettingsItem {
   kSetEffects,
   kSetLanguage,
   kSetBack,
+  kSetQuit,
   kSettingsItemCount
 };
 
@@ -122,9 +129,11 @@ enum SettingsItem {
 enum class SettingsPage { kMain, kGraphics, kAudio, kControls };
 
 // The rows of a page, in display order. The last row of every page is
-// `kSetBack`. With `controls` the main page also has `kSetControls`.
+// `kSetBack`. With `controls` the main page also has `kSetControls`, with
+// `quit` a `kSetQuit` row before Back.
 const std::vector<int>& SettingsPageItems(SettingsPage page,
-                                          bool controls = false);
+                                          bool controls = false,
+                                          bool quit = false);
 
 // Back from the controls page to the main page, on its Controls row.
 void LeaveControlsPage(SettingsPage& page, int& index);

@@ -50,6 +50,8 @@ Row RowFor(const int item, const GameSettings& s,
               .value = "›",
               .meter = -1,
               .link = true};
+    case kSetQuit:
+      return {.label = Tr("settings.quit"), .meter = -1};
     case kSetControls:
       return {.label = Tr("settings.controls"),
               .value = "›",
@@ -138,7 +140,8 @@ void DrawSettingsPage(UiCanvas& c, const MenuTheme& t, const GameSettings& s,
   Style row_style = t.item;
   row_style.size = t.row_size;
   float y = fpy + t.first_row_y;
-  const std::vector<int>& items = SettingsPageItems(page, s.controls_page);
+  const std::vector<int>& items =
+      SettingsPageItems(page, s.controls_page, s.quit_row);
   const int rows = static_cast<int>(items.size());
   // Squeezes the rows together when the window is too short for the usual
   // pitch.

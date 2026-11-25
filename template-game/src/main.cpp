@@ -277,6 +277,7 @@ int main(const int argc, char** const argv) {
     settings.resolution = mythos::ResolutionIndex(1280, 720);
   }
   settings.controls_page = true;
+  settings.quit_row = true;
   if (ssao) settings.ambient_occlusion = true;
   mythos::SetLanguage(settings.language);
 
@@ -450,6 +451,7 @@ int main(const int argc, char** const argv) {
                    mythos::LargestFittingResolution(window))) {
       menu_open = false;
       mythos::SaveSettings(files, settings);
+      if (settings.quit_requested) break;
     }
     f3_was = keys[SDL_SCANCODE_F3];
     // A changed setting reaches the window, the renderer and the mixer.

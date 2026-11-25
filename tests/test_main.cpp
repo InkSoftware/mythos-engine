@@ -6241,6 +6241,36 @@ TEST(formations_place_assign_and_steer) {
   CHECK(mythos::FormationSteer({1, 1}, {1, 1}, 2).x == 0.0);
 }
 
+TEST(settings_menu_has_a_quit_row_when_asked) {
+  using namespace mythos;
+  GameSettings s;
+  // Not there by default; with the flag it sits before Back on the main page
+  // only.
+  CHECK(std::ranges::find(SettingsPageItems(SettingsPage::kMain, true, false),
+                          kSetQuit) ==
+        SettingsPageItems(SettingsPage::kMain, true, false).end());
+  const auto& rows = SettingsPageItems(SettingsPage::kMain, true, true);
+  const auto quit = std::ranges::find(rows, kSetQuit);
+  CHECK(quit != rows.end() && *(quit + 1) == kSetBack);
+  CHECK(std::ranges::find(SettingsPageItems(SettingsPage::kAudio, true, true),
+                          kSetQuit) ==
+        SettingsPageItems(SettingsPage::kAudio, true, true).end());
+  // Choosing it asks to quit and leaves the menu.
+  s.quit_row = true;
+  SettingsPage page = SettingsPage::kMain;
+  int index = kSetQuit;
+  UiInput in;
+  in.confirm_pressed = true;
+  CHECK(!s.quit_requested);
+  CHECK(UpdateSettingsPage(s, page, index, in, false, 2));
+  CHECK(s.quit_requested);
+  // Back leaves without quitting.
+  s.quit_requested = false;
+  index = kSetBack;
+  CHECK(UpdateSettingsPage(s, page, index, in, false, 2));
+  CHECK(!s.quit_requested);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);
