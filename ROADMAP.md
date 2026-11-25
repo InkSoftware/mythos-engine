@@ -186,7 +186,7 @@ more than was built.
   door avoidance. It treats thin-wall cells as blocked; `SmoothPath` pulls a path taut. `world/ai.h` adds a reactive behaviour tree (leaf and
   condition callbacks, sequence, selector, inverter, succeeder, cooldown), a
   sight cone with line of sight and hearing that walls muffle. `NoiseBoard`, `LastSeen` and `SmoothPath` (the guide in the template greets,
-  searches, investigates and patrols). `SteerAround(pos, desired, radius, speed, obstacles)` bends a walking direction around movers (the template's guide walks around you). `FlockSteer` (separation, alignment, cohesion) is the group rule. Not done: formations.
+  searches, investigates and patrols). `SteerAround(pos, desired, radius, speed, obstacles)` bends a walking direction around movers (the template's guide walks around you). `FlockSteer` (separation, alignment, cohesion) is the group rule. `FormationSlots`, `AssignSlots` and `FormationSteer` place and move a group in a line, column, wedge, circle or grid (`--formation` in the template).
 - **Where:** `world/nav.h` is A\* on the grid with door and thin-wall awareness
   (`Level::ThinArms`, `BoxBlocked`), path smoothing and a reachability flood.
   `world/ai.h` is a minimal behaviour-tree runtime (sequence, selector,
@@ -320,8 +320,7 @@ The order the items were built in. All have a first version.
 Gaps named in the Progress lines, by area:
 
 - **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
-- **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
-  formations for the AI.
+- **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models.
 - **Audio:** nothing named.
 - **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), linked prefabs
   and prefabs with triggers or decals, a visual event graph.

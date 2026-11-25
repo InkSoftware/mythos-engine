@@ -337,6 +337,111 @@ struct FlockParams {
           apart.y * p.separation + (vel.y * inv - me.vel.y) * p.alignment +
               centre.y * inv * p.cohesion};
 }
+
+// Formations: where the members of a group stand relative to an anchor (a
+// leader, or a point the group is walking to).
+enum class Formation {
+  kLine,    // abreast, side by side, centred on the anchor
+  kColumn,  // single file behind the anchor (slot 0 is the anchor)
+  kWedge,   // a V: slot 0 at the anchor, pairs falling back to each side
+  kCircle,  // a ring around the anchor, slot 0 in front
+  kGrid,    // ranks behind the anchor, as square as the count allows
+};
+
+// `count` slot positions for `kind` around `anchor`, the group facing
+// `forward` (any non-zero direction; the right-hand side is `(-f.y, f.x)`
+// turned the way the map's z grows), `spacing` metres apart.
+[[nodiscard]] inline std::vector<Vec2> FormationSlots(
+    const Formation kind, const size_t count, const Vec2 anchor, Vec2 forward,
+    const double spacing = 1.2) {
+  std::vector<Vec2> slots;
+  slots.reserve(count);
+  const double len = std::hypot(forward.x, forward.y);
+  forward = len > 1e-9 ? Vec2{forward.x / len, forward.y / len} : Vec2{0, 1};
+  const Vec2 side{-forward.y, forward.x};
+  const auto at = [&](const double ahead, const double across) {
+    return Vec2{anchor.x + forward.x * ahead + side.x * across,
+                anchor.y + forward.y * ahead + side.y * across};
+  };
+  const auto n = static_cast<double>(count);
+  for (size_t i = 0; i < count; ++i) {
+    const auto k = static_cast<double>(i);
+    switch (kind) {
+      case Formation::kLine:
+        slots.push_back(at(0, (k - (n - 1) / 2) * spacing));
+        break;
+      case Formation::kColumn:
+        slots.push_back(at(-k * spacing, 0));
+        break;
+      case Formation::kWedge: {
+        const double rank = std::floor((k + 1) / 2);
+        const double sign = i % 2 == 1 ? -1.0 : 1.0;
+        slots.push_back(at(-rank * spacing, sign * rank * spacing));
+        break;
+      }
+      case Formation::kCircle: {
+        const double radius =
+            std::max(spacing, spacing * n / (2 * 3.14159265358979));
+        const double angle = 2 * 3.14159265358979 * k / std::max(1.0, n);
+        slots.push_back(at(std::cos(angle) * radius, std::sin(angle) * radius));
+        break;
+      }
+      case Formation::kGrid: {
+        const double columns = std::ceil(std::sqrt(n));
+        const double row = std::floor(k / columns), col = k - row * columns;
+        slots.push_back(
+            at(-row * spacing, (col - (columns - 1) / 2) * spacing));
+        break;
+      }
+    }
+  }
+  return slots;
+}
+
+// Which slot each member takes (result[i] is member i's slot index): the
+// closest free pairs first, so members do not cross over to get to the slots.
+// Needs as many slots as members; surplus slots stay empty.
+[[nodiscard]] inline std::vector<size_t> AssignSlots(
+    const std::vector<Vec2>& members, const std::vector<Vec2>& slots) {
+  const size_t none = static_cast<size_t>(-1);
+  std::vector<size_t> result(members.size(), none);
+  std::vector<bool> taken(slots.size(), false);
+  for (size_t round = 0; round < std::min(members.size(), slots.size());
+       ++round) {
+    double best = std::numeric_limits<double>::infinity();
+    size_t bm = none, bs = none;
+    for (size_t m = 0; m < members.size(); ++m) {
+      if (result[m] != none) continue;
+      for (size_t s = 0; s < slots.size(); ++s) {
+        if (taken[s]) continue;
+        const double d =
+            std::hypot(members[m].x - slots[s].x, members[m].y - slots[s].y);
+        if (d < best) {
+          best = d;
+          bm = m;
+          bs = s;
+        }
+      }
+    }
+    if (bm == none) break;
+    result[bm] = bs;
+    taken[bs] = true;
+  }
+  return result;
+}
+
+// The velocity that takes a member to its slot: toward it at `speed`,
+// slowing inside `arrive_radius` so it stops on the slot. Add `FlockSteer`'s
+// separation and `SteerAround` for the rest.
+[[nodiscard]] inline Vec2 FormationSteer(const Vec2 pos, const Vec2 slot,
+                                         const double speed,
+                                         const double arrive_radius = 1.0) {
+  const double dx = slot.x - pos.x, dy = slot.y - pos.y;
+  const double d = std::hypot(dx, dy);
+  if (d < 1e-6) return {0, 0};
+  const double v = speed * std::min(1.0, d / std::max(1e-6, arrive_radius));
+  return {dx / d * v, dy / d * v};
+}
 }  // namespace mythos
 
 #endif  // MYTHOS_ENGINE_WORLD_NAV_H_

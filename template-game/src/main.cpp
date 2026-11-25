@@ -132,7 +132,8 @@ int main(const int argc, char** const argv) {
   bool reflections = false;
   int crowd = 0;
   int clones = 0;
-  double world_lod = 0;  // --lod D: furniture is boxes beyond D metres
+  std::string formation;  // line, column, wedge, circle or grid
+  double world_lod = 0;   // --lod D: furniture is boxes beyond D metres
   bool instancing = true;
   bool start_controls = false;
   bool start_menu = false;
@@ -151,6 +152,7 @@ int main(const int argc, char** const argv) {
     if (arg == "--no-instancing") instancing = false;
     if (i + 1 < argc && arg == "--lod")
       world_lod = std::strtod(argv[i + 1], nullptr);
+    if (i + 1 < argc && arg == "--formation") formation = argv[i + 1];
     if (i + 1 < argc && arg == "--clones")
       clones = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (i + 1 < argc && arg == "--crowd")
@@ -585,11 +587,32 @@ int main(const int argc, char** const argv) {
     // `--clones N`: the guide again, standing in the first room in her pose:
     // skinned instances of one model are one instanced draw per batch (the
     // bones go in a texture, a row each).
+    // With `--formation NAME` they stand in that formation around the guide
+    // (the guide is slot 0 of a column or wedge, the centre of a line).
+    std::vector<mythos::Vec2> slots;
+    if (!formation.empty() && clones > 0) {
+      const mythos::Formation kind =
+          formation == "column"   ? mythos::Formation::kColumn
+          : formation == "wedge"  ? mythos::Formation::kWedge
+          : formation == "circle" ? mythos::Formation::kCircle
+          : formation == "grid"   ? mythos::Formation::kGrid
+                                  : mythos::Formation::kLine;
+      slots = mythos::FormationSlots(
+          kind, static_cast<size_t>(clones) + 1,
+          {game.guide_pos().x, game.guide_pos().y},
+          {std::cos(game.guide_angle()), std::sin(game.guide_angle())}, 1.1);
+    }
     for (int i = 0; i < clones; ++i) {
       mythos::ModelInstance clone = pete;
       clone.views = mythos::ModelInstance::kMain;
-      PlaceMatrix(1.5 + 0.9 * (i % 8), 1.5 + 0.9 * (i / 8 % 4), i * 0.5,
-                  clone.matrix);
+      if (!slots.empty()) {
+        // Slot 0 is the guide's own place for a column or wedge.
+        const mythos::Vec2& slot = slots[static_cast<size_t>(i) + 1];
+        PlaceMatrix(slot.x, slot.y, game.guide_angle(), clone.matrix);
+      } else {
+        PlaceMatrix(1.5 + 0.9 * (i % 8), 1.5 + 0.9 * (i / 8 % 4), i * 0.5,
+                    clone.matrix);
+      }
       cam.instances.push_back(clone);
     }
     // The crowd: the same chair many times, a different spot and turn each.

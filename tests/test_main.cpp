@@ -6064,6 +6064,54 @@ TEST(far_geometry_drops_window_frames) {
   CHECK(far.decals.empty());
 }
 
+TEST(formations_place_assign_and_steer) {
+  using mythos::Formation;
+  using mythos::Vec2;
+  const Vec2 anchor{10, 10}, forward{0, 1};
+  // A line is centred on the anchor and spaced.
+  const auto line =
+      mythos::FormationSlots(Formation::kLine, 3, anchor, forward, 2);
+  CHECK_EQ(line.size(), size_t{3});
+  CHECK(std::fabs(line[1].x - 10) < 1e-9 && std::fabs(line[1].y - 10) < 1e-9);
+  CHECK(std::fabs(std::hypot(line[0].x - line[2].x, line[0].y - line[2].y) -
+                  4) < 1e-9);
+  // A column trails behind (opposite the facing), the first at the anchor.
+  const auto column =
+      mythos::FormationSlots(Formation::kColumn, 3, anchor, forward, 1.5);
+  CHECK(std::fabs(column[0].y - 10) < 1e-9);
+  CHECK(std::fabs(column[2].y - 7) < 1e-9);
+  // A wedge puts the leader first and the pairs behind it on both sides.
+  const auto wedge =
+      mythos::FormationSlots(Formation::kWedge, 5, anchor, forward, 1);
+  CHECK(wedge[1].y < 10 && wedge[2].y < 10);
+  CHECK((wedge[1].x - 10) * (wedge[2].x - 10) < 0);
+  // A circle has every slot the same distance from the anchor.
+  const auto ring =
+      mythos::FormationSlots(Formation::kCircle, 6, anchor, forward, 1);
+  for (const Vec2& s : ring) {
+    CHECK(std::fabs(std::hypot(s.x - 10, s.y - 10) -
+                    std::hypot(ring[0].x - 10, ring[0].y - 10)) < 1e-9);
+  }
+  // A grid of nine is three by three.
+  const auto grid =
+      mythos::FormationSlots(Formation::kGrid, 9, anchor, forward, 1);
+  CHECK(std::fabs(grid[8].y - 8) < 1e-9);
+  // Assignment: the members take the nearest free slots, one each.
+  const std::vector<Vec2> members = {{12, 10}, {8, 10}};
+  const auto slots =
+      mythos::FormationSlots(Formation::kLine, 2, anchor, forward, 4);
+  const auto taken = mythos::AssignSlots(members, slots);
+  CHECK(taken[0] != taken[1]);
+  CHECK(std::hypot(members[0].x - slots[taken[0]].x,
+                   members[0].y - slots[taken[0]].y) < 2.5);
+  CHECK(std::hypot(members[1].x - slots[taken[1]].x,
+                   members[1].y - slots[taken[1]].y) < 2.5);
+  // Steering arrives: full speed far away, slower and then still on the slot.
+  CHECK(std::fabs(mythos::FormationSteer({0, 0}, {10, 0}, 2).x - 2) < 1e-9);
+  CHECK(std::fabs(mythos::FormationSteer({0, 0}, {0.5, 0}, 2, 1).x - 1) < 1e-9);
+  CHECK(mythos::FormationSteer({1, 1}, {1, 1}, 2).x == 0.0);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);
