@@ -347,6 +347,22 @@ void main() {
                 lmCov = step(0.5, lm.a);
                 light += uLmStrength * lm.rgb * lmCov;
             }
+            // A thin wall's face: layers 6 +x, 7 -x, 8 +z, 9 -z, in the cell the point is in, on the plane
+            // half the wall's thickness (0.1) either side of the middle.
+            if (lmCov < 0.5 && (face < 2 || face >= 4) && vWorld.y > -0.03 && vWorld.y < 2.53) {
+                vec2 c2 = floor(vWorld.xz);
+                int tl = face < 2 ? (geo.x >= 0.0 ? 6 : 7) : (geo.z >= 0.0 ? 8 : 9);
+                float tplane = tl == 6 ? c2.x + 0.6 : tl == 7 ? c2.x + 0.4 : tl == 8 ? c2.y + 0.6 : c2.y + 0.4;
+                float talong = tl < 8 ? vWorld.x : vWorld.z;
+                if (all(greaterThanEqual(c2, vec2(0.0))) && all(lessThan(c2, uLmInfo.xy)) && abs(talong - tplane) < 0.03) {
+                    float tu = tl < 8 ? vWorld.z - c2.y : vWorld.x - c2.x;
+                    vec2 slot = vec2(uLmInfo.z, uLmInfo.w);
+                    vec2 t = clamp(vec2(tu, vWorld.y / 2.5) * slot, vec2(0.5), slot - 0.5);
+                    vec4 lm = texture(uLmTex, vec3((c2 * slot + t) / (uLmInfo.xy * slot), float(tl)));
+                    lmCov = step(0.5, lm.a);
+                    light += uLmStrength * lm.rgb * lmCov;
+                }
+            }
         }
 
         // Baked light: the colour of the probes under this point (static lamps, no shadow); a lightmapped surface has its own.

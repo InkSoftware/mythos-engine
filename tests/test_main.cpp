@@ -6698,6 +6698,45 @@ TEST(linked_prefab_update_keeps_edits_and_deletions) {
   CHECK_EQ(doc.furniture.size(), size_t{4});
 }
 
+TEST(lightmap_covers_thin_walls) {
+  mythos::Level l;
+  l.SetTiles(ThinLegend());
+  CHECK(l.Parse(
+      {"#########", "#...W...#", "#...W...#", "#...W...#", "#########"}));
+  mythos::ProbeLamp lamp;
+  lamp.x = 2.5;
+  lamp.y = 1.8;
+  lamp.z = 2.5;
+  lamp.radius = 6;
+  mythos::LightmapOptions options;
+  options.texels_per_m = 4;
+  const mythos::Lightmap m = mythos::BakeLightmap(l, {lamp}, options);
+  CHECK_EQ(m.rgba.size(), static_cast<size_t>(mythos::kLightmapLayers) *
+                              m.Width() * m.Height() * 4);
+  bool covered = false;
+  // The thin wall's slab is at x = 4.4 .. 4.6: its west face looks at the lamp.
+  const auto lit = m.Sample(4.4, 1.2, 2.5, -1, 0, 0, &covered);
+  CHECK(covered);
+  CHECK(lit[0] > 0.05f);
+  // Its east face is on the far side of the wall: baked, dark.
+  const auto dark = m.Sample(4.6, 1.2, 2.5, 1, 0, 0, &covered);
+  CHECK(covered);
+  CHECK(dark[0] < 1e-6f);
+  // The faces along the wall (z planes) too, and a point off the faces is not
+  // on a tile.
+  (void)m.Sample(4.5, 1.2, 1.4, 0, 0, -1, &covered);
+  CHECK(covered);
+  (void)m.Sample(4.5, 1.2, 2.0, -1, 0, 0, &covered);
+  CHECK(!covered);
+  // The old six-face lookup is unchanged: the floor in the lit room.
+  CHECK(m.Sample(2.5, 0, 2.5, 0, 1, 0, &covered)[0] > 0.1f && covered);
+  // The file keeps all ten layers.
+  mythos::Lightmap back;
+  std::string error;
+  CHECK(mythos::ParseLightmap(mythos::SerializeLightmap(m), &back, &error));
+  CHECK(back.Sample(4.4, 1.2, 2.5, -1, 0, 0, &covered)[0] > 0.05f && covered);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

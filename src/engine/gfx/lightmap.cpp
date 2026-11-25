@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "engine/gfx/mesh.h"
+#include "engine/world/tiles.h"
 
 namespace mythos {
 namespace {
@@ -33,10 +34,34 @@ size_t Offset(const Lightmap& m, const int face, const int x, const int y) {
 
 std::array<float, 4> Lightmap::Texel(const int face, const int x,
                                      const int y) const {
-  if (Empty() || face < 0 || face >= kLightmapFaces) return {0, 0, 0, 0};
+  if (Empty() || face < 0 || face >= kLightmapLayers) return {0, 0, 0, 0};
   const size_t k = Offset(*this, face, std::clamp(x, 0, Width() - 1),
                           std::clamp(y, 0, Height() - 1));
   return {rgba[k], rgba[k + 1], rgba[k + 2], rgba[k + 3]};
+}
+
+namespace {
+// Bilinear inside one tile of `layer` (cell cx, cz), the coordinates (u, v)
+// in 0..1 of the tile's `rows` rows, clamped to texel centres.
+std::array<float, 4> TileSample(const Lightmap& m, const int layer,
+                                const int cx, const int cz, const double u,
+                                const double v, const double rows) {
+  const double tx = std::clamp(u * m.texels, 0.5, m.texels - 0.5);
+  const double ty = std::clamp(v * rows, 0.5, rows - 0.5);
+  const double gx = cx * m.texels + tx - 0.5, gy = cz * m.wall_rows + ty - 0.5;
+  const int x0 = static_cast<int>(std::floor(gx)),
+            y0 = static_cast<int>(std::floor(gy));
+  const auto fx = static_cast<float>(gx - x0), fy = static_cast<float>(gy - y0);
+  std::array<float, 4> out{};
+  const auto a = m.Texel(layer, x0, y0), b = m.Texel(layer, x0 + 1, y0),
+             c = m.Texel(layer, x0, y0 + 1), d = m.Texel(layer, x0 + 1, y0 + 1);
+  for (size_t k = 0; k < 4; ++k) {
+    const float top = a[k] + (b[k] - a[k]) * fx;
+    const float bottom = c[k] + (d[k] - c[k]) * fx;
+    out[k] = top + (bottom - top) * fy;
+  }
+  return out;
+}
 }
 
 std::array<float, 3> Lightmap::Sample(const double x, const double y,
@@ -46,53 +71,64 @@ std::array<float, 3> Lightmap::Sample(const double x, const double y,
   if (covered != nullptr) *covered = false;
   if (Empty()) return {0, 0, 0};
   const int face = FaceOf(nx, ny, nz);
+  const bool vertical = face < 2 || face >= 4;
+  if (vertical && (y < -kPlaneTolerance || y > kWallHeight + kPlaneTolerance))
+    return {0, 0, 0};
   // The cell the surface looks into, nudged off the plane.
   const int cx = static_cast<int>(std::floor(x + nx * 0.02));
   const int cz = static_cast<int>(std::floor(z + nz * 0.02));
-  if (cx < 0 || cz < 0 || cx >= cells_x || cz >= cells_z) return {0, 0, 0};
-  // The point must lie on the tile's plane, so furniture is left out.
-  const double plane = face == 0   ? cx
-                       : face == 1 ? cx + 1.0
-                       : face == 2 ? 0.0
-                       : face == 3 ? kWallHeight
-                       : face == 4 ? cz
-                                   : cz + 1.0;
-  const double along = face < 2 ? x : (face < 4 ? y : z);
-  if (std::fabs(along - plane) > kPlaneTolerance) return {0, 0, 0};
-  double u = 0, v = 0;
-  double rows = wall_rows;
-  if (face < 2) {
-    u = z - cz;
-    v = y / kWallHeight;
-  } else if (face < 4) {
-    u = x - cx;
-    v = z - cz;
-    rows = texels;
-  } else {
-    u = x - cx;
-    v = y / kWallHeight;
+  if (cx >= 0 && cz >= 0 && cx < cells_x && cz < cells_z) {
+    // The point must lie on the tile's plane, so furniture is left out.
+    const double plane = face == 0   ? cx
+                         : face == 1 ? cx + 1.0
+                         : face == 2 ? 0.0
+                         : face == 3 ? kWallHeight
+                         : face == 4 ? cz
+                                     : cz + 1.0;
+    const double along = face < 2 ? x : (face < 4 ? y : z);
+    if (std::fabs(along - plane) <= kPlaneTolerance) {
+      double u = 0, v = 0, rows = wall_rows;
+      if (face < 2) {
+        u = z - cz;
+        v = y / kWallHeight;
+      } else if (face < 4) {
+        u = x - cx;
+        v = z - cz;
+        rows = texels;
+      } else {
+        u = x - cx;
+        v = y / kWallHeight;
+      }
+      const auto out = TileSample(*this, face, cx, cz, u, v, rows);
+      if (out[3] > 0.5f) {
+        if (covered != nullptr) *covered = true;
+        return {out[0], out[1], out[2]};
+      }
+    }
   }
-  if (face < 2 || face >= 4) {
-    if (y < -kPlaneTolerance || y > kWallHeight + kPlaneTolerance)
-      return {0, 0, 0};
+  // A thin wall's face: in the cell the point is in, on the plane half the
+  // wall's thickness either side of the middle.
+  if (vertical) {
+    const int tx = static_cast<int>(std::floor(x));
+    const int tz = static_cast<int>(std::floor(z));
+    if (tx < 0 || tz < 0 || tx >= cells_x || tz >= cells_z) return {0, 0, 0};
+    constexpr double kHalf = kThinWallThickness / 2.0;
+    const int layer = face < 2 ? (nx >= 0 ? 6 : 7) : (nz >= 0 ? 8 : 9);
+    const double plane = layer == 6   ? tx + 0.5 + kHalf
+                         : layer == 7 ? tx + 0.5 - kHalf
+                         : layer == 8 ? tz + 0.5 + kHalf
+                                      : tz + 0.5 - kHalf;
+    const double along = layer < 8 ? x : z;
+    if (std::fabs(along - plane) > kPlaneTolerance) return {0, 0, 0};
+    const double u = layer < 8 ? z - tz : x - tx;
+    const auto out =
+        TileSample(*this, layer, tx, tz, u, y / kWallHeight, wall_rows);
+    if (out[3] > 0.5f) {
+      if (covered != nullptr) *covered = true;
+      return {out[0], out[1], out[2]};
+    }
   }
-  // Texel coordinates inside the tile, clamped to texel centres.
-  const double tx = std::clamp(u * texels, 0.5, texels - 0.5);
-  const double ty = std::clamp(v * rows, 0.5, rows - 0.5);
-  const double gx = cx * texels + tx - 0.5, gy = cz * wall_rows + ty - 0.5;
-  const int x0 = static_cast<int>(std::floor(gx)),
-            y0 = static_cast<int>(std::floor(gy));
-  const auto fx = static_cast<float>(gx - x0), fy = static_cast<float>(gy - y0);
-  std::array<float, 4> out{};
-  const auto a = Texel(face, x0, y0), b = Texel(face, x0 + 1, y0),
-             c = Texel(face, x0, y0 + 1), d = Texel(face, x0 + 1, y0 + 1);
-  for (size_t k = 0; k < 4; ++k) {
-    const float top = a[k] + (b[k] - a[k]) * fx;
-    const float bottom = c[k] + (d[k] - c[k]) * fx;
-    out[k] = top + (bottom - top) * fy;
-  }
-  if (covered != nullptr) *covered = out[3] > 0.5f;
-  return {out[0], out[1], out[2]};
+  return {0, 0, 0};
 }
 
 Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
@@ -103,14 +139,14 @@ Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
   m.cells_z = level.Height();
   int t = std::max(2, options.texels_per_m);
   const auto size_for = [&](const int texels) {
-    return static_cast<size_t>(kLightmapFaces) * m.cells_x * texels *
+    return static_cast<size_t>(kLightmapLayers) * m.cells_x * texels *
            m.cells_z * static_cast<size_t>(std::lround(kWallHeight * texels));
   };
   while (t > 2 && size_for(t) > kMaxTexels) t /= 2;
   m.texels = t;
   m.wall_rows = static_cast<int>(std::lround(kWallHeight * t));
   m.rgba.assign(
-      static_cast<size_t>(kLightmapFaces) * m.Width() * m.Height() * 4, 0.0f);
+      static_cast<size_t>(kLightmapLayers) * m.Width() * m.Height() * 4, 0.0f);
 
   const auto open = [&](const int cx, const int cz) {
     return cx >= 0 && cz >= 0 && cx < m.cells_x && cz < m.cells_z &&
@@ -170,6 +206,54 @@ Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
             }
             const size_t k =
                 Offset(m, face, cx * m.texels + i, cz * m.wall_rows + j);
+            m.rgba[k] = static_cast<float>(r);
+            m.rgba[k + 1] = static_cast<float>(g);
+            m.rgba[k + 2] = static_cast<float>(b);
+            m.rgba[k + 3] = 1.0f;
+          }
+        }
+      }
+    }
+  }
+  // Thin walls: the four faces of each thin cell, along the whole cell.
+  constexpr double kHalf = kThinWallThickness / 2.0;
+  for (int cz = 0; cz < m.cells_z; ++cz) {
+    for (int cx = 0; cx < m.cells_x; ++cx) {
+      if (!level.Tiles().Thin(level.At(cx, cz))) continue;
+      for (int layer = 6; layer < kLightmapLayers; ++layer) {
+        const bool along_x = layer >= 8;  // the tile runs along x
+        const double n[3] = {layer == 6 ? 1.0 : (layer == 7 ? -1.0 : 0.0), 0.0,
+                             layer == 8 ? 1.0 : (layer == 9 ? -1.0 : 0.0)};
+        for (int j = 0; j < m.wall_rows; ++j) {
+          for (int i = 0; i < m.texels; ++i) {
+            const double a = (i + 0.5) / m.texels;
+            const double py = (j + 0.5) / m.wall_rows * kWallHeight;
+            double px = 0, pz = 0;
+            if (along_x) {
+              px = cx + a;
+              pz = cz + 0.5 + n[2] * kHalf;
+            } else {
+              px = cx + 0.5 + n[0] * kHalf;
+              pz = cz + a;
+            }
+            double r = options.ambient[0], g = options.ambient[1],
+                   b = options.ambient[2];
+            const double sx = px + n[0] * 0.05, sz = pz + n[2] * 0.05;
+            for (const ProbeLamp& lamp : lamps) {
+              const double dx = lamp.x - px, dy = lamp.y - py, dz = lamp.z - pz;
+              const double dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+              if (dist >= lamp.radius || dist < 1e-6) continue;
+              const double facing = (dx * n[0] + dy * n[1] + dz * n[2]) / dist;
+              if (facing <= 0) continue;
+              if (!level.LineOfSight(lamp.x, lamp.z, sx, sz)) continue;
+              double att = 1.0 - dist / lamp.radius;
+              att *= att * (0.35 + 0.65 * facing);
+              r += lamp.r * att;
+              g += lamp.g * att;
+              b += lamp.b * att;
+            }
+            const size_t k =
+                Offset(m, layer, cx * m.texels + i, cz * m.wall_rows + j);
             m.rgba[k] = static_cast<float>(r);
             m.rgba[k + 1] = static_cast<float>(g);
             m.rgba[k + 2] = static_cast<float>(b);
@@ -276,7 +360,7 @@ bool ParseLightmap(const std::string& bytes, Lightmap* const out,
       m.cells_x > 4096 || m.cells_z > 4096 || m.texels > 64 ||
       m.wall_rows > 256)
     return fail("bad sizes");
-  const size_t count = static_cast<size_t>(kLightmapFaces) *
+  const size_t count = static_cast<size_t>(kLightmapLayers) *
                        static_cast<size_t>(m.Width()) *
                        static_cast<size_t>(m.Height()) * 4;
   if (count > 4 * kMaxTexels || bytes.size() != 21 + count * 2)

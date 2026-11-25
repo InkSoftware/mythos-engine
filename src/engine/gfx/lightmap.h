@@ -23,6 +23,10 @@ namespace mythos {
 // cell's west side), -x (east side), +y (the floor), -y (the ceiling), +z
 // (north side), -z (south side).
 inline constexpr int kLightmapFaces = 6;
+// A thin wall's four faces get tiles of their own, as layers after the six:
+// +x (the plane at the cell's middle plus half the wall's thickness), -x, +z
+// and -z. The tile covers the whole cell along the wall.
+inline constexpr int kLightmapLayers = kLightmapFaces + 4;
 
 struct LightmapOptions {
   // Texels a metre. Halved (down to 2) until the maps fit about 8 million
@@ -38,7 +42,7 @@ struct Lightmap {
   // every tile slot is `texels` wide and `wall_rows` tall, a floor or ceiling
   // using the first `texels` rows.
   int texels = 8, wall_rows = 20;
-  // kLightmapFaces layers of Width() x Height() RGBA floats (alpha 1 where a
+  // kLightmapLayers layers of Width() x Height() RGBA floats (alpha 1 where a
   // texel was baked, 0 where the tile does not exist).
   std::vector<float> rgba;
 

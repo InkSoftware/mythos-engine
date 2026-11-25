@@ -714,7 +714,7 @@ void SceneRenderer::UploadLightmap(const Lightmap& map) {
   lightmap_tex_.Create();
   BindTexture(gl::kTexture2DArray, lightmap_tex_.Id());
   gl::TexImage3D(gl::kTexture2DArray, 0, static_cast<gl::GLint>(gl::kRgba16f),
-                 map.Width(), map.Height(), kLightmapFaces, 0, gl::kRgba,
+                 map.Width(), map.Height(), kLightmapLayers, 0, gl::kRgba,
                  kFloat, map.rgba.data());
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMinFilter, kLinear);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMagFilter, kLinear);
