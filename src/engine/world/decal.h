@@ -5,9 +5,20 @@
 
 namespace mythos {
 enum class DecalFace {
-  kNorth, kSouth, kWest, kEast, kFloor, kCeiling,
-  kThinNorth, kThinSouth, kThinWest, kThinEast,
-  kGlassNorth, kGlassSouth, kGlassWest, kGlassEast
+  kNorth,
+  kSouth,
+  kWest,
+  kEast,
+  kFloor,
+  kCeiling,
+  kThinNorth,
+  kThinSouth,
+  kThinWest,
+  kThinEast,
+  kGlassNorth,
+  kGlassSouth,
+  kGlassWest,
+  kGlassEast
 };
 
 struct Decal {
@@ -16,6 +27,9 @@ struct Decal {
   double offset_u = 0, offset_v = 0;
   double width = 1, height = 1, rotation = 0;
   std::string texture;
+  // Editor bookkeeping, not in the file line: the id of the prefab link that
+  // placed it (see editor/prefab.h); empty for an ordinary decal.
+  std::string link;
 
   bool operator==(const Decal&) const = default;
 };

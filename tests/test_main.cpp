@@ -6271,6 +6271,163 @@ TEST(settings_menu_has_a_quit_row_when_asked) {
   CHECK(!s.quit_requested);
 }
 
+namespace {
+// A prefab of a cell trigger, a box trigger, a floor decal, a wall decal and a
+// rule driven by the first trigger, in a 3 x 2 footprint.
+mythos::editor::Prefab TriggerPrefab() {
+  using namespace mythos;
+  editor::Prefab p;
+  p.name = "gate";
+  p.width = 3;
+  p.height = 2;
+  Trigger cell;
+  cell.id = "gate";
+  cell.shape = TriggerShape::kCell;
+  cell.cell_x = 2;
+  cell.cell_z = 0;
+  Trigger box;
+  box.id = "zone";
+  box.shape = TriggerShape::kBox;
+  box.min = {0.5, 0, 0.25};
+  box.max = {1.5, 2, 1.0};
+  p.triggers = {cell, box};
+  Decal floor;
+  floor.x = 1;
+  floor.y = 1;
+  floor.face = DecalFace::kFloor;
+  floor.offset_u = 0.25;
+  floor.texture = "stain";
+  Decal wall;
+  wall.x = 0;
+  wall.y = 0;
+  wall.face = DecalFace::kNorth;
+  wall.texture = "stain";
+  p.decals = {floor, wall};
+  EventRule r;
+  r.id = "open";
+  r.event = {EventKind::kTrigger, "gate", "enter", false};
+  r.actions.push_back({"set_flag", "open"});
+  p.rules = {r};
+  return p;
+}
+}
+
+TEST(prefab_carries_decals_triggers_and_rules) {
+  using namespace mythos;
+  const editor::Prefab p = TriggerPrefab();
+  // The file format round trips.
+  editor::Prefab back;
+  std::string error;
+  CHECK(editor::ParsePrefab(editor::SerializePrefab(p), &back, &error));
+  CHECK_EQ(back.decals.size(), size_t{2});
+  CHECK_EQ(back.triggers.size(), size_t{2});
+  CHECK_EQ(back.rules.size(), size_t{1});
+  CHECK(back.triggers[1].max.z == 1.0 && back.decals[0].offset_u == 0.25);
+  // A cell trigger outside the footprint is an error.
+  editor::Prefab bad;
+  CHECK(!editor::ParsePrefab("[size]\n2 2\n[triggers]\n" +
+                                 SerializeTriggerLine([] {
+                                   Trigger t;
+                                   t.id = "x";
+                                   t.shape = TriggerShape::kCell;
+                                   t.cell_x = 5;
+                                   return t;
+                                 }()) +
+                                 "\n",
+                             &bad, &error));
+  // One quarter turn clockwise: the cell (2, 0) of a 3 x 2 footprint is (1, 2)
+  // of a 2 x 3 one; the wall decal on the north face looks east; the floor
+  // decal's offset turns with it and the box corners are (x, z) -> (2 - z, x).
+  const editor::Prefab r = editor::Rotated(p, 1);
+  CHECK(r.width == 2 && r.height == 3);
+  CHECK(r.triggers[0].cell_x == 1 && r.triggers[0].cell_z == 2);
+  CHECK(r.decals[1].face == DecalFace::kEast);
+  CHECK(std::fabs(r.decals[0].offset_v - 0.25) < 1e-9 &&
+        std::fabs(r.decals[0].rotation - 90.0) < 1e-9);
+  CHECK(std::fabs(r.triggers[1].min.x - 1.0) < 1e-9 &&
+        std::fabs(r.triggers[1].max.x - 1.75) < 1e-9 &&
+        std::fabs(r.triggers[1].min.z - 0.5) < 1e-9);
+  // Four turns are the identity.
+  CHECK(editor::Rotated(p, 4) == p);
+  // Placing into a level that already has a trigger "gate" renames it and the
+  // rule driven by it.
+  editor::LevelDoc doc;
+  CHECK(editor::ParseLevelDoc("[map]\n.......\n.......\n.......\n.......\n",
+                              &doc, &error));
+  Trigger existing;
+  existing.id = "gate";
+  existing.shape = TriggerShape::kCell;
+  doc.triggers.push_back(existing);
+  const editor::PlaceResult placed = editor::PlacePrefab(doc, p, 2, 1);
+  CHECK(placed.triggers == 2 && placed.decals == 2 && placed.rules == 1);
+  CHECK_EQ(doc.triggers.size(), size_t{3});
+  CHECK(doc.triggers[1].id == "gate_2" && doc.triggers[1].cell_x == 4);
+  CHECK(doc.rules[0].event.id == "gate_2");
+  CHECK(doc.decals[0].x == 3 && doc.decals[0].y == 2);
+  // Capturing it again takes them back (the rule with its trigger).
+  const editor::Prefab cap = editor::CapturePrefab(doc, 2, 1, 4, 2, "again");
+  CHECK_EQ(cap.decals.size(), size_t{2});
+  CHECK_EQ(cap.rules.size(), size_t{1});
+  CHECK(cap.triggers.size() == 2);
+}
+
+TEST(prefab_links_update_unlink_and_survive_the_file) {
+  using namespace mythos;
+  editor::Prefab p = TriggerPrefab();
+  p.furniture.push_back({0, 1, "chair", 90, 0, 0, 0, ""});
+  editor::LevelDoc doc;
+  std::string error;
+  CHECK(editor::ParseLevelDoc("[map]\n.......\n.......\n.......\n.......\n",
+                              &doc, &error));
+  doc.furniture.push_back({6, 3, "table", 0, 0, 0, 0, ""});  // not the link's
+  const std::string id = editor::NewLinkId(doc);
+  CHECK(id == "link_1");
+  const editor::PlaceResult r = editor::PlacePrefab(doc, p, 1, 1, 0, {}, id);
+  CHECK(r.furniture == 1 && r.decals == 2 && r.triggers == 2 && r.rules == 1);
+  CHECK_EQ(doc.links.size(), size_t{1});
+  CHECK(doc.triggers[0].id == "link_1/gate" &&
+        doc.rules[0].id == "link_1/open");
+  CHECK(doc.rules[0].event.id == "link_1/gate");
+  CHECK(editor::NewLinkId(doc) == "link_2");
+  // The file keeps the link: the tags, the record, and the game's loader still
+  // reads the same level.
+  const std::string text = editor::SerializeLevelDoc(doc);
+  CHECK(!text.empty());
+  editor::LevelDoc again;
+  CHECK(editor::ParseLevelDoc(text, &again, &error));
+  CHECK(again.links == doc.links);
+  CHECK(again.furniture[1].link == id && again.furniture[0].link.empty());
+  CHECK(again.decals[0].link == id && again.decals[1].link == id);
+  CHECK(again.furniture == doc.furniture && again.decals == doc.decals &&
+        again.triggers == doc.triggers && again.rules == doc.rules);
+  Level runtime;
+  CHECK(runtime.ParseText(text, &error));
+  CHECK_EQ(runtime.Triggers().size(), size_t{2});
+  CHECK_EQ(runtime.Decals().size(), size_t{2});
+  // Updating with a smaller prefab replaces what the link placed and nothing
+  // else.
+  editor::Prefab smaller = p;
+  smaller.decals.clear();
+  smaller.triggers.resize(1);
+  smaller.furniture.clear();
+  CHECK(editor::UpdateLinked(doc, id, smaller));
+  CHECK(doc.furniture.size() == 1 && doc.furniture[0].model == "table");
+  CHECK(doc.decals.empty() && doc.triggers.size() == 1 &&
+        doc.links.size() == 1);
+  CHECK(!editor::UpdateLinked(doc, "nope", smaller));
+  // Unlinking keeps the items and drops the tags and the record.
+  CHECK(editor::PlacePrefab(doc, p, 3, 0, 0, {}, "link_2").furniture == 1);
+  CHECK(editor::Unlink(doc, "link_2"));
+  CHECK(doc.links.size() == 1);
+  CHECK(std::ranges::none_of(
+      doc.furniture, [](const editor::Item& i) { return i.link == "link_2"; }));
+  CHECK(doc.furniture.size() == 2);
+  // Removing a link takes everything it placed.
+  CHECK(editor::RemoveLinked(doc, id) > 0);
+  CHECK(doc.links.empty() && doc.triggers.size() == 2);  // link_2's two remain
+  CHECK(editor::RemoveLinked(doc, id) == -1);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

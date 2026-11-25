@@ -1036,12 +1036,16 @@ void EditorApp::PrefabInput(const bool pressed, const bool down,
     return;
   }
   const TileSet& tiles = project_.Tiles();
-  const PlaceResult r =
-      PlacePrefab(*doc, prefab_cache_, hover_x_, hover_z_, prefab_turns_,
-                  [&](const char glyph) { return tiles.Solid(glyph); });
-  if (r.furniture + r.decor > 0) project_.Touch(level_);
-  prefab_status_ = "Placed " + std::to_string(r.furniture) + " furniture and " +
-                   std::to_string(r.decor) + " decor" +
+  prefab_cache_.name = prefab_sel_;
+  const PlaceResult r = PlacePrefab(
+      *doc, prefab_cache_, hover_x_, hover_z_, prefab_turns_,
+      [&](const char glyph) { return tiles.Solid(glyph); },
+      prefab_link_ ? NewLinkId(*doc) : std::string());
+  if (r.furniture + r.decor + r.decals + r.triggers > 0) project_.Touch(level_);
+  prefab_status_ = "Placed " + std::to_string(r.furniture) + " furniture, " +
+                   std::to_string(r.decor) + " decor, " +
+                   std::to_string(r.decals) + " decals, " +
+                   std::to_string(r.triggers) + " triggers" +
                    (r.skipped > 0 ? ", skipped " + std::to_string(r.skipped)
                                   : std::string());
 }

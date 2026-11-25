@@ -91,9 +91,13 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
       if (section == "[decor]") {
         if (!(ls >> it.off_x >> it.off_z >> it.lift))
           return fail("bad decor line: " + line);
+        if (std::string tag; ls >> tag && tag[0] == '@')
+          it.link = tag.substr(1);
         doc.decor.push_back(it);
       } else {
         ls >> it.off_x >> it.off_z >> it.lift;  // optional on furniture
+        if (std::string tag; ls >> tag && tag[0] == '@')
+          it.link = tag.substr(1);
         doc.furniture.push_back(it);
       }
     } else if (section == "[decals]") {
@@ -111,6 +115,20 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
       if (!ParseEventRuleLine(line, &rule) || !rule_ids.insert(rule.id).second)
         return fail("bad or duplicate rule line: " + line);
       doc.rules.push_back(std::move(rule));
+    } else if (section == "[links]") {
+      std::istringstream ls(line);
+      PrefabLink link;
+      if (!(ls >> link.id >> link.prefab >> link.x >> link.y >> link.turns))
+        return fail("bad link line: " + line);
+      doc.links.push_back(link);
+    } else if (section == "[link_decals]") {
+      // `<index into [decals]> <link id>`: which decals a link placed.
+      std::istringstream ls(line);
+      size_t index = 0;
+      std::string id;
+      if (!(ls >> index >> id) || index >= doc.decals.size())
+        return fail("bad link decal line: " + line);
+      doc.decals[index].link = id;
     } else {
       return fail("line outside a section: " + line);
     }
@@ -156,19 +174,36 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
   for (const auto& i : doc.furniture) {
     s += std::to_string(i.x) + " " + std::to_string(i.y) + " " + i.model + " " +
          FormatNumber(i.yaw);
-    if (i.off_x != 0 || i.off_z != 0 || i.lift != 0)  // pushed against a wall
+    // Offsets when pushed against a wall, or always before a link tag.
+    if (i.off_x != 0 || i.off_z != 0 || i.lift != 0 || !i.link.empty())
       s += " " + FormatNumber(i.off_x) + " " + FormatNumber(i.off_z) + " " +
            FormatNumber(i.lift);
+    if (!i.link.empty()) s += " @" + i.link;
     s += '\n';
   }
   s += "[decor]\n";
   for (const auto& i : doc.decor)
     s += std::to_string(i.x) + " " + std::to_string(i.y) + " " + i.model + " " +
          FormatNumber(i.yaw) + " " + FormatNumber(i.off_x) + " " +
-         FormatNumber(i.off_z) + " " + FormatNumber(i.lift) + "\n";
+         FormatNumber(i.off_z) + " " + FormatNumber(i.lift) +
+         (i.link.empty() ? "" : " @" + i.link) + "\n";
   if (!doc.decals.empty()) {
     s += "[decals]\n";
     for (const auto& decal : doc.decals) s += SerializeDecalLine(decal) + "\n";
+  }
+  {
+    std::string tagged;
+    for (size_t i = 0; i < doc.decals.size(); ++i) {
+      if (!doc.decals[i].link.empty())
+        tagged += std::to_string(i) + " " + doc.decals[i].link + "\n";
+    }
+    if (!tagged.empty()) s += "[link_decals]\n" + tagged;
+  }
+  if (!doc.links.empty()) {
+    s += "[links]\n";
+    for (const PrefabLink& l : doc.links)
+      s += l.id + " " + l.prefab + " " + std::to_string(l.x) + " " +
+           std::to_string(l.y) + " " + std::to_string(l.turns) + "\n";
   }
   if (!doc.triggers.empty()) {
     s += "[triggers]\n";

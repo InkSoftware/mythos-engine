@@ -289,6 +289,7 @@ class EditorApp {
   std::string prefab_sel_;
   int prefab_at_[2] = {0, 0};
   int prefab_turns_ = 0;
+  bool prefab_link_ = false;  // place as a link (updated when the file changes)
   std::string prefab_status_;
   std::string rule_sel_;
   EventRule rule_draft_;

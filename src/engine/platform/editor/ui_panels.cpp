@@ -669,14 +669,18 @@ void EditorApp::DrawPrefabs(LevelDoc& doc) {
     std::error_code ec;
     fs::create_directories(dir, ec);
     const std::string path = (dir / (p.name + ".prefab")).string();
-    if (p.furniture.empty() && p.decor.empty()) {
+    if (p.furniture.empty() && p.decor.empty() && p.decals.empty() &&
+        p.triggers.empty()) {
       prefab_status_ = "Nothing in that area.";
     } else if (!WriteFileAtomic(path, SerializePrefab(p))) {
       prefab_status_ = "Could not write " + path;
     } else {
       prefab_status_ = "Saved " + std::to_string(p.furniture.size()) +
-                       " furniture and " + std::to_string(p.decor.size()) +
-                       " decor to " + p.name + ".prefab";
+                       " furniture, " + std::to_string(p.decor.size()) +
+                       " decor, " + std::to_string(p.decals.size()) +
+                       " decals, " + std::to_string(p.triggers.size()) +
+                       " triggers and " + std::to_string(p.rules.size()) +
+                       " rules to " + p.name + ".prefab";
       prefab_sel_ = p.name;
     }
   }
@@ -704,6 +708,8 @@ void EditorApp::DrawPrefabs(LevelDoc& doc) {
                "90 clockwise\0"
                "180\0"
                "90 counter-clockwise\0");
+  ImGui::Checkbox("Link (update it when the prefab file changes)",
+                  &prefab_link_);
   ImGui::BeginDisabled(prefab_sel_.empty());
   if (ImGui::Button("Place prefab")) {
     Prefab p;
@@ -713,17 +719,63 @@ void EditorApp::DrawPrefabs(LevelDoc& doc) {
       prefab_status_ = "Cannot read " + prefab_sel_ + ": " + error;
     } else {
       const TileSet& tiles = project_.Tiles();
-      const PlaceResult r =
-          PlacePrefab(doc, p, prefab_at_[0], prefab_at_[1], prefab_turns_,
-                      [&](const char glyph) { return tiles.Solid(glyph); });
-      if (r.furniture + r.decor > 0) project_.Touch(level_);
+      p.name = prefab_sel_;
+      const PlaceResult r = PlacePrefab(
+          doc, p, prefab_at_[0], prefab_at_[1], prefab_turns_,
+          [&](const char glyph) { return tiles.Solid(glyph); },
+          prefab_link_ ? NewLinkId(doc) : std::string());
+      if (r.furniture + r.decor + r.decals + r.triggers > 0)
+        project_.Touch(level_);
       prefab_status_ = "Placed " + std::to_string(r.furniture) +
-                       " furniture and " + std::to_string(r.decor) + " decor" +
+                       " furniture, " + std::to_string(r.decor) + " decor, " +
+                       std::to_string(r.decals) + " decals, " +
+                       std::to_string(r.triggers) + " triggers" +
                        (r.skipped > 0 ? ", skipped " + std::to_string(r.skipped)
                                       : std::string());
     }
   }
   ImGui::EndDisabled();
+
+  // Linked placements: update from the file, unlink (keep the items) or remove.
+  if (!doc.links.empty()) ImGui::SeparatorText("Links");
+  for (size_t i = 0; i < doc.links.size(); ++i) {
+    const PrefabLink link = doc.links[i];  // the buttons may erase it
+    ImGui::PushID(static_cast<int>(i));
+    ImGui::Text("%s: %s at %d, %d", link.id.c_str(), link.prefab.c_str(),
+                link.x, link.y);
+    ImGui::SameLine();
+    const TileSet& tiles = project_.Tiles();
+    if (ImGui::SmallButton("Update")) {
+      Prefab p;
+      std::string error;
+      if (!ParsePrefab(ReadTextFile((dir / (link.prefab + ".prefab")).string()),
+                       &p, &error)) {
+        prefab_status_ = "Cannot read " + link.prefab + ": " + error;
+      } else {
+        p.name = link.prefab;
+        PlaceResult r;
+        UpdateLinked(
+            doc, link.id, p,
+            [&](const char glyph) { return tiles.Solid(glyph); }, &r);
+        project_.Touch(level_);
+        prefab_status_ = "Updated " + link.id + " (" +
+                         std::to_string(r.furniture + r.decor) + " items)";
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Unlink")) {
+      Unlink(doc, link.id);
+      project_.Touch(level_);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Remove")) {
+      RemoveLinked(doc, link.id);
+      project_.Touch(level_);
+      ImGui::PopID();
+      break;  // the list changed
+    }
+    ImGui::PopID();
+  }
   if (!prefab_status_.empty()) ImGui::TextWrapped("%s", prefab_status_.c_str());
 }
 

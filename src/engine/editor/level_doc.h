@@ -19,8 +19,23 @@ struct Item {
   double yaw = 0;
   double off_x = 0, off_z = 0;
   double lift = 0;
+  // The id of the prefab link that placed it (`[links]`; written as a trailing
+  // `@id` token the game's loader ignores); empty for an ordinary item.
+  std::string link;
 
   bool operator==(const Item&) const = default;
+};
+
+// A prefab placed as a link: the file it came from and where, so it can be
+// updated when the prefab changes (see editor/prefab.h). What it placed is
+// tagged: items and decals by `link`, triggers and rules by an id that starts
+// with `<id>/`.
+struct PrefabLink {
+  std::string id;
+  std::string prefab;
+  int x = 0, y = 0, turns = 0;
+
+  bool operator==(const PrefabLink&) const = default;
 };
 
 // An editable level file: the `[map]` glyph rows (all the same width) and the
@@ -34,6 +49,7 @@ struct LevelDoc {
   std::vector<Decal> decals;
   std::vector<Trigger> triggers;
   std::vector<EventRule> rules;
+  std::vector<PrefabLink> links;
 
   [[nodiscard]] int Width() const {
     return rows.empty() ? 0 : static_cast<int>(rows[0].size());
