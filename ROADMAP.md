@@ -229,7 +229,7 @@ more than was built.
   environment reflection; off by default and unchanged then. The template shows it with `--reflections` (a toolbox
   and a bucket stand in the first room). A probe can have a box for parallax correction, and the two nearest blend by distance. Up to 32 probes
   (a game places one per room or chunk; six hold a capture at a time). The capture is linear HDR (RGBA16F), prefiltered
-  with a GGX lobe per mip level. Not done: the sky and moving models in the capture.
+  with a GGX lobe per mip level. The capture holds the sky (outdoors) and the frame's model instances (a moving one stays as when captured).
 - **Where:** a probe is a cube capture of the scene at a position (reusing the
   shadow cube plumbing), filtered to a few roughness levels, assigned per
   chunk. The world shader replaces the analytic ambient term when one is

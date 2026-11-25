@@ -471,6 +471,7 @@ class SceneRenderer {
   };
   ReflectionProbe reflection_[kMaxReflectionProbes];
   int reflection_count_ = 0;
+  const ViewBasis* sky_basis_override_ = nullptr;  // a probe face's axes
   int env_probe_ = -1;   // the probe this frame's world pass reflects
   int env_probe2_ = -1;  // the next nearest, blended in by `env_blend_`
   float env_blend_ = 0.0f;

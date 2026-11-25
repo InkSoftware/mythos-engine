@@ -754,8 +754,9 @@ bool SceneRenderer::CaptureReflectionProbe(const CameraState& cam,
   if (key == probe.key) return true;
   probe.key = key;
 
+  // The capture keeps the sky and the models in `cam.instances` (a moving
+  // one is as it stood when the probe was captured: they are not in the key).
   CameraState pc = cam;
-  pc.instances.clear();
   pc.glass.clear();
   pc.particles.clear();
   pc.flash_on = false;
@@ -776,11 +777,26 @@ bool SceneRenderer::CaptureReflectionProbe(const CameraState& cam,
     ff.grain = 0.0f;
     ff.clip[0] = ff.clip[1] = ff.clip[2] = 0.0f;
     ff.clip[3] = 1.0f;
+    ff.fov_y = 1.5707963f;
+    ff.aspect = 1.0f;
     probe.cube.BindFace(face);
     ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     Clear(kColorBufferBit | kDepthBufferBit);
     Disable(kBlend);
     draw_state_ = DrawState{};
+    if (pc.outdoor) {
+      // The face's own axes, read back from its view matrix (column-major:
+      // the rows are right, up and minus forward).
+      ViewBasis basis;
+      for (int a = 0; a < 3; ++a) {
+        basis.right[a] = ff.view[a * 4];
+        basis.up[a] = ff.view[a * 4 + 1];
+        basis.forward[a] = -ff.view[a * 4 + 2];
+      }
+      sky_basis_override_ = &basis;
+      DrawSky(pc, ff);
+      sky_basis_override_ = nullptr;
+    }
     DrawWorld(pc, ff);
   }
   capturing_probe_ = false;
@@ -1053,6 +1069,7 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f,
   ViewBasis basis = MakeViewBasis(
       cam.yaw, cam.pitch,
       std::isfinite(cam.roll) ? Clampd(cam.roll, -1.0, 1.0) : 0.0);
+  if (sky_basis_override_ != nullptr) basis = *sky_basis_override_;
   if (mirror_normal) {
     // Each axis of the view reflected about the glass plane.
     for (double* axis : {basis.forward, basis.right, basis.up}) {
@@ -1092,6 +1109,7 @@ void SceneRenderer::DrawSky(const CameraState& cam, const Frame& f,
   sky_program_.Set("uExposure", f.grade.exposure);
   sky_program_.Set("uTonemap", static_cast<int>(f.grade.tonemap));
   sky_program_.Set("uVignette", f.grade.vignette);
+  sky_program_.Set("uHdr", capturing_probe_ ? 1 : 0);
   DrawQuad();
 }
 
