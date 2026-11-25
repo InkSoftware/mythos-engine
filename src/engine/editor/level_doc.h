@@ -34,6 +34,11 @@ struct PrefabLink {
   std::string id;
   std::string prefab;
   int x = 0, y = 0, turns = 0;
+  // The prefab file's text as it was placed (`SerializePrefab`; `[link_base]`
+  // in the level, one escaped line): `UpdateLinked` compares the linked items
+  // with it to tell the ones you edited or deleted from the untouched. Empty
+  // for a link made before this existed (an update then replaces everything).
+  std::string base;
 
   bool operator==(const PrefabLink&) const = default;
 };

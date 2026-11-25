@@ -66,6 +66,11 @@ class EditorApp {
 
   // True once the user has confirmed quitting.
   bool WantsQuit() const { return quit_; }
+  // For a scripted session (`--script`): shows a panel by name (graph,
+  // cutscene, inspector...) and describes the open level in one line (counts of
+  // rules, triggers, links, furniture, decals and cutscene keys).
+  void ShowPanel(const std::string& name);
+  std::string Summary() const;
   // True while a game preview is rendering.
   bool Busy() const { return preview_running_; }
   // True once a preview picture has been loaded.

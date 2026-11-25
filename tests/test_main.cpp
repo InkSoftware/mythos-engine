@@ -6636,6 +6636,68 @@ TEST(event_graph_edits_conditions_actions_rules_and_layout) {
   CHECK_EQ(editor::ParseGraphLayout("junk\n1 flag 2 3\n").size(), size_t{1});
 }
 
+TEST(linked_prefab_update_keeps_edits_and_deletions) {
+  using namespace mythos;
+  editor::Prefab v1 = TriggerPrefab();
+  v1.furniture = {{0, 0, "chair", 0, 0, 0, 0, ""},
+                  {1, 0, "table", 0, 0, 0, 0, ""},
+                  {2, 0, "plant", 0, 0, 0, 0, ""}};
+  editor::LevelDoc doc;
+  std::string error;
+  CHECK(editor::ParseLevelDoc("[map]\n.......\n.......\n.......\n.......\n",
+                              &doc, &error));
+  CHECK(editor::PlacePrefab(doc, v1, 1, 1, 0, {}, "link_1").furniture == 3);
+  CHECK(!doc.links[0].base.empty());
+  // The player turns the chair, deletes the table, and leaves the plant.
+  const auto find = [&](const char* model) {
+    return std::ranges::find_if(
+        doc.furniture, [&](const editor::Item& i) { return i.model == model; });
+  };
+  find("chair")->yaw = 90;
+  doc.furniture.erase(find("table"));
+  // The record survives the file.
+  editor::LevelDoc reread;
+  CHECK(editor::ParseLevelDoc(editor::SerializeLevelDoc(doc), &reread, &error));
+  CHECK(reread.links[0].base == doc.links[0].base);
+  // The new version: the chair is a bench, the table stays, the plant is a
+  // vase, and a lamp is new.
+  editor::Prefab v2 = v1;
+  v2.furniture = {{0, 0, "bench", 0, 0, 0, 0, ""},
+                  {1, 0, "table", 0, 0, 0, 0, ""},
+                  {2, 0, "vase", 0, 0, 0, 0, ""},
+                  {3, 0, "lamp", 0, 0, 0, 0, ""}};
+  editor::PlaceResult r;
+  CHECK(editor::UpdateLinked(reread, "link_1", v2, {}, &r));
+  const auto has = [&](const char* model) {
+    return std::ranges::any_of(reread.furniture, [&](const editor::Item& i) {
+      return i.model == model;
+    });
+  };
+  CHECK(has("chair"));                  // edited: kept as the player left it
+  CHECK(!has("bench"));                 // ... and not replaced
+  CHECK(!has("table"));                 // deleted: does not come back
+  CHECK(!has("plant") && has("vase"));  // untouched: replaced
+  CHECK(has("lamp"));                   // new in the file: added
+  CHECK(std::ranges::find_if(reread.furniture, [](const editor::Item& i) {
+          return i.model == "chair";
+        })->yaw == 90);
+  CHECK_EQ(reread.furniture.size(), size_t{3});
+  CHECK(reread.links[0].base == editor::SerializePrefab(v2));
+  // Everything else the link placed is still there once.
+  CHECK(reread.decals.size() == 2 && reread.triggers.size() == 2 &&
+        reread.rules.size() == 1);
+  // Without a record, or with keep_edits off, an update replaces everything.
+  editor::LevelDoc plain = doc;
+  plain.links[0].base.clear();
+  CHECK(editor::UpdateLinked(plain, "link_1", v2));
+  CHECK(std::ranges::any_of(plain.furniture, [](const editor::Item& i) {
+    return i.model == "bench";
+  }));
+  CHECK_EQ(plain.furniture.size(), size_t{4});
+  CHECK(editor::UpdateLinked(doc, "link_1", v2, {}, nullptr, false));
+  CHECK_EQ(doc.furniture.size(), size_t{4});
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

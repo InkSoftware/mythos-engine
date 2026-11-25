@@ -80,13 +80,17 @@ std::string NewLinkId(const LevelDoc& doc);
 // removed, or -1 without such a link.
 int RemoveLinked(LevelDoc& doc, const std::string& link_id);
 
-// Removes what the link placed and places `prefab` (its new version) again
-// where and how the link says. Edits made to the linked items are replaced;
-// `Unlink` first to keep them. Returns false without such a link.
+// Brings what the link placed up to `prefab` (its new version), where and how
+// the link says. With `keep_edits` (and the link's record of what it placed,
+// `PrefabLink::base`) it is a three-way merge: items the player did not touch
+// are replaced by the new version's, items they edited (moved, changed) stay as
+// they are, and an item they deleted does not come back. A link with no record,
+// or `keep_edits` false, replaces everything it placed. `result` counts what
+// was added. Returns false without such a link.
 bool UpdateLinked(LevelDoc& doc, const std::string& link_id,
                   const Prefab& prefab,
                   const std::function<bool(char)>& blocked = {},
-                  PlaceResult* result = nullptr);
+                  PlaceResult* result = nullptr, bool keep_edits = true);
 
 // Turns the link's items back into ordinary level items (drops the tags and
 // the record; the ids of its triggers and rules stay as they are). Returns

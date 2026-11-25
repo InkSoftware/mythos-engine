@@ -121,6 +121,24 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
       if (!(ls >> link.id >> link.prefab >> link.x >> link.y >> link.turns))
         return fail("bad link line: " + line);
       doc.links.push_back(link);
+    } else if (section == "[link_base]") {
+      // `<link id> <the prefab text, \\ for a backslash and \n for a newline>`.
+      const size_t sp = line.find(' ');
+      if (sp == std::string::npos) return fail("bad link base line: " + line);
+      const std::string id = line.substr(0, sp);
+      std::string text;
+      for (size_t i = sp + 1; i < line.size(); ++i) {
+        if (line[i] == '\\' && i + 1 < line.size()) {
+          ++i;
+          text += line[i] == 'n' ? '\n' : line[i];
+        } else {
+          text += line[i];
+        }
+      }
+      const auto link = std::ranges::find_if(
+          doc.links, [&](const PrefabLink& l) { return l.id == id; });
+      if (link == doc.links.end()) return fail("a base for no link: " + id);
+      link->base = text;
     } else if (section == "[link_decals]") {
       // `<index into [decals]> <link id>`: which decals a link placed.
       std::istringstream ls(line);
@@ -204,6 +222,23 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
     for (const PrefabLink& l : doc.links)
       s += l.id + " " + l.prefab + " " + std::to_string(l.x) + " " +
            std::to_string(l.y) + " " + std::to_string(l.turns) + "\n";
+  }
+  {
+    std::string bases;
+    for (const PrefabLink& l : doc.links) {
+      if (l.base.empty()) continue;
+      std::string esc;
+      for (const char c : l.base) {
+        if (c == '\\')
+          esc += "\\\\";
+        else if (c == '\n')
+          esc += "\\n";
+        else
+          esc += c;
+      }
+      bases += l.id + " " + esc + "\n";
+    }
+    if (!bases.empty()) s += "[link_base]\n" + bases;
   }
   if (!doc.triggers.empty()) {
     s += "[triggers]\n";

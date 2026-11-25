@@ -4,11 +4,16 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <numbers>
+#include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "backends/imgui_impl_opengl3.h"
 #include "backends/imgui_impl_sdl3.h"
@@ -117,6 +122,65 @@ std::string PickProject(SDL_Window* const window) {
 }
 }
 
+namespace {
+// A scripted session for checking the editor without a person: `--script
+// file` runs commands against the hidden window, one line each:
+//   frames N        run N more frames (the UI settles)
+//   panel NAME      show a panel (graph, cutscene, inspector, problems)
+//   mouse X Y       move the pointer (window pixels)
+//   click           press and release the left button (two frames)
+//   down / up       hold or release the left button
+//   drag X1 Y1 X2 Y2   press at 1, move in steps, release at 2
+//   scroll N        wheel notches at the pointer (negative scrolls down)
+//   key NAME        press a key (Delete, Escape, ...)
+//   shift on|off    hold Shift (alt likewise)
+//   shot PATH       write the window as a PPM
+//   print           print the open level's summary line
+//   expect TEXT     fail (exit code 1) unless the summary contains TEXT
+// `#` starts a comment.
+struct Script {
+  struct Step {
+    std::string op;
+    std::vector<std::string> args;
+  };
+  std::vector<Step> steps;
+  size_t next = 0;
+  int wait = 0;  // frames left before the next step
+  std::vector<std::pair<int, int>> queue;  // pending mouse moves for a drag
+  bool done() const { return next >= steps.size() && queue.empty() && wait <= 0; }
+
+  bool Load(const std::string& text) {
+    std::istringstream in(text);
+    for (std::string line; std::getline(in, line);) {
+      if (const size_t hash = line.find('#'); hash != std::string::npos)
+        line.resize(hash);
+      std::istringstream ls(line);
+      Step st;
+      if (!(ls >> st.op)) continue;
+      // `expect` keeps the rest of the line as one argument.
+      if (st.op == "expect") {
+        std::string rest;
+        std::getline(ls, rest);
+        const size_t a = rest.find_first_not_of(' ');
+        st.args.push_back(a == std::string::npos ? "" : rest.substr(a));
+      } else {
+        for (std::string arg; ls >> arg;) st.args.push_back(arg);
+      }
+      steps.push_back(std::move(st));
+    }
+    return !steps.empty();
+  }
+};
+
+ImGuiKey KeyByName(const std::string& n) {
+  if (n == "Delete") return ImGuiKey_Delete;
+  if (n == "Escape") return ImGuiKey_Escape;
+  if (n == "Enter") return ImGuiKey_Enter;
+  if (n == "Tab") return ImGuiKey_Tab;
+  return ImGuiKey_None;
+}
+}
+
 namespace mythos::editor {
 // Project resolution order: --project, then the folder remembered in
 // project.txt, then a folder dialog. Screenshot mode (--shot) skips the
@@ -127,6 +191,7 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
   args.project_dir = config.project_dir;
   args.stage_dir = config.stage_dir;
   std::string shot;
+  std::string script_path;
   int width = 1680, height = 1000, frames = 45;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -141,6 +206,8 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
       args.level = argv[++i];
     else if (a == "--shot" && more(1))
       shot = argv[++i];
+    else if (a == "--script" && more(1))
+      script_path = argv[++i];
     else if (a == "--size" && more(2)) {
       width = ParseInt(argv[++i], width);
       height = ParseInt(argv[++i], height);
@@ -166,13 +233,15 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
   const Adapter* adapter = config.adapter ? config.adapter : &default_adapter;
 
   mythos::Window window;
+  // A scripted session is hidden and keeps no layout file, like --shot.
+  const bool scripted = !script_path.empty();
   if (!window.Open((adapter->Name() + " - Level Editor").c_str(), width, height,
-                   shot.empty()))
+                   shot.empty() && !scripted))
     return 1;
 
   const std::string last_file = mythos::PrefFilePath(
       adapter->PrefsOrg(), adapter->PrefsApp(), "project.txt");
-  if (!HasProject(args.project_dir) && shot.empty()) {
+  if (!HasProject(args.project_dir) && shot.empty() && !scripted) {
     std::string last = mythos::ReadTextFile(last_file);
     while (!last.empty() && (last.back() == '\n' || last.back() == '\r'))
       last.pop_back();
@@ -195,7 +264,7 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
   io.ConfigFlags |=
       ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
   static std::string ini =
-      shot.empty() ? mythos::PrefFilePath(adapter->PrefsOrg(),
+      shot.empty() && !scripted ? mythos::PrefFilePath(adapter->PrefsOrg(),
                                           adapter->PrefsApp(), "layout.ini")
                    : "";
   io.IniFilename = ini.empty() ? nullptr : ini.c_str();
@@ -224,10 +293,19 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
                                window.Sdl());
       exit_code = 1;
     } else {
-      if (shot.empty()) mythos::WriteFileAtomic(last_file, args.project_dir);
+      if (shot.empty() && !scripted)
+        mythos::WriteFileAtomic(last_file, args.project_dir);
+      Script script;
+      if (scripted && !script.Load(mythos::ReadTextFile(script_path))) {
+        SDL_Log("cannot read the script %s", script_path.c_str());
+        exit_code = 1;
+      }
+      float mouse_x = 0, mouse_y = 0;
       Uint64 last = SDL_GetPerformanceCounter();
       int settle = 0;
-      for (int frame = 0; !app.WantsQuit(); ++frame) {
+      for (int frame = 0; !app.WantsQuit() && exit_code == 0 &&
+                          !(scripted && script.done());
+           ++frame) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
           ImGui_ImplSDL3_ProcessEvent(&e);
@@ -243,6 +321,96 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
+        if (scripted) {
+          ImGuiIO& sio = ImGui::GetIO();
+          if (!script.queue.empty()) {  // the steps of a drag
+            mouse_x = static_cast<float>(script.queue.front().first);
+            mouse_y = static_cast<float>(script.queue.front().second);
+            script.queue.erase(script.queue.begin());
+            sio.AddMousePosEvent(mouse_x, mouse_y);
+          } else if (script.wait > 0) {
+            --script.wait;
+          }
+          while (script.queue.empty() && script.wait <= 0 &&
+                 script.next < script.steps.size() && exit_code == 0) {
+            const Script::Step& st = script.steps[script.next++];
+            const auto num = [&](const size_t i) {
+              return i < st.args.size() ? ParseInt(st.args[i].c_str(), 0) : 0;
+            };
+            if (st.op == "frames") {
+              script.wait = std::max(1, num(0));
+            } else if (st.op == "panel" && !st.args.empty()) {
+              app.ShowPanel(st.args[0]);
+            } else if (st.op == "mouse") {
+              mouse_x = static_cast<float>(num(0));
+              mouse_y = static_cast<float>(num(1));
+              sio.AddMousePosEvent(mouse_x, mouse_y);
+              script.wait = 1;
+            } else if (st.op == "click") {
+              sio.AddMouseButtonEvent(0, true);
+              script.steps.insert(script.steps.begin() +
+                                      static_cast<std::ptrdiff_t>(script.next),
+                                  {"up", {}});
+              script.wait = 2;
+            } else if (st.op == "down" || st.op == "up") {
+              sio.AddMouseButtonEvent(0, st.op == "down");
+              script.wait = 2;
+            } else if (st.op == "drag") {
+              sio.AddMousePosEvent(static_cast<float>(num(0)),
+                                   static_cast<float>(num(1)));
+              sio.AddMouseButtonEvent(0, true);
+              constexpr int kSteps = 8;
+              for (int k = 1; k <= kSteps; ++k) {
+                script.queue.emplace_back(
+                    num(0) + (num(2) - num(0)) * k / kSteps,
+                    num(1) + (num(3) - num(1)) * k / kSteps);
+              }
+              script.steps.insert(script.steps.begin() +
+                                      static_cast<std::ptrdiff_t>(script.next),
+                                  {"up", {}});
+              script.wait = 2;
+            } else if (st.op == "scroll") {  // wheel notches at the pointer
+              sio.AddMouseWheelEvent(0.0f, static_cast<float>(num(0)));
+              script.wait = 2;
+            } else if (st.op == "key" && !st.args.empty()) {
+              const ImGuiKey key = KeyByName(st.args[0]);
+              sio.AddKeyEvent(key, true);
+              script.steps.insert(script.steps.begin() +
+                                      static_cast<std::ptrdiff_t>(script.next),
+                                  {"keyup", {st.args[0]}});
+              script.wait = 2;
+            } else if (st.op == "keyup" && !st.args.empty()) {
+              sio.AddKeyEvent(KeyByName(st.args[0]), false);
+              script.wait = 2;
+            } else if (st.op == "shift" || st.op == "alt") {
+              const bool on = !st.args.empty() && st.args[0] == "on";
+              sio.AddKeyEvent(st.op == "shift" ? ImGuiMod_Shift : ImGuiMod_Alt,
+                              on);
+              script.wait = 1;
+            } else if (st.op == "shot" && !st.args.empty()) {
+              int sw, sh;
+              window.DrawableSize(sw, sh);
+              gl::BindFramebuffer(gl::kFramebuffer, 0);
+              if (!mythos::WriteFramebufferPpm(st.args[0], sw, sh))
+                exit_code = 1;
+            } else if (st.op == "print") {
+              std::printf("%s\n", app.Summary().c_str());
+            } else if (st.op == "expect") {
+              const std::string summary = app.Summary();
+              const bool ok = !st.args.empty() &&
+                              summary.find(st.args[0]) != std::string::npos;
+              std::printf("%s: %s\n", ok ? "ok" : "FAILED",
+                          st.args.empty() ? "" : st.args[0].c_str());
+              if (!ok) {
+                std::printf("  summary: %s\n", summary.c_str());
+                exit_code = 1;
+              }
+            } else {
+              std::printf("unknown script step: %s\n", st.op.c_str());
+              exit_code = 1;
+            }
+          }
+        }
         ImGui::NewFrame();
         app.Frame(dt);
         ImGui::Render();

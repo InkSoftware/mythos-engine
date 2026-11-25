@@ -1131,7 +1131,39 @@ void EditorApp::DrawAssets() {
 //   rule -> flag: the rule sets that flag.
 // "New rule" makes one from the selected trigger, timer or flag, and Delete
 // removes the selected rule.
+void EditorApp::ShowPanel(const std::string& name) {
+  if (name == "graph") show_graph_ = true;
+  if (name == "cutscene") show_cutscene_ = true;
+  if (name == "inspector") show_inspector_ = true;
+  if (name == "problems") show_problems_ = true;
+}
+
+std::string EditorApp::Summary() const {
+  const LevelDoc* doc = project_.Level(level_);
+  if (doc == nullptr) return "no level";
+  size_t conditions = 0, actions = 0;
+  for (const EventRule& r : doc->rules) {
+    conditions += r.conditions.size();
+    actions += r.actions.size();
+  }
+  std::string cam_times;
+  for (const CameraKey& k : cut_.camera) {
+    cam_times += (cam_times.empty() ? "" : ",") + FormatNumber(k.time);
+  }
+  return "level=" + level_ + " cam_times=" + cam_times + " conditions=" + std::to_string(conditions) +
+         " actions=" + std::to_string(actions) + " rules=" + std::to_string(doc->rules.size()) +
+         " triggers=" + std::to_string(doc->triggers.size()) +
+         " links=" + std::to_string(doc->links.size()) +
+         " furniture=" + std::to_string(doc->furniture.size()) +
+         " decor=" + std::to_string(doc->decor.size()) +
+         " decals=" + std::to_string(doc->decals.size()) +
+         " cut_camera_keys=" + std::to_string(cut_.camera.size()) +
+         " cut_cues=" + std::to_string(cut_.cues.size());
+}
+
 void EditorApp::DrawEventGraph() {
+  ImGui::SetNextWindowPos({300, 60}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize({780, 420}, ImGuiCond_FirstUseEver);
   if (!ImGui::Begin("Event graph", &show_graph_)) {
     ImGui::End();
     return;
@@ -1371,6 +1403,8 @@ void EditorApp::DrawEventGraph() {
 }
 
 void EditorApp::DrawCutscenes() {
+  ImGui::SetNextWindowPos({300, 60}, ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize({780, 560}, ImGuiCond_FirstUseEver);
   if (!ImGui::Begin("Cutscene", &show_cutscene_)) {
     ImGui::End();
     return;

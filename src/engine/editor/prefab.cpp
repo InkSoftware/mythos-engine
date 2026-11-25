@@ -411,8 +411,9 @@ PlaceResult PlacePrefab(LevelDoc& doc, const Prefab& prefab, const int x,
     ++result.rules;
   }
   if (!link_id.empty()) {
-    doc.links.push_back(
-        {link_id, prefab.name, x, y, ((quarter_turns % 4) + 4) % 4});
+    doc.links.push_back({link_id, prefab.name, x, y,
+                         ((quarter_turns % 4) + 4) % 4,
+                         SerializePrefab(prefab)});
   }
   return result;
 }
@@ -452,22 +453,143 @@ int RemoveLinked(LevelDoc& doc, const std::string& link_id) {
   return removed;
 }
 
+namespace {
+// Takes from `current` the elements equal to one of `base` (untouched by the
+// player) and returns the elements of `base` nothing in `current` matched (the
+// ones the player deleted).
+template <typename T>
+std::vector<T> SplitPristine(std::vector<T>& current,
+                             const std::vector<T>& base,
+                             const std::function<bool(const T&)>& tagged) {
+  std::vector<bool> matched(base.size(), false);
+  std::vector<T> kept;
+  for (T& c : current) {
+    bool pristine = false;
+    if (tagged(c)) {
+      for (size_t i = 0; i < base.size(); ++i) {
+        if (!matched[i] && base[i] == c) {
+          matched[i] = pristine = true;
+          break;
+        }
+      }
+    }
+    if (!pristine) kept.push_back(std::move(c));
+  }
+  current = std::move(kept);
+  std::vector<T> deleted;
+  for (size_t i = 0; i < base.size(); ++i)
+    if (!matched[i]) deleted.push_back(base[i]);
+  return deleted;
+}
+
+// True unless the player deleted `wanted` (it is in `deleted`, and that entry
+// is used up).
+template <typename T>
+bool NotDeleted(std::vector<T>& deleted, const T& wanted) {
+  const auto at = std::ranges::find(deleted, wanted);
+  if (at == deleted.end()) return true;
+  deleted.erase(at);
+  return false;
+}
+
+// What placing `prefab` as the link would add to an empty level of `doc`'s
+// size.
+LevelDoc Scratch(const LevelDoc& doc, const Prefab& prefab,
+                 const PrefabLink& link,
+                 const std::function<bool(char)>& blocked) {
+  LevelDoc scratch;
+  scratch.rows = doc.rows;
+  PlacePrefab(scratch, prefab, link.x, link.y, link.turns, blocked, link.id);
+  return scratch;
+}
+}
+
 bool UpdateLinked(LevelDoc& doc, const std::string& link_id,
                   const Prefab& prefab,
                   const std::function<bool(char)>& blocked,
-                  PlaceResult* const result) {
+                  PlaceResult* const result, const bool keep_edits) {
   const auto it = std::ranges::find_if(
       doc.links, [&](const PrefabLink& l) { return l.id == link_id; });
   if (it == doc.links.end()) return false;
   // A copy: RemoveLinked erases the record.
   // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
   const PrefabLink link = *it;
-  RemoveLinked(doc, link_id);
   Prefab named = prefab;
   if (named.name.empty()) named.name = link.prefab;
-  const PlaceResult r =
-      PlacePrefab(doc, named, link.x, link.y, link.turns, blocked, link_id);
-  if (result != nullptr) *result = r;
+
+  Prefab base;
+  if (!keep_edits || link.base.empty() ||
+      !ParsePrefab(link.base, &base, nullptr)) {
+    // No record of what was placed: replace everything.
+    RemoveLinked(doc, link_id);
+    const PlaceResult r =
+        PlacePrefab(doc, named, link.x, link.y, link.turns, blocked, link_id);
+    if (result != nullptr) *result = r;
+    return true;
+  }
+
+  // Three-way: `base` is what was placed, the tagged items in `doc` are what
+  // is there now, `named` is what should be. Untouched items are replaced,
+  // edited ones stay, and an item the player deleted does not come back.
+  const std::string prefix = link_id + "/";
+  const LevelDoc was = Scratch(doc, base, link, blocked);
+  LevelDoc now_placed = Scratch(doc, named, link, blocked);
+  const auto tagged_item = [&](const Item& i) { return i.link == link_id; };
+  std::vector<Item> deleted_f =
+      SplitPristine<Item>(doc.furniture, was.furniture, tagged_item);
+  std::vector<Item> deleted_d =
+      SplitPristine<Item>(doc.decor, was.decor, tagged_item);
+  std::vector<Decal> deleted_decals =
+      SplitPristine<Decal>(doc.decals, was.decals,
+                           [&](const Decal& d) { return d.link == link_id; });
+  std::vector<Trigger> deleted_t = SplitPristine<Trigger>(
+      doc.triggers, was.triggers,
+      [&](const Trigger& t) { return t.id.rfind(prefix, 0) == 0; });
+  std::vector<EventRule> deleted_r = SplitPristine<EventRule>(
+      doc.rules, was.rules,
+      [&](const EventRule& r) { return r.id.rfind(prefix, 0) == 0; });
+
+  PlaceResult placed;
+  for (const Item& i : now_placed.furniture) {
+    if (!NotDeleted(deleted_f, i)) continue;
+    const bool taken = std::ranges::any_of(
+        doc.furniture, [&](const Item& f) { return f.x == i.x && f.y == i.y; });
+    if (!doc.InBounds(i.x, i.y) || taken ||
+        (blocked && blocked(doc.At(i.x, i.y)))) {
+      ++placed.skipped;
+      continue;
+    }
+    doc.furniture.push_back(i);
+    ++placed.furniture;
+  }
+  for (const Item& i : now_placed.decor) {
+    if (!NotDeleted(deleted_d, i)) continue;
+    doc.decor.push_back(i);
+    ++placed.decor;
+  }
+  for (const Decal& d : now_placed.decals) {
+    if (!NotDeleted(deleted_decals, d)) continue;
+    doc.decals.push_back(d);
+    ++placed.decals;
+  }
+  for (const Trigger& t : now_placed.triggers) {
+    if (!NotDeleted(deleted_t, t)) continue;
+    doc.triggers.push_back(t);
+    ++placed.triggers;
+  }
+  for (const EventRule& r : now_placed.rules) {
+    if (!NotDeleted(deleted_r, r)) continue;
+    doc.rules.push_back(r);
+    ++placed.rules;
+  }
+  // The record now describes the new version.
+  for (PrefabLink& l : doc.links) {
+    if (l.id == link_id) {
+      l.prefab = named.name;
+      l.base = SerializePrefab(named);
+    }
+  }
+  if (result != nullptr) *result = placed;
   return true;
 }
 

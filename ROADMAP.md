@@ -281,7 +281,7 @@ more than was built.
   checks, tested) and a Prefabs section in the Inspector (save an area, place at a cell with a turn). The viewport's Prefab tool (P) places the chosen prefab at the clicked cell with a
   footprint ghost. Shift+drag in that tool picks the area to capture. A prefab also holds decals, triggers and the
   rules they drive, and can be placed as a link (`PlacePrefab(..., link_id)`, `UpdateLinked`, `Unlink`, `RemoveLinked`; the Inspector's
-  Links list): an update replaces what the link placed (edits to it too, unless unlinked first).
+  Links list): an update is a three-way merge against the prefab as placed (`PrefabLink::base`): untouched items are replaced, edited ones stay, deleted ones stay deleted.
 - Reusable groups of furniture and decor, saved as a file, placed and
   overridden in the editor. Mirrors the level format so games need no code.
 
@@ -322,7 +322,7 @@ Gaps named in the Progress lines, by area:
 - **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, a `MYLM1` file format); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets are applied on the CPU (a GPU path for many morphing models is not done), and only skinned mesh nodes are read.
 - **Audio:** nothing named.
-- **Editor:** the event graph panel edits a rule's starting event, conditions and `set_flag` actions and creates and deletes rules, but not other actions or triggers; a linked prefab's update replaces edits to its items.
+- **Editor:** the event graph panel edits a rule's starting event, conditions and `set_flag` actions and creates and deletes rules, but not other actions or triggers.
 - **Tools and data:** nothing named.
 
 ## Out of scope for now
