@@ -1,0 +1,38 @@
+# Editor script (see `--script` in platform/editor/run.cpp): drives the real
+# UI with synthetic input in a hidden window and checks the level through
+# `expect`. Coordinates are for a 1400 x 800 window. Run on a COPY of the
+# template (it saves a .graph file and edits the level in memory):
+#   cp -R template-game /tmp/proj
+#   MYTHOS_ENGINE_ASSET_DIR=<engine>/assets build/MythosEditor --project /tmp/proj \
+#       --script tools/editor-scripts/event-graph.txt --size 1400 800
+# It prints "ok: ..." per check and exits 1 on the first failure.
+# Event graph: move a node, make a rule from a node, Delete it, and Alt-drop a
+# flag onto a rule to remove its condition.
+panel graph
+frames 30
+expect rules=1
+expect conditions=1
+# move the trigger node down: positions are saved next to the level
+drag 378 135 378 235
+frames 5
+# select it and make a rule from it
+click
+mouse 378 235
+click
+mouse 462 99
+click
+frames 5
+expect rules=2
+# Delete removes the selected (new) rule
+mouse 838 330
+click
+key Delete
+frames 3
+expect rules=1
+# Alt-drop the flag onto the rule: its condition goes
+mouse 908 135
+alt on
+drag 908 135 608 150
+alt off
+frames 3
+expect conditions=0

@@ -1,0 +1,29 @@
+# Editor script (see `--script` in platform/editor/run.cpp): drives the real
+# UI with synthetic input in a hidden window and checks the level through
+# `expect`. Coordinates are for a 1400 x 800 window. Run on a COPY of the
+# template (it saves a .graph file and edits the level in memory):
+#   cp -R template-game /tmp/proj
+#   MYTHOS_ENGINE_ASSET_DIR=<engine>/assets build/MythosEditor --project /tmp/proj \
+#       --script tools/editor-scripts/cutscene-keys.txt --size 1400 800
+# It prints "ok: ..." per check and exits 1 on the first failure.
+# Cutscene timeline: drag a camera key (snapped, then free with Shift); a press
+# away from every key only moves the playhead.
+panel cutscene
+frames 30
+mouse 802 103
+click
+frames 5
+mouse 340 126
+click
+frames 8
+expect cam_times=0,3.5
+drag 885 258 700 258
+frames 3
+expect cam_times=0,2.4
+# Shift: no snap (a nearby free position)
+shift on
+drag 700 258 733 258
+shift off
+frames 3
+# a press away from every key moves the playhead instead
+drag 500 285 520 285

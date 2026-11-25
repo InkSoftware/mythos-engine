@@ -1,0 +1,55 @@
+# Editor script (see `--script` in platform/editor/run.cpp): drives the real
+# UI with synthetic input in a hidden window and checks the level through
+# `expect`. Coordinates are for a 1400 x 800 window. Run on a COPY of the
+# template (it saves a .graph file and edits the level in memory):
+#   cp -R template-game /tmp/proj
+#   MYTHOS_ENGINE_ASSET_DIR=<engine>/assets build/MythosEditor --project /tmp/proj \
+#       --script tools/editor-scripts/prefab-link.txt --size 1400 800
+# It prints "ok: ..." per check and exits 1 on the first failure.
+# Prefabs: place the dining prefab as a link, update it from its file, remove it.
+frames 20
+mouse 1180 286
+frames 2
+click
+frames 5
+mouse 1250 400
+frames 2
+scroll -6
+frames 4
+# choose the prefab
+mouse 1295 316
+frames 2
+click
+frames 4
+mouse 1170 338
+frames 2
+click
+frames 4
+# top-left cell 1, 1
+drag 1170 344 1175 344
+drag 1260 344 1265 344
+frames 3
+# link, then place
+mouse 1135 399
+frames 2
+click
+frames 3
+mouse 1160 428
+frames 2
+click
+frames 4
+expect links=1
+expect furniture=9
+mouse 1260 478
+frames 2
+click
+frames 4
+expect links=1 
+expect furniture=9
+mouse 1368 478
+frames 2
+click
+frames 4
+expect links=0
+expect furniture=7
+expect decor=0
