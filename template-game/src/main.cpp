@@ -103,6 +103,8 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 int main(const int argc, char** const argv) {
   // `--morph` gives the guide a morph target (a synthetic "puff up": the
   // guide's file has none) whose weight swells and relaxes, blended on the GPU.
+  // `--bench N` times N frames after 30 of warm-up (vsync off, the GPU waited
+  // for each frame) and prints the average milliseconds a frame: compare flags.
   // `--shake` slams a door's worth of camera shake at frame 85 (to see it in
   // a `--screenshot`).
   // `--at X Z ANGLE` puts the player there (radians, the facing is (cos, sin)
@@ -130,6 +132,7 @@ int main(const int argc, char** const argv) {
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
   bool shake = false;
+  int bench = 0;  // frames to time
   bool morph = false;
   bool place_player = false;
   double at_x = 0, at_z = 0, at_angle = 0;
@@ -173,6 +176,8 @@ int main(const int argc, char** const argv) {
     if (arg == "--debug") start_debug = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (arg == "--shake") shake = true;
+    if (i + 1 < argc && arg == "--bench")
+      bench = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (arg == "--morph") morph = true;
     if (i + 3 < argc && arg == "--at") {
       place_player = true;
@@ -315,6 +320,7 @@ int main(const int argc, char** const argv) {
   settings.controls_page = true;
   settings.quit_row = true;
   if (ssao) settings.ambient_occlusion = true;
+  if (bench > 0) settings.vsync = false;
   mythos::SetLanguage(settings.language);
 
   // Sound: the engine's common clips. A hum in the back room is a positional
@@ -438,6 +444,7 @@ int main(const int argc, char** const argv) {
   };
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false, was_in_back_room = false;
+  Uint64 bench_start = 0;
 
   if (place_player) game.PlacePlayer(at_x, at_z, at_angle);
   for (int frame = 0;; ++frame) {
@@ -766,7 +773,22 @@ int main(const int argc, char** const argv) {
       break;
     }
     window.Swap();
+    if (bench > 0) {
+      // Wait for the GPU, so the time is the frame's and not the queue's.
+      unsigned char px[4];
+      gl::ReadPixels(0, 0, 1, 1, gl::kRgba,
+                     gl::kUnsignedByte, px);
+      constexpr int kWarm = 30;
+      if (frame == kWarm) bench_start = SDL_GetTicksNS();
+      if (frame == kWarm + bench) {
+        const double ms = static_cast<double>(SDL_GetTicksNS() - bench_start) /
+                          1e6 / bench;
+        std::printf("bench: %.3f ms a frame over %d frames\n", ms, bench);
+        break;
+      }
+    }
   }
+  audio.Shutdown();  // before the window closes SDL
   window.Close();
   return 0;
 }

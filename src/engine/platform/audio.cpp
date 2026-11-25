@@ -62,10 +62,12 @@ bool AudioEngine::Init() {
 }
 
 void AudioEngine::Shutdown() {
-  if (stream_) {
+  // SDL_Quit (a closed `Window`) destroys the streams itself: destroying one
+  // after it is a crash, so only a stream of a live subsystem is destroyed.
+  if (stream_ && SDL_WasInit(SDL_INIT_AUDIO) != 0) {
     SDL_DestroyAudioStream(stream_);
-    stream_ = nullptr;
   }
+  stream_ = nullptr;
 }
 
 int AudioEngine::LoadDir(const std::string& dir,
