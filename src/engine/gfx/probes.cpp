@@ -253,7 +253,7 @@ ProbeStack BakeProbeStack(const Level& level,
                           std::vector<double> heights,
                           const ProbeOptions& options) {
   if (heights.empty()) heights.push_back(options.height);
-  std::sort(heights.begin(), heights.end());
+  std::ranges::sort(heights);
   if (heights.size() > static_cast<size_t>(kMaxProbeHeights))
     heights.resize(static_cast<size_t>(kMaxProbeHeights));
   ProbeStack stack;
