@@ -164,6 +164,14 @@ void AudioEngine::StopVoice() {
   SDL_UnlockAudioStream(stream_);
 }
 
+float AudioEngine::MusicGain(const std::string& layer) const {
+  if (stream_ == nullptr) return 0.0f;
+  SDL_LockAudioStream(stream_);
+  const auto gain = static_cast<float>(music_.Gain(layer));
+  SDL_UnlockAudioStream(stream_);
+  return gain;
+}
+
 void AudioEngine::SetVoicePlacement(const float left, const float right) {
   if (!stream_) return;
   SDL_LockAudioStream(stream_);

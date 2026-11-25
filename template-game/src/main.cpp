@@ -7,7 +7,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "engine/audio/audio_math.h"
 #include "engine/audio/spatial.h"
@@ -100,11 +102,72 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 }
 }
 
+namespace {
+// A scripted session of the front end (`--script file`), one command a line
+// (`#` starts a comment):
+//   frames N | wait_ms N       run N frames, or run for N real milliseconds
+//   at X Z ANGLE               put the player there (radians)
+//   hold forward|back|left|right|strafe_left|strafe_right|run on|off
+//   press confirm|up|down|left|right|pause|interact   one frame
+//   expect METRIC OP VALUE     OP is < <= > >= == != ; metrics: player.x,
+//       player.z, guide.x, guide.z, guide.dist (to the player), menu, quit,
+//       cutscene, door.open, flag.NAME, music.LAYER (the layer's gain; the
+//       check is skipped without an audio device)
+//   until_quit N               from now on the Quit row must end the game
+//   within
+//                              N frames (put it before the presses)
+//   print                      the metrics on one line
+struct GameScript {
+  struct Step {
+    std::string op;
+    std::vector<std::string> args;
+  };
+  std::vector<Step> steps;
+  size_t next = 0;
+  int wait_frames = 0;
+  Uint64 wait_until_ns = 0;
+  int quit_deadline = -1;  // a frame number, while `until_quit` runs
+  bool failed = false;
+  // Held movement.
+  bool forward = false, back = false, left = false, right = false,
+       strafe_left = false, strafe_right = false, run = false;
+
+  bool Load(const std::string& text) {
+    std::istringstream in(text);
+    for (std::string line; std::getline(in, line);) {
+      if (const size_t hash = line.find('#'); hash != std::string::npos)
+        line.resize(hash);
+      std::istringstream ls(line);
+      Step st;
+      if (!(ls >> st.op)) continue;
+      for (std::string arg; ls >> arg;) st.args.push_back(arg);
+      steps.push_back(std::move(st));
+    }
+    return !steps.empty();
+  }
+  [[nodiscard]] bool Done() const {
+    return next >= steps.size() && wait_frames <= 0 && quit_deadline < 0;
+  }
+};
+
+bool Compare(const double a, const std::string& op, const double b) {
+  if (op == "<") return a < b;
+  if (op == "<=") return a <= b;
+  if (op == ">") return a > b;
+  if (op == ">=") return a >= b;
+  if (op == "==") return std::fabs(a - b) < 1e-6;
+  if (op == "!=") return std::fabs(a - b) >= 1e-6;
+  return false;
+}
+}
+
 int main(const int argc, char** const argv) {
   // `--morph` gives the guide a morph target (a synthetic "puff up": the
   // guide's file has none) whose weight swells and relaxes, blended on the GPU.
   // `--bench N` times N frames after 30 of warm-up (vsync off, the GPU waited
   // for each frame) and prints the average milliseconds a frame: compare flags.
+  // `--script file` drives the real front end with synthetic input (a fixed
+  // step, no device input) and checks the game: see `tools/game-scripts/`.
   // `--shake` slams a door's worth of camera shake at frame 85 (to see it in
   // a `--screenshot`).
   // `--at X Z ANGLE` puts the player there (radians, the facing is (cos, sin)
@@ -131,6 +194,7 @@ int main(const int argc, char** const argv) {
   // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
+  std::string script_path;
   bool shake = false;
   int bench = 0;  // frames to time
   bool morph = false;
@@ -179,6 +243,7 @@ int main(const int argc, char** const argv) {
     if (i + 1 < argc && arg == "--bench")
       bench = static_cast<int>(std::strtol(argv[i + 1], nullptr, 10));
     if (arg == "--morph") morph = true;
+    if (i + 1 < argc && arg == "--script") script_path = argv[i + 1];
     if (i + 3 < argc && arg == "--at") {
       place_player = true;
       at_x = std::strtod(argv[i + 1], nullptr);
@@ -438,15 +503,154 @@ int main(const int argc, char** const argv) {
   mythos::CameraFx camera_fx;
   camera_fx.params.max_roll = 0.02;
   mythos::FrameClock clock;
+  const bool fixed = !screenshot.empty() || !script_path.empty();
   int frame_now = 0;  // the frame number, for the deterministic clock
   const auto Seconds = [&] {
-    return screenshot.empty() ? clock.Seconds() : frame_now / 60.0;
+    return fixed ? frame_now / 60.0 : clock.Seconds();
   };
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false, was_in_back_room = false;
   Uint64 bench_start = 0;
 
   if (place_player) game.PlacePlayer(at_x, at_z, at_angle);
+  GameScript script;
+  if (!script_path.empty() && !script.Load(mythos::ReadTextFile(script_path))) {
+    std::fprintf(stderr, "cannot read the script %s\n", script_path.c_str());
+    return 1;
+  }
+  // The value of a metric, and whether it can be read at all.
+  const auto metric = [&](const std::string& name, double* out) {
+    const auto& p = game.player().pos;
+    if (name == "player.x")
+      *out = p.x;
+    else if (name == "player.z")
+      *out = p.y;
+    else if (name == "guide.x")
+      *out = game.guide_pos().x;
+    else if (name == "guide.z")
+      *out = game.guide_pos().y;
+    else if (name == "guide.dist")
+      *out = std::hypot(game.guide_pos().x - p.x, game.guide_pos().y - p.y);
+    else if (name == "menu")
+      *out = menu_open ? 1 : 0;
+    else if (name == "quit")
+      *out = settings.quit_requested ? 1 : 0;
+    else if (name == "cutscene")
+      *out = game.CutsceneActive() ? 1 : 0;
+    else if (name == "door.open")
+      *out = game.level().Passable(9, 3) ? 1 : 0;
+    else if (name.rfind("flag.", 0) == 0)
+      *out = game.progress().Flag(name.substr(5)) ? 1 : 0;
+    else if (name.rfind("music.", 0) == 0) {
+      if (!audio.Ready()) return false;
+      *out = audio.MusicGain(name.substr(6));
+    } else {
+      return false;
+    }
+    return true;
+  };
+  // Runs the script's steps for this frame and sets the synthetic input.
+  const auto run_script = [&](const int frame, mythos::MoveInput& move,
+                              mythos::ActionInput& act, mythos::UiInput& ui) {
+    if (script_path.empty()) return;
+    if (script.wait_frames > 0) --script.wait_frames;
+    while (script.wait_frames <= 0 &&
+           (script.wait_until_ns == 0 ||
+            SDL_GetTicksNS() >= script.wait_until_ns) &&
+           script.next < script.steps.size()) {
+      script.wait_until_ns = 0;
+      const GameScript::Step& st = script.steps[script.next++];
+      const auto num = [&](const size_t i) {
+        return i < st.args.size() ? std::strtod(st.args[i].c_str(), nullptr)
+                                  : 0.0;
+      };
+      if (st.op == "frames") {
+        script.wait_frames = std::max(1, static_cast<int>(num(0)));
+      } else if (st.op == "wait_ms") {
+        script.wait_until_ns =
+            SDL_GetTicksNS() + static_cast<Uint64>(num(0) * 1e6);
+      } else if (st.op == "at") {
+        game.PlacePlayer(num(0), num(1), num(2));
+      } else if (st.op == "hold" && st.args.size() == 2) {
+        const bool on = st.args[1] == "on";
+        if (st.args[0] == "forward")
+          script.forward = on;
+        else if (st.args[0] == "back")
+          script.back = on;
+        else if (st.args[0] == "left")
+          script.left = on;
+        else if (st.args[0] == "right")
+          script.right = on;
+        else if (st.args[0] == "strafe_left")
+          script.strafe_left = on;
+        else if (st.args[0] == "strafe_right")
+          script.strafe_right = on;
+        else if (st.args[0] == "run")
+          script.run = on;
+      } else if (st.op == "press" && !st.args.empty()) {
+        const std::string& k = st.args[0];
+        if (k == "confirm")
+          ui.confirm_pressed = true;
+        else if (k == "up")
+          ui.up_pressed = true;
+        else if (k == "down")
+          ui.down_pressed = true;
+        else if (k == "left")
+          ui.left_pressed = true;
+        else if (k == "right")
+          ui.right_pressed = true;
+        else if (k == "pause")
+          ui.pause_pressed = true;
+        else if (k == "interact")
+          act.interact_pressed = true;
+        script.wait_frames = 2;  // let the press take effect
+      } else if (st.op == "expect" && st.args.size() == 3) {
+        double v = 0;
+        if (!metric(st.args[0], &v)) {
+          std::printf("skipped: %s (not available)\n", st.args[0].c_str());
+        } else {
+          const bool ok = Compare(v, st.args[1], num(2));
+          std::printf("%s: %s %s %s (is %.4f)\n", ok ? "ok" : "FAILED",
+                      st.args[0].c_str(), st.args[1].c_str(),
+                      st.args[2].c_str(), v);
+          script.failed = script.failed || !ok;
+        }
+      } else if (st.op == "until_quit") {
+        script.quit_deadline = frame + std::max(1, static_cast<int>(num(0)));
+      } else if (st.op == "print") {
+        double px = 0, pz = 0, gx = 0, gz = 0, gd = 0, menu = 0;
+        metric("player.x", &px);
+        metric("player.z", &pz);
+        metric("guide.x", &gx);
+        metric("guide.z", &gz);
+        metric("guide.dist", &gd);
+        metric("menu", &menu);
+        std::printf(
+            "player (%.2f, %.2f) guide (%.2f, %.2f) dist %.2f menu %.0f\n", px,
+            pz, gx, gz, gd, menu);
+      } else {
+        std::printf("FAILED: unknown script step %s\n", st.op.c_str());
+        script.failed = true;
+      }
+    }
+    if (script.quit_deadline >= 0 && settings.quit_requested) {
+      std::printf("ok: the Quit row ended the game\n");
+      script.quit_deadline = -1;
+      script.next = script.steps.size();
+    } else if (script.quit_deadline >= 0 && frame >= script.quit_deadline) {
+      std::printf("FAILED: no quit within the frames\n");
+      script.failed = true;
+      script.quit_deadline = -1;
+      script.next = script.steps.size();
+    }
+    move.forward = script.forward;
+    move.back = script.back;
+    move.turn_left = script.left;
+    move.turn_right = script.right;
+    move.strafe_left = script.strafe_left;
+    move.strafe_right = script.strafe_right;
+    move.run = script.run;
+  };
   for (int frame = 0;; ++frame) {
     frame_now = frame;
     mythos::MoveInput move;
@@ -455,10 +659,14 @@ int main(const int argc, char** const argv) {
     const mythos::InputPoll poll =
         mythos::PollInput(move, ui, act, true, nullptr);
     if (poll.quit) break;
-    if (!screenshot.empty()) {  // deterministic: no input
+    if (fixed) {  // deterministic: no device input
       move = {};
       act = {};
       ui = {};
+    }
+    run_script(frame, move, act, ui);
+    if (!script_path.empty() && script.Done() && !settings.quit_requested) {
+      break;  // the script ran out
     }
 
     // The console: typing and editing keys while it is open.
@@ -519,7 +727,7 @@ int main(const int argc, char** const argv) {
     if (menu_open) {
       move = {};
       act = {};
-    } else {
+    } else if (!fixed) {  // a script's input is already in `move` and `act`
       mythos::ApplyActions(actions, move, act);
     }
     if (poll.toggle_fullscreen) window.ApplyMode(true, 1280, 720);
@@ -529,8 +737,8 @@ int main(const int argc, char** const argv) {
     f5_was = keys[SDL_SCANCODE_F5];
     f9_was = keys[SDL_SCANCODE_F9];
 
-    const double dt = screenshot.empty() ? std::min(clock.Step(false), 0.1)
-                                         : (clock.Step(false), 1.0 / 60.0);
+    const double dt = !fixed ? std::min(clock.Step(false), 0.1)
+                             : (clock.Step(false), 1.0 / 60.0);
     if (!menu_open) game.Update(dt, move, act);
 
     bool level_changed = false, textures_changed = false,
@@ -776,19 +984,25 @@ int main(const int argc, char** const argv) {
     if (bench > 0) {
       // Wait for the GPU, so the time is the frame's and not the queue's.
       unsigned char px[4];
-      gl::ReadPixels(0, 0, 1, 1, gl::kRgba,
-                     gl::kUnsignedByte, px);
+      gl::ReadPixels(0, 0, 1, 1, gl::kRgba, gl::kUnsignedByte, px);
       constexpr int kWarm = 30;
       if (frame == kWarm) bench_start = SDL_GetTicksNS();
       if (frame == kWarm + bench) {
-        const double ms = static_cast<double>(SDL_GetTicksNS() - bench_start) /
-                          1e6 / bench;
+        const double ms =
+            static_cast<double>(SDL_GetTicksNS() - bench_start) / 1e6 / bench;
         std::printf("bench: %.3f ms a frame over %d frames\n", ms, bench);
         break;
       }
     }
   }
+  if (script.quit_deadline >=
+      0) {  // the loop ended in the quit the script waited for
+    std::printf(settings.quit_requested
+                    ? "ok: the Quit row ended the game\n"
+                    : "FAILED: the game ended without Quit\n");
+    script.failed = script.failed || !settings.quit_requested;
+  }
   audio.Shutdown();  // before the window closes SDL
   window.Close();
-  return 0;
+  return script.failed ? 1 : 0;
 }

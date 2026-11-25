@@ -1,0 +1,15 @@
+# The settings menu's Quit row ends the game. Run:
+#   template_game --no-intro --script tools/game-scripts/quit-menu.txt
+# It prints "ok: ..." per check and exits 1 on a failure.
+frames 5
+# the game must end within 90 frames
+until_quit 90
+press pause
+expect menu == 1
+# Graphics, Audio, Controls, Language, then Quit
+press down
+press down
+press down
+press down
+press confirm
+frames 60

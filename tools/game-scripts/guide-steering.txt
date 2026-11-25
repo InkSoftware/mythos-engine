@@ -1,0 +1,15 @@
+# The guide patrols; with the player standing on her route she never walks
+# through them (she greets and stops, or goes around), and she never enters a wall.
+at 8.2 5.8 3.14
+frames 90
+at 5.5 4.5 3.14
+frames 20
+expect guide.dist >= 0.45
+frames 60
+expect guide.dist >= 0.45
+frames 60
+expect guide.dist >= 0.45
+frames 120
+expect guide.dist >= 0.45
+expect guide.z > 1
+expect guide.z < 6

@@ -1,0 +1,24 @@
+# Walk to the door, open it, go through: the door opens, the level trigger sets
+# its flag, and the back room's music layer comes in on a bar line (not at full gain
+# right away, audible a few seconds later; skipped without an audio device).
+at 8.3 3.5 0
+frames 5
+expect door.open == 0
+expect flag.seen_east == 0
+press interact
+frames 40
+expect door.open == 1
+hold forward on
+frames 130
+hold forward off
+expect player.x > 12
+expect flag.seen_east == 1
+# Not at full gain yet: the layer waits for a bar line, then fades in.
+expect music.tick < 0.3
+wait_ms 5000
+expect music.tick > 0.3
+# And back out again: the layer fades out.
+at 8.3 3.5 3.14
+frames 5
+wait_ms 5000
+expect music.tick < 0.05

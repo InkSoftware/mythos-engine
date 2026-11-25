@@ -110,6 +110,10 @@ class AudioEngine {
                               const std::vector<TempoSection>& map,
                               int bars_per_phrase = 1);
   void StopMusic(float seconds = 1.0f);
+  // The current gain of a music layer (0 when it is not playing or there is no
+  // audio device), for tests that watch a layer come in.
+  [[nodiscard]] float MusicGain(const std::string& layer) const;
+  [[nodiscard]] bool Ready() const { return stream_ != nullptr; }
 
   // Mixer groups (audio/spatial.h `MixerGroups`). Every sound belongs to one:
   // one-shots to "effects", loops and positional sources to "ambience", spoken

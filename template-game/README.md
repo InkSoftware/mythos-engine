@@ -47,6 +47,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--crowd N` | N chairs as model instances; `--no-instancing` draws them one by one | GPU instancing |
 | `--debug` | opens the debug console (the ` key or F12 anywhere) with the frame stats and graph on: every setting is a variable, `cutscene.play intro` runs a cutscene, `help` lists it all | `CvarRegistry`, `DebugConsole`, `DrawDebugOverlay`, `RegisterCutsceneCommands` |
 | `--morph` | the guide gets a synthetic morph target (puff up) whose weight swells and relaxes: morph targets blended in the vertex shader | `UploadModel(batches, morphs)`, `ModelInstance::morph` |
+| `--script file`, `--bench N` | drives the front end with synthetic input and checks the game (`tools/game-scripts/`); times N frames | `AudioEngine::MusicGain`, the settings `quit_row` |
 | `--at X Z ANGLE`, `--shake` | puts the player there (radians), slams a door's worth of camera shake at frame 85 | `Game::PlacePlayer`, `CameraFx::AddShake` |
 | `--screenshot file.ppm` | renders 90 frames (a fixed 1/60 s step, no input: two runs of one command match byte for byte), saves the last, prints the draw calls, exits | `WriteFramebufferPpm`, `RenderStats` |
 
