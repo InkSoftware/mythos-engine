@@ -789,9 +789,9 @@ bool SceneRenderer::CaptureReflectionProbe(const CameraState& cam,
       // the rows are right, up and minus forward).
       ViewBasis basis;
       for (int a = 0; a < 3; ++a) {
-        basis.right[a] = ff.view[a * 4];
-        basis.up[a] = ff.view[a * 4 + 1];
-        basis.forward[a] = -ff.view[a * 4 + 2];
+        basis.right[a] = ff.view[static_cast<size_t>(a) * 4];
+        basis.up[a] = ff.view[static_cast<size_t>(a) * 4 + 1];
+        basis.forward[a] = -ff.view[static_cast<size_t>(a) * 4 + 2];
       }
       sky_basis_override_ = &basis;
       DrawSky(pc, ff);
