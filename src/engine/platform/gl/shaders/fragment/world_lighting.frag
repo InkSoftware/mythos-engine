@@ -31,6 +31,9 @@ uniform vec3 uEnvPos2;
 uniform vec3 uEnvHalf2;
 uniform float uEnvBlend;            // 0 = only the first probe
 uniform vec3 uEnvHalf;             // half the box of the room around it for parallax correction (0 = none)
+uniform sampler2DArray uLmTex;  // lightmaps: a layer a facing (+x -x +y -y +z -z), a tile per open cell
+uniform vec4 uLmInfo;           // cells x, cells z, texels a metre, rows of a wall tile
+uniform float uLmStrength;      // 0 = no lightmap
 uniform sampler2D uAoTex;      // screen-space occlusion of this frame (half size, from a depth pre-pass), read at the pixel
 uniform float uAoWorld;        // 0: not used; else its strength (the ambient term is multiplied by it)
 uniform vec2 uAoScreen;        // the target's size in pixels
@@ -313,8 +316,40 @@ void main() {
         }
         ambient += flash * vec3(0.50, 0.57, 0.80);
 
-        // Baked light: the colour of the probes under this point (static lamps, no shadow).
-        if (uProbe.z > 0.0) {
+        // Lightmaps: the tile for the cell this surface looks into and the way it faces (walls, floors and
+        // ceilings only: a point off the tile's plane, such as furniture, is not on one).
+        float lmCov = 0.0;
+        if (uLmStrength > 0.0) {
+            vec3 ag = abs(geo);
+            int face = (ag.x >= ag.y && ag.x >= ag.z) ? (geo.x >= 0.0 ? 0 : 1)
+                     : (ag.y >= ag.z ? (geo.y >= 0.0 ? 2 : 3) : (geo.z >= 0.0 ? 4 : 5));
+            vec2 cell = floor(vWorld.xz + geo.xz * 0.02);
+            float plane, along;
+            vec2 tuv;
+            float rows = uLmInfo.w;
+            if (face < 2) {
+                plane = cell.x + float(face); along = vWorld.x;
+                tuv = vec2(vWorld.z - cell.y, vWorld.y / 2.5);
+            } else if (face < 4) {
+                plane = face == 2 ? 0.0 : 2.5; along = vWorld.y;
+                tuv = vec2(vWorld.x - cell.x, vWorld.z - cell.y);
+                rows = uLmInfo.z;
+            } else {
+                plane = cell.y + float(face - 4); along = vWorld.z;
+                tuv = vec2(vWorld.x - cell.x, vWorld.y / 2.5);
+            }
+            if (all(greaterThanEqual(cell, vec2(0.0))) && all(lessThan(cell, uLmInfo.xy)) &&
+                abs(along - plane) < 0.03 && vWorld.y > -0.03 && vWorld.y < 2.53) {
+                vec2 slot = vec2(uLmInfo.z, uLmInfo.w);
+                vec2 t = clamp(tuv * vec2(uLmInfo.z, rows), vec2(0.5), vec2(uLmInfo.z, rows) - 0.5);
+                vec4 lm = texture(uLmTex, vec3((cell * slot + t) / (uLmInfo.xy * slot), float(face)));
+                lmCov = step(0.5, lm.a);
+                light += uLmStrength * lm.rgb * lmCov;
+            }
+        }
+
+        // Baked light: the colour of the probes under this point (static lamps, no shadow); a lightmapped surface has its own.
+        if (uProbe.z > 0.0 && lmCov < 0.5) {
             vec2 puv = vWorld.xz * uProbe.xy;
             vec3 nn = n * n;  // an ambient cube: the faces the normal looks at, by the squares of its components
             // Two heights around this point's y, blended (one grid: no blend).

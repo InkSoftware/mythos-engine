@@ -8,6 +8,7 @@
 
 #include "engine/core/mat4.h"
 #include "engine/gfx/grade.h"
+#include "engine/gfx/lightmap.h"
 #include "engine/gfx/lod.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/particles.h"
@@ -167,6 +168,9 @@ struct CameraState {
   // How much of the uploaded baked light (`SceneRenderer::UploadProbes`) is
   // added, 0 (none) to 1 (as baked); without an upload it does nothing.
   double baked_light = 1;
+  // How much of the uploaded lightmaps (`SceneRenderer::UploadLightmap`) the
+  // surfaces get, 0 (off) to 1.
+  double lightmap = 1;
 
   // A shadow from the sun (or the moon) in an `outdoor` scene: 0 off (the
   // default; the picture is as without it), above 0 on. One orthographic map
@@ -320,6 +324,10 @@ class SceneRenderer {
   // Probes at several heights (`BakeProbeStack`): the shader blends the two
   // grids around a surface's height.
   void UploadProbes(const ProbeStack& stack);
+  // Lightmaps (`BakeLightmap`, gfx/lightmap.h) for the walls, floors and
+  // ceilings: a surface on a baked tile takes its light from the map (and
+  // not from the probes), by its position and normal. An empty one removes it.
+  void UploadLightmap(const Lightmap& map);
 
   // Beyond `distance` metres from the eye an instance of `model` is drawn as
   // `far_model` (a cheaper upload of the same thing) in the main and mirror
@@ -499,8 +507,10 @@ class SceneRenderer {
   bool sun_on_ = false;
   uint64_t sun_key_[kSunCascades] = {};
   GlTexture probe_tex_;
-  float probe_scale_[2] = {0, 0};  // 1 / extent in metres; 0 = none
-  int probe_count_ = 0;            // heights uploaded
+  GlTexture lightmap_tex_;
+  float lightmap_info_[4] = {0, 0, 0, 0};  // cells x, z, texels, wall rows
+  float probe_scale_[2] = {0, 0};          // 1 / extent in metres; 0 = none
+  int probe_count_ = 0;                    // heights uploaded
   float probe_heights_[kMaxProbeHeights] = {};
   ModelLods no_lods_;  // always empty: shadow passes do not swap models
   std::vector<LodRequest> lod_requests_;

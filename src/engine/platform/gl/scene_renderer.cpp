@@ -705,6 +705,26 @@ void SceneRenderer::UploadProbes(const ProbeStack& stack) {
   }
 }
 
+void SceneRenderer::UploadLightmap(const Lightmap& map) {
+  ++scene_revision_;
+  lightmap_tex_.Reset();
+  lightmap_info_[0] = lightmap_info_[1] = 0.0f;
+  if (map.Empty()) return;
+  lightmap_tex_.Create();
+  BindTexture(gl::kTexture2DArray, lightmap_tex_.Id());
+  gl::TexImage3D(gl::kTexture2DArray, 0, static_cast<gl::GLint>(gl::kRgba16f),
+                 map.Width(), map.Height(), kLightmapFaces, 0, gl::kRgba,
+                 kFloat, map.rgba.data());
+  gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMinFilter, kLinear);
+  gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMagFilter, kLinear);
+  gl::TexParameteri(gl::kTexture2DArray, gl::kTextureWrapS, kClampToEdge);
+  gl::TexParameteri(gl::kTexture2DArray, gl::kTextureWrapT, kClampToEdge);
+  lightmap_info_[0] = static_cast<float>(map.cells_x);
+  lightmap_info_[1] = static_cast<float>(map.cells_z);
+  lightmap_info_[2] = static_cast<float>(map.texels);
+  lightmap_info_[3] = static_cast<float>(map.wall_rows);
+}
+
 int SceneRenderer::AddReflectionProbe(const double x, const double y,
                                       const double z, const double half_x,
                                       const double half_y,
@@ -1179,6 +1199,19 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
         u.probe, probes ? probe_scale_[0] : 0.0f,
         probes ? probe_scale_[1] : 0.0f,
         probes ? static_cast<float>(std::min(cam.baked_light, 4.0)) : 0.0f);
+    {
+      const bool lm = lightmap_info_[0] > 0.0f && cam.lightmap > 0.0;
+      world_program_.Set(
+          "uLmStrength",
+          lm ? static_cast<float>(std::min(cam.lightmap, 4.0)) : 0.0f);
+      world_program_.Set("uLmTex", 16);
+      Uniform4f(world_program_.Uniform("uLmInfo"), lightmap_info_[0],
+                lightmap_info_[1], lightmap_info_[2], lightmap_info_[3]);
+      ActiveTexture(kTexture0 + 16);
+      BindTexture(gl::kTexture2DArray,
+                  lm ? lightmap_tex_.Id() : probe_tex_.Id());
+      ActiveTexture(kTexture0);
+    }
     Uniform1i(world_program_.Uniform("uProbeN"), probe_count_);
     Uniform4f(u.probe_h, probe_heights_[0], probe_heights_[1],
               probe_heights_[2], probe_heights_[3]);

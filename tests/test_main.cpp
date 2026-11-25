@@ -51,6 +51,7 @@
 #include "engine/gfx/font.h"
 #include "engine/gfx/gltf.h"
 #include "engine/gfx/grade.h"
+#include "engine/gfx/lightmap.h"
 #include "engine/gfx/lod.h"
 #include "engine/gfx/materials.h"
 #include "engine/gfx/mesh.h"
@@ -5993,6 +5994,47 @@ TEST(simplify_joins_coplanar_quads_and_keeps_the_area) {
       }
     }
   }
+}
+
+TEST(lightmap_bakes_shadows_and_finds_tiles_by_position) {
+  mythos::Level l;
+  // A wall stub at x = 4 splits the lower part of the room.
+  CHECK(l.Parse(
+      {"#########", "#.......#", "#...#...#", "#...#...#", "#########"}));
+  mythos::ProbeLamp lamp;
+  lamp.x = 2.5;
+  lamp.y = 2.0;
+  lamp.z = 2.5;
+  lamp.radius = 5;
+  mythos::LightmapOptions options;
+  options.texels_per_m = 4;
+  const mythos::Lightmap m = mythos::BakeLightmap(l, {lamp}, options);
+  CHECK(!m.Empty());
+  CHECK_EQ(m.texels, 4);
+  CHECK_EQ(m.wall_rows, 10);
+  bool covered = false;
+  // The floor under the lamp is lit; the floor behind the stub (in its
+  // shadow, in the lower row) is dark but baked.
+  const auto lit = m.Sample(2.5, 0, 2.5, 0, 1, 0, &covered);
+  CHECK(covered);
+  CHECK(lit[0] > 0.1f);
+  const auto shadow = m.Sample(5.5, 0, 2.5, 0, 1, 0, &covered);
+  CHECK(covered);
+  CHECK(shadow[0] < 1e-6f);
+  // The lit side of the stub (x = 4, facing -x, in the cell x = 3).
+  const auto wall = m.Sample(4.0, 1.0, 2.5, -1, 0, 0, &covered);
+  CHECK(covered);
+  CHECK(wall[0] > 0.0f);
+  // The far side of the stub faces the dark half.
+  CHECK(m.Sample(5.0, 1.0, 2.5, 1, 0, 0, &covered)[0] < 1e-6f);
+  CHECK(covered);
+  // Furniture height and a point in a wall are not on a tile.
+  m.Sample(2.5, 0.8, 2.5, 0, 1, 0, &covered);
+  CHECK(!covered);
+  m.Sample(0.0, 1.0, 0.5, -1, 0, 0, &covered);
+  CHECK(!covered);
+  // Nearer the lamp is brighter along the floor.
+  CHECK(m.Sample(2.5, 0, 2.5, 0, 1, 0)[0] > m.Sample(1.5, 0, 1.5, 0, 1, 0)[0]);
 }
 
 }

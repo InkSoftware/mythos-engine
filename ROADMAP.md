@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps; simplifying the mesher's own detail (window frames, thin walls) for LOD (flat quads are joined: `SimplifyBatches`).
+- **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); simplifying the mesher's own detail (window frames, thin walls) for LOD (flat quads are joined: `SimplifyBatches`).
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   formations for the AI.
 - **Audio:** nothing named.

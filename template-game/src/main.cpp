@@ -112,6 +112,8 @@ int main(const int argc, char** const argv) {
   // `--reflections` captures a reflection probe in each room: shiny things
   // (the toolbox, the bucket) then reflect the room.
   // `--sun-shadow` (with `--outdoor`) adds the shadow of the sun or the moon.
+  // `--lightmap` also bakes lightmaps for the walls and floors (the probes
+  // light the furniture and the guide).
   // `--baked` bakes the lamps into light probes instead of lighting with them
   // live (no shadows from them, no 32-lamp limit).
   // `--mirror` puts a mirror on a wall of the first room.
@@ -125,6 +127,7 @@ int main(const int argc, char** const argv) {
   bool ssao_ambient = false;
   bool mirror = false;
   bool baked = false;
+  bool lightmap = false;
   bool sun_shadow = false;
   bool reflections = false;
   int crowd = 0;
@@ -142,6 +145,7 @@ int main(const int argc, char** const argv) {
     if (arg == "--ssao") ssao = true;
     if (arg == "--ssao-ambient") ssao = ssao_ambient = true;
     if (arg == "--baked") baked = true;
+    if (arg == "--lightmap") baked = lightmap = true;
     if (arg == "--sun-shadow") sun_shadow = true;
     if (arg == "--reflections") reflections = true;
     if (arg == "--no-instancing") instancing = false;
@@ -247,8 +251,10 @@ int main(const int argc, char** const argv) {
     // Three heights (knee, chest, head): the light under a lamp differs.
     renderer.UploadProbes(
         mythos::BakeProbeStack(game.level(), lamps, {0.4, 1.2, 2.1}));
+    if (lightmap)
+      renderer.UploadLightmap(mythos::BakeLightmap(game.level(), lamps));
   };
-  if (baked && !load_baked()) bake();
+  if (baked && (lightmap || !load_baked())) bake();
 
   const mythos::UserFiles files("mythos", "template-game");
   const std::string save_dir = files.Path("saves");
