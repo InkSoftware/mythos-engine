@@ -916,23 +916,15 @@ void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
       !world_program_.Valid()) {
     return;
   }
-  float best[2] = {1e30f, 1e30f};
-  int pick[2] = {-1, -1};
+  std::vector<std::array<float, 3>> positions;
+  positions.reserve(static_cast<size_t>(reflection_count_));
   for (int i = 0; i < reflection_count_; ++i) {
-    const float dx = reflection_[i].pos[0] - f.eye[0],
-                dy = reflection_[i].pos[1] - f.eye[1],
-                dz = reflection_[i].pos[2] - f.eye[2];
-    const float d = std::sqrt(dx * dx + dy * dy + dz * dz);
-    if (d < best[0]) {
-      best[1] = best[0];
-      pick[1] = pick[0];
-      best[0] = d;
-      pick[0] = i;
-    } else if (d < best[1]) {
-      best[1] = d;
-      pick[1] = i;
-    }
+    positions.push_back(
+        {reflection_[i].pos[0], reflection_[i].pos[1], reflection_[i].pos[2]});
   }
+  const ProbePick chosen =
+      PickReflectionProbes(positions, {f.eye[0], f.eye[1], f.eye[2]});
+  const int pick[2] = {chosen.first, chosen.second};
   if (pick[0] < 0) return;
   // Keep the number of captures bounded: drop the farthest one that is not in
   // use when a new one is about to be made.
@@ -969,8 +961,7 @@ void SceneRenderer::DrawReflectionProbes(const CameraState& cam,
   if (pick[1] >= 0 && CaptureReflectionProbe(cam, f, pick[1])) {
     env_probe2_ = pick[1];
     // 0 at the first probe, 0.5 halfway to the second.
-    const float total = best[0] + best[1];
-    env_blend_ = total > 1e-6f ? best[0] / total : 0.0f;
+    env_blend_ = chosen.blend;
   }
 }
 

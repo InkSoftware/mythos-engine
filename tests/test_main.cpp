@@ -6737,6 +6737,47 @@ TEST(lightmap_covers_thin_walls) {
   CHECK(back.Sample(4.4, 1.2, 2.5, -1, 0, 0, &covered)[0] > 0.05f && covered);
 }
 
+TEST(reflection_probe_blend_never_pops) {
+  using mythos::PickReflectionProbes;
+  using P = std::array<float, 3>;
+  // Two probes: the old blend, 0 at the first and 0.5 halfway.
+  const std::vector<P> two = {{0, 0, 0}, {10, 0, 0}};
+  CHECK(PickReflectionProbes(two, {0, 0, 0}).blend == 0.0f);
+  CHECK(std::fabs(PickReflectionProbes(two, {5, 0, 0}).blend - 0.5f) < 1e-6f);
+  CHECK(std::fabs(PickReflectionProbes(two, {2, 0, 0}).blend - 0.2f) < 1e-6f);
+  CHECK(PickReflectionProbes(two, {2, 0, 0}).first == 0);
+  CHECK(PickReflectionProbes(two, {8, 0, 0}).first == 1);
+  CHECK(PickReflectionProbes({{1, 2, 3}}, {0, 0, 0}).second == -1);
+  CHECK(PickReflectionProbes({}, {0, 0, 0}).first == -1);
+  // The weight each probe gets as the viewer walks must change smoothly,
+  // including where the nearest pair changes (three probes in a triangle).
+  const std::vector<P> tri = {{0, 0, 0}, {10, 0, 0}, {5, 0, 8}, {16, 0, 9}};
+  const auto weights = [&](const P& eye) {
+    std::vector<float> w(tri.size(), 0.0f);
+    const auto pick = PickReflectionProbes(tri, eye);
+    w[static_cast<size_t>(pick.first)] = 1.0f - pick.blend;
+    if (pick.second >= 0) w[static_cast<size_t>(pick.second)] = pick.blend;
+    return w;
+  };
+  float worst = 0;
+  for (float x = -2; x < 18; x += 0.02f) {
+    for (float z = -2; z < 12; z += 0.5f) {
+      // Three probes nearly as far as each other (the middle of the triangle)
+      // are the one place two weights cannot settle: the blend there swings
+      // by the tiny differences, so leave that neighbourhood out.
+      std::vector<float> d;
+      for (const P& p : tri) d.push_back(std::hypot(p[0] - x, p[2] - z));
+      std::ranges::sort(d);
+      if (d[2] - d[0] < 0.6f) continue;
+      const auto a = weights({x, 0, z}), b = weights({x + 0.02f, 0, z});
+      for (size_t i = 0; i < a.size(); ++i)
+        worst = std::max(worst, std::fabs(a[i] - b[i]));
+    }
+  }
+  // A 2 cm step changes a weight by a few percent at most, never a jump.
+  CHECK(worst < 0.1f);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

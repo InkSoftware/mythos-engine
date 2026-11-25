@@ -104,6 +104,21 @@ std::string SerializeProbeStack(const ProbeStack& stack);
 bool ParseProbeStack(const std::string& text, ProbeStack* out,
                      std::string* error);
 
+// Which two reflection probes (capture points, `SceneRenderer::
+// AddReflectionProbe`) a viewer at `eye` blends, and how much of the second.
+// Weights are `1 / d_i - 1 / d_3` of the three nearest (the third is the
+// cut-off: with only two probes it is `1 / d_i`, a blend of `d1 / (d1 + d2)`),
+// so a probe's weight falls to 0 exactly where another takes its place and
+// the picture never pops as the viewer walks; `blend` is the second's share of
+// the two (0 at the first probe, 0.5 halfway). `second` is -1 with one probe,
+// and both are -1 without any.
+struct ProbePick {
+  int first = -1, second = -1;
+  float blend = 0.0f;
+};
+ProbePick PickReflectionProbes(const std::vector<std::array<float, 3>>& probes,
+                               const std::array<float, 3>& eye);
+
 // A text file: `probes6 <spacing> <width> <depth>` then one line per row of
 // probes, each probe six `r g b` triples. `ParseProbes` also reads the old
 // one-colour form (`probes`, one triple a probe, used for every face) and

@@ -326,4 +326,34 @@ bool ParseProbeStack(const std::string& text, ProbeStack* const out,
   *out = std::move(stack);
   return true;
 }
+
+ProbePick PickReflectionProbes(const std::vector<std::array<float, 3>>& probes,
+                               const std::array<float, 3>& eye) {
+  ProbePick pick;
+  // The three nearest, by distance.
+  float best[3] = {1e30f, 1e30f, 1e30f};
+  int index[3] = {-1, -1, -1};
+  for (size_t i = 0; i < probes.size(); ++i) {
+    const float dx = probes[i][0] - eye[0], dy = probes[i][1] - eye[1],
+                dz = probes[i][2] - eye[2];
+    float d = std::sqrt(dx * dx + dy * dy + dz * dz);
+    int at = static_cast<int>(i);
+    for (int k = 0; k < 3; ++k) {
+      if (d < best[k]) {
+        std::swap(d, best[k]);
+        std::swap(at, index[k]);
+      }
+    }
+  }
+  pick.first = index[0];
+  pick.second = index[1];
+  if (pick.second < 0) return pick;
+  constexpr float kTiny = 1e-4f;
+  if (best[0] < kTiny) return pick;  // on the first probe: all of it
+  const float w1 = 1.0f / best[0] - (index[2] >= 0 ? 1.0f / best[2] : 0.0f);
+  const float w2 = 1.0f / best[1] - (index[2] >= 0 ? 1.0f / best[2] : 0.0f);
+  const float total = w1 + w2;
+  pick.blend = total > 1e-9f ? w2 / total : 0.5f;
+  return pick;
+}
 }
