@@ -103,6 +103,31 @@ std::string SerializeCutscene(const Cutscene& scene);
 // the times were changed.
 void SortCutscene(Cutscene& scene);
 
+// A key of a scene, for a timeline that picks and drags them. `row` is
+// `kRowCamera`, `kRowCue`, `kRowAnim` or `kRowValue`; `index` is the key in
+// its list, and for a value key `track` is the value track.
+enum : int { kRowCamera = 0, kRowCue = 1, kRowAnim = 2, kRowValue = 3 };
+struct KeyRef {
+  int row = 0;
+  size_t track = 0;
+  size_t index = 0;
+
+  bool operator==(const KeyRef&) const = default;
+};
+
+// The key of row `row` nearest to `time` and within `tolerance` seconds, or
+// false. Of two at the same distance the first wins.
+bool FindCutsceneKey(const Cutscene& scene, int row, double time,
+                     double tolerance, KeyRef* out);
+
+// The time of a key; 0 for a reference that does not exist.
+double CutsceneKeyTime(const Cutscene& scene, const KeyRef& key);
+
+// Moves a key to `time` (never below 0). The list is not re-sorted: a drag
+// keeps its index until `SortCutscene`. Returns false for a reference that
+// does not exist.
+bool MoveCutsceneKey(Cutscene& scene, const KeyRef& key, double time);
+
 // What is wrong with a cutscene, one line each (empty when nothing is): a
 // negative or non-finite time, a cue with no type, an animation key with no
 // actor or clip, a value track with no name or a duplicate name, a camera key

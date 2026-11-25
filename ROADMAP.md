@@ -289,7 +289,7 @@ more than was built.
 - **Progress:** `world/cutscene.h` (a text file of camera keys, cues, value tracks and animation keys, a `CutscenePlayer` with
   `Skip`, tested); the template plays `assets/cutscenes/intro.cutscene` (camera glide, a fade, text, the guide's wave).
   The editor has a Cutscene panel (a timeline with a playhead and a camera preview, tables of keys, a key from the
-  viewport camera, problems, save). Not done: dragging keys on the timeline, sound and tween-callback tracks beyond cues and
+  viewport camera, problems, save). Keys drag on the timeline (snapped, Shift for free). Not done: sound and tween-callback tracks beyond cues and
   values. The debug console can run cutscenes (`cutscene.play`, `.skip`, `.stop`, `.list`).
 - Timeline of camera, tween, sound, event and animation tracks, built on 1.4,
   2.1 and 3.1. Editor timeline panel.
@@ -322,7 +322,7 @@ Gaps named in the Progress lines, by area:
 - **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets are applied on the CPU (a GPU path for many morphing models is not done), and only skinned mesh nodes are read.
 - **Audio:** nothing named.
-- **Editor:** dragging keys on the cutscene timeline (it has a playhead and tables), a visual event graph.
+- **Editor:** a visual event graph.
 - **Tools and data:** nothing named.
 
 ## Out of scope for now

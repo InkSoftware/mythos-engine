@@ -6428,6 +6428,41 @@ TEST(prefab_links_update_unlink_and_survive_the_file) {
   CHECK(editor::RemoveLinked(doc, id) == -1);
 }
 
+TEST(cutscene_keys_can_be_found_and_moved_for_a_timeline) {
+  using namespace mythos;
+  Cutscene scene;
+  scene.camera = {{}, {}};
+  scene.camera[0].time = 0.5;
+  scene.camera[1].time = 2.0;
+  scene.cues.push_back({1.0, {"message", "hi"}});
+  scene.anims.push_back({});
+  scene.anims[0].time = 3.0;
+  scene.values.resize(2);
+  scene.values[0].name = "fade";
+  scene.values[1].name = "x";
+  scene.values[1].keys = {{0.0, 1.0}, {4.0, 2.0}};
+  KeyRef ref;
+  // Nearest within the tolerance, per row.
+  CHECK(FindCutsceneKey(scene, kRowCamera, 1.9, 0.2, &ref));
+  CHECK((ref == KeyRef{kRowCamera, 0, 1}));
+  CHECK(!FindCutsceneKey(scene, kRowCamera, 1.0, 0.2, &ref));
+  CHECK(FindCutsceneKey(scene, kRowCue, 1.1, 0.2, &ref));
+  CHECK(FindCutsceneKey(scene, kRowAnim, 3.0, 0.01, &ref));
+  CHECK(FindCutsceneKey(scene, kRowValue, 3.9, 0.2, &ref));
+  CHECK((ref == KeyRef{kRowValue, 1, 1}));
+  CHECK(!FindCutsceneKey(scene, 9, 1.0, 5.0, &ref));
+  // Moving sets the time, never below zero, and fails for a bad reference.
+  CHECK(MoveCutsceneKey(scene, {kRowCamera, 0, 0}, 2.5));
+  CHECK(CutsceneKeyTime(scene, {kRowCamera, 0, 0}) == 2.5);
+  CHECK(MoveCutsceneKey(scene, {kRowValue, 1, 0}, -3.0));
+  CHECK(CutsceneKeyTime(scene, {kRowValue, 1, 0}) == 0.0);
+  CHECK(!MoveCutsceneKey(scene, {kRowCue, 0, 5}, 1.0));
+  CHECK(CutsceneKeyTime(scene, {kRowCue, 0, 5}) == 0.0);
+  // After a drag past another key, SortCutscene restores the order.
+  SortCutscene(scene);
+  CHECK(scene.camera[0].time == 2.0 && scene.camera[1].time == 2.5);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

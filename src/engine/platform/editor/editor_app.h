@@ -281,6 +281,8 @@ class EditorApp {
   // The timeline: where the playhead is, whether the viewport shows the
   // cutscene's camera there, and the camera to go back to.
   float cut_scrub_ = 0.0f;
+  KeyRef cut_drag_;  // the timeline key being dragged
+  bool cut_dragging_ = false;
   bool cut_preview_ = false, cut_preview_was_ = false;
   OrbitCamera cut_saved_cam_;
   Prefab prefab_cache_;

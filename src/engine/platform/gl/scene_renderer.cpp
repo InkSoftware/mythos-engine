@@ -347,6 +347,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.flash_on = world_program_.Uniform("uFlashOn");
   u.lighter = world_program_.Uniform("uLighter");
   u.torch_warm = world_program_.Uniform("uTorchWarm");
+  u.torch_power = world_program_.Uniform("uTorchPower");
   u.outdoor = world_program_.Uniform("uOutdoor");
   u.moon_dir = world_program_.Uniform("uMoonDir");
   u.sun_color = world_program_.Uniform("uSunColor");
@@ -1191,6 +1192,8 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform1f(u.lighter, cam.lighter ? 1.0f : 0.0f);
   Uniform1f(u.torch_warm,
             static_cast<float>(std::clamp(cam.torch_tint, 0.0, 1.0)));
+  Uniform1f(u.torch_power,
+            static_cast<float>(std::clamp(cam.torch_power, 0.0, 1.0)));
   Uniform1i(u.outdoor, cam.outdoor ? 1 : 0);
   Uniform3f(u.moon_dir, f.moon[0], f.moon[1], f.moon[2]);
   {
@@ -1625,7 +1628,9 @@ void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
       origin[2] = f.eye[2] + rz * side + f.dir[2] * 0.05f;
     }
     const float on =
-        cam.flash_on ? static_cast<float>(std::max(0.0, m.flare)) : 0.0f;
+        cam.flash_on ? static_cast<float>(std::max(0.0, m.flare) *
+                                          std::clamp(cam.torch_power, 0.0, 1.0))
+                     : 0.0f;
     mirror_program_.Set("uFlare", on);
     mirror_program_.Set("uFlareOrigin", origin[0], origin[1], origin[2]);
     mirror_program_.Set("uFlareDir", f.flash[0], f.flash[1], f.flash[2]);

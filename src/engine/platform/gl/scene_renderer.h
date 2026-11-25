@@ -197,6 +197,10 @@ struct CameraState {
   // default) is the engine's fixed night, exactly as before.
   double time_of_day = -1;
   double torch_tint = 0;
+  // The hand light's strength, 0..1 (1, the default, is as before): a game
+  // eases it down as a battery runs out so the beam fades instead of
+  // flickering. At 0 the beam gives no light.
+  double torch_power = 1;
 
   // The hand light (torch or lighter). `hand_yaw` and `hand_pitch` offset its
   // aim from the view direction.
@@ -688,7 +692,7 @@ class SceneRenderer {
   // Cached uniform locations of the world program.
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, view_pos = -1, flash_dir = -1,
-              flash_on = -1, lighter = -1, torch_warm = -1, outdoor = -1,
+              flash_on = -1, lighter = -1, torch_warm = -1, torch_power = -1, outdoor = -1,
               moon_dir = -1, sun_color = -1, probe = -1, probe_h = -1,
               sun_shadow = -1, sun_vp = -1, env = -1, env_pos = -1,
               env_half = -1, env_pos2 = -1, env_half2 = -1, env_blend = -1,

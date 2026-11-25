@@ -10,6 +10,7 @@ uniform vec3 uViewPos;  // where the picture is seen from (uCam, or its reflecti
 uniform vec3 uFlashDir;
 uniform float uFlashOn;
 uniform float uLighter;
+uniform float uTorchPower;  // 0..1: the hand light's strength; a dying battery fades it out smoothly
 uniform float uTorchWarm;  // 0..1: a failing battery browns and dims the hand light
 uniform vec3 uFogColor;
 uniform float uFogDensity;
@@ -252,7 +253,7 @@ vec3 airLight(vec3 rd, float dist) {
     if (uFlashOn > 0.5) {  // dust in the beam
         float cone = smoothstep(mix(0.91, 0.30, uLighter), mix(0.985, 0.85, uLighter), dot(rd, normalize(uFlashDir)));
         vec3 tint = mix(vec3(1.00, 0.80, 0.55), vec3(1.00, 0.62, 0.30), uLighter);
-        tint = mix(tint, vec3(0.95, 0.46, 0.18), uTorchWarm) * (1.0 - 0.45 * uTorchWarm);
+        tint = mix(tint, vec3(0.95, 0.46, 0.18), uTorchWarm) * (1.0 - 0.45 * uTorchWarm) * uTorchPower;
         float along = 1.0 - exp(-0.5 * dist);
         acc += tint * (density * 3.2 * cone * along / (1.0 + 0.25 * dist));
     }
@@ -395,7 +396,7 @@ void main() {
             float wave = sin(uTime * 23.0) * sin(uTime * 7.1);
             float flicker = mix(0.96 + 0.04 * wave, 0.82 + 0.18 * wave * sin(uTime * 31.0), uLighter);
             vec3 tint = mix(vec3(1.00, 0.80, 0.55), vec3(1.00, 0.62, 0.30), uLighter);
-            tint = mix(tint, vec3(0.95, 0.46, 0.18), uTorchWarm) * (1.0 - 0.45 * uTorchWarm);
+            tint = mix(tint, vec3(0.95, 0.46, 0.18), uTorchWarm) * (1.0 - 0.45 * uTorchWarm) * uTorchPower;
             float lit = 1.0;
             if (uHandShadow == 1 && cone * falloff > 0.002) lit = shadowFactor(4, uHandPos, geo);
             light += tint * mix(2.4, 2.0, uLighter) * cone * falloff * (0.35 + 0.65 * facing) * flicker * lit;

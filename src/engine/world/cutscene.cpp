@@ -407,4 +407,75 @@ double CutscenePlayer::Value(const std::string& name,
   }
   return fallback;
 }
+
+namespace {
+double* KeyTime(Cutscene& scene, const KeyRef& key) {
+  switch (key.row) {
+    case kRowCamera:
+      return key.index < scene.camera.size() ? &scene.camera[key.index].time
+                                             : nullptr;
+    case kRowCue:
+      return key.index < scene.cues.size() ? &scene.cues[key.index].time
+                                           : nullptr;
+    case kRowAnim:
+      return key.index < scene.anims.size() ? &scene.anims[key.index].time
+                                            : nullptr;
+    case kRowValue:
+      return key.track < scene.values.size() &&
+                     key.index < scene.values[key.track].keys.size()
+                 ? &scene.values[key.track].keys[key.index].time
+                 : nullptr;
+    default:
+      return nullptr;
+  }
+}
+}
+
+bool FindCutsceneKey(const Cutscene& scene, const int row, const double time,
+                     const double tolerance, KeyRef* const out) {
+  double best = tolerance;
+  bool found = false;
+  const auto consider = [&](const KeyRef& ref) {
+    const double d = std::fabs(CutsceneKeyTime(scene, ref) - time);
+    if (d <= best) {
+      // `<=` for the first key only; a later one must be strictly nearer.
+      if (found && d == best) return;
+      best = d;
+      found = true;
+      *out = ref;
+    }
+  };
+  switch (row) {
+    case kRowCamera:
+      for (size_t i = 0; i < scene.camera.size(); ++i) consider({row, 0, i});
+      break;
+    case kRowCue:
+      for (size_t i = 0; i < scene.cues.size(); ++i) consider({row, 0, i});
+      break;
+    case kRowAnim:
+      for (size_t i = 0; i < scene.anims.size(); ++i) consider({row, 0, i});
+      break;
+    case kRowValue:
+      for (size_t t = 0; t < scene.values.size(); ++t)
+        for (size_t i = 0; i < scene.values[t].keys.size(); ++i)
+          consider({row, t, i});
+      break;
+    default:
+      break;
+  }
+  return found;
+}
+
+double CutsceneKeyTime(const Cutscene& scene, const KeyRef& key) {
+  // The lookup only reads; the scene is not changed.
+  const double* t = KeyTime(const_cast<Cutscene&>(scene), key);  // NOLINT
+  return t != nullptr ? *t : 0.0;
+}
+
+bool MoveCutsceneKey(Cutscene& scene, const KeyRef& key, const double time) {
+  double* t = KeyTime(scene, key);
+  if (t == nullptr) return false;
+  *t = std::isfinite(time) ? std::max(0.0, time) : 0.0;
+  return true;
+}
 }

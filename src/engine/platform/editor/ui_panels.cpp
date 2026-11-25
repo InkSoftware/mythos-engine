@@ -1209,10 +1209,31 @@ void EditorApp::DrawCutscenes() {
     constexpr float kRow = 14.0f;
     const ImVec2 size{width, kRow * 4 + 4};
     ImGui::InvisibleButton("##timeline", size);
-    if (ImGui::IsItemActive()) {
-      const float t = (ImGui::GetIO().MousePos.x - origin.x) / width;
-      cut_scrub_ = std::clamp(t, 0.0f, 1.0f) * static_cast<float>(length);
+    // A press on a key's marker picks it and a drag moves it in time (snapped
+    // to 0.05 s, Shift for free); a press anywhere else moves the playhead.
+    const float mouse_t =
+        std::clamp((ImGui::GetIO().MousePos.x - origin.x) / width, 0.0f, 1.0f);
+    const double mouse_time = static_cast<double>(mouse_t) * length;
+    if (ImGui::IsItemActivated()) {
+      const int row = std::clamp(
+          static_cast<int>((ImGui::GetIO().MousePos.y - origin.y - 2) / kRow),
+          0, 3);
+      cut_dragging_ = FindCutsceneKey(cut_, row, mouse_time,
+                                      6.0 / static_cast<double>(width) * length,
+                                      &cut_drag_);
     }
+    if (ImGui::IsItemActive()) {
+      if (cut_dragging_) {
+        const double t = ImGui::GetIO().KeyShift
+                             ? mouse_time
+                             : std::round(mouse_time / 0.05) * 0.05;
+        MoveCutsceneKey(cut_, cut_drag_, t);
+        cut_scrub_ = static_cast<float>(t);
+      } else {
+        cut_scrub_ = static_cast<float>(mouse_time);
+      }
+    }
+    if (ImGui::IsItemDeactivated()) cut_dragging_ = false;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddRectFilled(origin, {origin.x + size.x, origin.y + size.y},
                       IM_COL32(30, 30, 36, 255));
@@ -1237,7 +1258,9 @@ void EditorApp::DrawCutscenes() {
     const float px = x_of(cut_scrub_);
     dl->AddLine({px, origin.y}, {px, origin.y + size.y},
                 IM_COL32(255, 255, 255, 255), 2.0f);
-    ImGui::TextDisabled("rows: camera, cues, animations, values");
+    ImGui::TextDisabled(
+        "rows: camera, cues, animations, values; drag a key to retime it "
+        "(Shift: no snap)");
     // Where the camera is at the playhead.
     CameraSample film;
     if (SampleCutsceneCamera(cut_, cut_scrub_, &film)) {
