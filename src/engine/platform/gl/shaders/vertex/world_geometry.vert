@@ -8,6 +8,10 @@ in mat4 aModel;      // per instance (locations 5..8), read when uInstanced is 1
 uniform int uInstanced;
 uniform int uSkinned;  // 1 when the batch carries a skin
 uniform mat4 uBones[64];
+uniform sampler2D uMorphTex;  // morph targets: two texels (position, normal delta) a vertex a target, 2048 to a row
+uniform int uMorphCount;      // targets the batch blends (0: none)
+uniform int uMorphVerts;      // vertices in the batch (a target's stride)
+uniform float uMorphW[8];     // their weights
 uniform sampler2D uBoneTex;  // uSkinned 2: 64 matrices a row, a row per instance of a run
 uniform mat4 uView;
 uniform mat4 uProj;
@@ -23,6 +27,16 @@ mat4 boneAt(int bone) {
 void main() {
     vec4 p = vec4(aPos, 1.0);
     vec3 n = aNormal;
+    // Morph targets move the vertex before the bones do.
+    for (int t = 0; t < 8; ++t) {
+        if (t >= uMorphCount) break;
+        float w = uMorphW[t];
+        if (w == 0.0) continue;
+        int i = (t * uMorphVerts + gl_VertexID) * 2;
+        p.xyz += w * texelFetch(uMorphTex, ivec2(i % 2048, i / 2048), 0).xyz;
+        i += 1;
+        n += w * texelFetch(uMorphTex, ivec2(i % 2048, i / 2048), 0).xyz;
+    }
     if (uSkinned == 1) {
         mat4 s = aWeights.x * uBones[int(aJoints.x)] +
                  aWeights.y * uBones[int(aJoints.y)] +

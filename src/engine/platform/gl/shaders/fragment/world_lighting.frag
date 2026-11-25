@@ -36,6 +36,7 @@ uniform sampler2DArray uLmTex;  // lightmaps: a layer a facing (+x -x +y -y +z -
 uniform vec4 uLmInfo;           // cells x, cells z, texels a metre, rows of a wall tile
 uniform float uLmStrength;      // 0 = no lightmap
 uniform sampler2D uAoTex;      // screen-space occlusion of this frame (half size, from a depth pre-pass), read at the pixel
+uniform int uDepthOnly;        // 1: the depth pre-pass of ssao_ambient: only the depth (and the alpha test) matters
 uniform float uAoWorld;        // 0: not used; else its strength (the ambient term is multiplied by it)
 uniform vec2 uAoScreen;        // the target's size in pixels
 uniform sampler2DArray uProbeTex;  // baked light over the floor plan: a layer per face of the ambient cube (+x -x +y -y +z -z)
@@ -264,6 +265,7 @@ void main() {
     if (dot(vWorld, uClip.xyz) + uClip.w < 0.0) discard;
     vec4 tex = texture(uTex, vUV);
     if (uAlphaTest == 1 && tex.a < 0.5) discard;
+    if (uDepthOnly == 1) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
     vec3 albedo = tex.rgb;  // the texture is SRGB8_ALPHA8: sampling already gives linear
 
     float dist = length(uViewPos - vWorld);

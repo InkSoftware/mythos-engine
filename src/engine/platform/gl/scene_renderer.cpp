@@ -334,6 +334,9 @@ void SceneRenderer::LookUpWorldUniforms() {
   u_skinned_ = world_program_.Uniform("uSkinned");
   u_instanced_ = world_program_.Uniform("uInstanced");
   u_bones_ = world_program_.Uniform("uBones");
+  u_morph_count_ = world_program_.Uniform("uMorphCount");
+  u_morph_verts_ = world_program_.Uniform("uMorphVerts");
+  u_morph_w_ = world_program_.Uniform("uMorphW");
   u_decal_ = world_program_.Uniform("uDecal");
   WorldUniforms& u = world_u_;
   u.mist = world_program_.Uniform("uMist");
@@ -406,9 +409,11 @@ void SceneRenderer::LookUpWorldUniforms() {
   world_program_.Set("uReflectionEnv", 10);
   world_program_.Set("uReflectionEnv2", 12);
   world_program_.Set("uBoneTex", 14);
+  world_program_.Set("uMorphTex", 17);
   if (shadow_program_.Valid()) {
     shadow_program_.Use();
     shadow_program_.Set("uBoneTex", 14);
+    shadow_program_.Set("uMorphTex", 17);
   }
 }
 
@@ -547,12 +552,52 @@ GLuint SceneRenderer::MaterialMapFor(const std::string& name) const {
   return default_material_.Id();
 }
 
-void SceneRenderer::UploadBatches(BatchList& dst,
-                                  const std::vector<Batch>& src) {
-  for (const auto& b : src) {
+// Puts a batch's morph deltas in a texture: for target t and vertex v the
+// texels 2 * (t * n + v) (position) and +1 (normal), 2048 to a row.
+void SceneRenderer::AttachMorph(GpuBatch& gpu, const Batch& batch,
+                                const BatchMorph& morph) {
+  const size_t n = batch.verts.size();
+  const size_t targets =
+      std::min(morph.targets.size(), static_cast<size_t>(kMaxMorphTargets));
+  if (targets == 0 || n == 0) return;
+  constexpr size_t kRow = 2048;
+  const size_t texels = targets * n * 2;
+  const size_t rows = (texels + kRow - 1) / kRow;
+  if (rows > 16384) return;  // too much for a texture
+  std::vector<float> data(rows * kRow * 4, 0.0f);
+  for (size_t t = 0; t < targets; ++t) {
+    const MorphTarget& target = morph.targets[t];
+    for (size_t v = 0; v < n; ++v) {
+      const size_t at = (t * n + v) * 2 * 4;
+      if (target.position.size() == n * 3) {
+        for (size_t c = 0; c < 3; ++c)
+          data[at + c] = target.position[v * 3 + c];
+      }
+      if (target.normal.size() == n * 3) {
+        for (size_t c = 0; c < 3; ++c)
+          data[at + 4 + c] = target.normal[v * 3 + c];
+      }
+    }
+  }
+  gpu.morph_texture.Create();
+  gpu.morph_texture.SetParams(gl::kNearest, gl::kNearest, gl::kClampToEdge);
+  gpu.morph_texture.Bind();
+  gl::TexImage2D(gl::kTexture2D, 0, static_cast<gl::GLint>(gl::kRgba32f),
+                 static_cast<GLsizei>(kRow), static_cast<GLsizei>(rows), 0,
+                 gl::kRgba, gl::kFloat, data.data());
+  gpu.morph_targets = static_cast<int>(targets);
+  gpu.morph_verts = static_cast<int>(n);
+}
+
+void SceneRenderer::UploadBatches(BatchList& dst, const std::vector<Batch>& src,
+                                  const std::vector<BatchMorph>* const morphs) {
+  for (size_t source = 0; source < src.size(); ++source) {
+    const Batch& b = src[source];
     if (b.verts.empty()) continue;
     if (b.skin.size() == b.verts.size()) {
       UploadSkinnedBatch(dst, b);
+      if (morphs != nullptr && source < morphs->size() && !dst.empty())
+        AttachMorph(dst.back(), b, (*morphs)[source]);
       continue;
     }
 
@@ -643,6 +688,14 @@ int SceneRenderer::UploadModel(const std::vector<Batch>& batches) {
   ++scene_revision_;
   models_.emplace_back();
   UploadBatches(models_.back(), batches);
+  return static_cast<int>(models_.size()) - 1;
+}
+
+int SceneRenderer::UploadModel(const std::vector<Batch>& batches,
+                               const std::vector<BatchMorph>& morphs) {
+  ++scene_revision_;
+  models_.emplace_back();
+  UploadBatches(models_.back(), batches, &morphs);
   return static_cast<int>(models_.size()) - 1;
 }
 
@@ -998,6 +1051,21 @@ void SceneRenderer::BindBatchState(const GpuBatch& b) {
     Uniform1f(u_opacity_, b.opacity);
     draw_state_.opacity = b.opacity;
   }
+  // Morph targets: this batch's deltas and the instance's weights.
+  const int morph =
+      b.morph_targets > 0
+          ? std::min(b.morph_targets, static_cast<int>(morph_weights_.size()))
+          : 0;
+  if (morph > 0) {
+    ActiveTexture(kTexture0 + 17);
+    b.morph_texture.Bind();
+    ActiveTexture(kTexture0);
+    Uniform1i(u_morph_verts_, b.morph_verts);
+  }
+  if (morph != draw_state_.morph) {
+    Uniform1i(u_morph_count_, morph);
+    draw_state_.morph = morph;
+  }
   b.vao.Bind();
 }
 
@@ -1181,6 +1249,7 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform3f(u.view_pos, f.view_eye[0], f.view_eye[1], f.view_eye[2]);
   world_program_.Set("uHdr", capturing_probe_ ? 1 : 0);
   world_program_.Set("uAoWorld", ao_world_);
+  world_program_.Set("uDepthOnly", depth_only_ ? 1 : 0);
   world_program_.Set("uAoTex", 15);
   world_program_.Set("uAoScreen", static_cast<float>(ao_screen_w_),
                      static_cast<float>(ao_screen_h_));
@@ -1433,13 +1502,15 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
     // is one instanced draw per batch: the matrices go up in one buffer.
     size_t run = 1;
     const bool skinned_run = !inst.skin.empty();
-    if (instancing_ && (!skinned_run || bone_tex_.Id() != 0)) {
+    if (instancing_ && inst.morph.empty() &&
+        (!skinned_run || bone_tex_.Id() != 0)) {
       // Skinned instances of a model share its skeleton: their bones go in a
       // texture, a row each, so a run is capped by its rows.
       const size_t cap =
           skinned_run ? static_cast<size_t>(kSkinRows) : plan.size();
       while (i + run < plan.size() && run < cap &&
              plan[i + run].model == draw.model &&
+             lod_instances_[plan[i + run].request]->morph.empty() &&
              lod_instances_[plan[i + run].request]->skin.empty() !=
                  skinned_run) {
         ++run;
@@ -1501,7 +1572,23 @@ void SceneRenderer::DrawInstances(const CameraState& cam,
       Uniform1i(u_skinned_, 1);
       UniformMatrix4fv(u_bones_, count, kFalse, inst.skin[0].data());
     }
+    if (!inst.morph.empty()) {
+      morph_weights_ = inst.morph;
+      float w[kMaxMorphTargets] = {};
+      std::copy_n(
+          inst.morph.begin(),
+          std::min(inst.morph.size(), static_cast<size_t>(kMaxMorphTargets)),
+          w);
+      Uniform1fv(u_morph_w_, kMaxMorphTargets, w);
+    }
     DrawBatches(batches, inst.matrix);
+    if (!morph_weights_.empty()) {
+      morph_weights_.clear();
+      if (draw_state_.morph != 0) {  // the next batch binds count 0
+        Uniform1i(u_morph_count_, 0);
+        draw_state_.morph = 0;
+      }
+    }
     if (skinned) Uniform1i(u_skinned_, 0);
     ++i;
   }
@@ -1570,7 +1657,9 @@ void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
     // As the main view: a depth pre-pass for the occlusion of the reflection.
     ao_screen_w_ = w;
     ao_screen_h_ = h;
+    depth_only_ = true;
     DrawWorld(cam, fm);
+    depth_only_ = false;
     if (BuildAo(cam, fm, mirror_target_)) {
       mirror_target_.Bind();
       Viewport(0, 0, w, h);
@@ -2060,9 +2149,12 @@ void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
   if (cam.ssao > 0.0 && cam.ssao_ambient) {
     ao_screen_w_ = target_.Width();
     ao_screen_h_ = target_.Height();
-    // Depth pre-pass: the world once, resolved for the occlusion, then the
-    // colour is cleared and the real pass reads the occlusion per pixel.
+    // Depth pre-pass: the world once with the fragment shader cut to its alpha
+    // test, resolved for the occlusion, then the colour is cleared and the
+    // real pass reads the occlusion per pixel.
+    depth_only_ = true;
     DrawWorld(cam, f);
+    depth_only_ = false;
     target_.Resolve();
     if (BuildAo(cam, f, target_)) {
       target_.Bind();

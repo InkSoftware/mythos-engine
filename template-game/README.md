@@ -37,7 +37,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--sun-shadow` | with `--outdoor`: the shadow of the sun or moon | `CameraState::sun_shadow` |
 | `--ssao` | ambient occlusion (also the Ambient occlusion setting) | `CameraState::ssao` |
 | `--mirror` | a mirror on a wall of the first room (with `--ssao-ambient` its picture has the occlusion too) | `CameraState::mirror` |
-| `--ssao-ambient` | ambient occlusion applied to the ambient term inside the world shader (a depth pre-pass, so the world is drawn twice) | `CameraState::ssao_ambient` |
+| `--ssao-ambient` | ambient occlusion applied to the ambient term inside the world shader (a depth pre-pass that skips the lighting, so the geometry is drawn twice) | `CameraState::ssao_ambient` |
 | `--lightmap` | `--baked` plus lightmaps on the walls, floors and ceilings (sharp shadows from the lamps; furniture and the guide keep the probes) | `BakeLightmap`, `UploadLightmap` |
 | `--baked` | the lamps baked into light probes instead of live lamps (re-baked at three heights when the level changes) | `BakeProbeStack`, `UploadProbes` |
 | `--reflections` | a reflection probe in each room, with the room's box for parallax correction (the toolbox and bucket are shiny; the two nearest blend as you cross between rooms) | `AddReflectionProbe` |
@@ -46,6 +46,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--formation NAME` | with `--clones N`: the copies stand around the guide in a `line`, `column`, `wedge`, `circle` or `grid` | `FormationSlots` (`AssignSlots`, `FormationSteer` move a group into one) |
 | `--crowd N` | N chairs as model instances; `--no-instancing` draws them one by one | GPU instancing |
 | `--debug` | opens the debug console (the ` key or F12 anywhere) with the frame stats and graph on: every setting is a variable, `cutscene.play intro` runs a cutscene, `help` lists it all | `CvarRegistry`, `DebugConsole`, `DrawDebugOverlay`, `RegisterCutsceneCommands` |
+| `--morph` | the guide gets a synthetic morph target (puff up) whose weight swells and relaxes: morph targets blended in the vertex shader | `UploadModel(batches, morphs)`, `ModelInstance::morph` |
 | `--at X Z ANGLE`, `--shake` | puts the player there (radians), slams a door's worth of camera shake at frame 85 | `Game::PlacePlayer`, `CameraFx::AddShake` |
 | `--screenshot file.ppm` | renders 90 frames (a fixed 1/60 s step, no input: two runs of one command match byte for byte), saves the last, prints the draw calls, exits | `WriteFramebufferPpm`, `RenderStats` |
 

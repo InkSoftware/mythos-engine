@@ -167,7 +167,7 @@ more than was built.
   `assets/characters/prototype_pete.glb`, KayKit, 30 clips). `gfx/anim_state.h` is the animation state machine
   (states, parameters, conditional and when-finished transitions with crossfades). `tools/mythos_models.py` keeps a rigged model with `Spec(skinned=True)` (one `.glb` in
   `assets/characters/`, tested by `tools/test_mythos_models.py`). The loader reads a `.glb`, or a `.gltf` with external or base64
-  buffers (`LoadGltf`), and sparse accessors. Colour textures load too (`GltfModel::textures`), with the PBR companions (`_rough`, `_metal`, `_nrm`, `_ao`), several skins join into one skeleton, and morph targets with weight animations load (`gfx/morph.h`, `ApplyMorph` on the CPU). Not done: a GPU path for morphing many models.
+  buffers (`LoadGltf`), and sparse accessors. Colour textures load too (`GltfModel::textures`), with the PBR companions (`_rough`, `_metal`, `_nrm`, `_ao`), several skins join into one skeleton, and morph targets with weight animations load (`gfx/morph.h`, `ApplyMorph` on the CPU). Morph targets blend in the vertex shader (`UploadModel(batches, morphs)`, `ModelInstance::morph`).
 - **Why:** models are static OBJ, so no animated NPCs, creatures or doors.
 - **Where:** `gfx/skeleton.h` (bones, skin weights, clips, sampler, blend,
   crossfade, all CPU and tested), a glTF 2.0 loader for skins and clips
@@ -319,8 +319,8 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls included, a `MYLM1` file) do not cover doorway frames, window glass and frames, models or stacked floors; `ssao_ambient` draws the world twice (a single pass is not done); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
-- **Animation and AI:** morph targets are applied on the CPU (a GPU path for many morphing models is not done), and only skinned mesh nodes are read.
+- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls included, a `MYLM1` file) do not cover doorway frames, window glass and frames, models or stacked floors; `ssao_ambient` draws the geometry twice (the pre-pass skips the lighting); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
+- **Animation and AI:** morph targets blend on the GPU (up to 8 per skinned batch, weights per instance; not instanced, and static batches cannot use it); only skinned mesh nodes are read.
 - **Audio:** nothing named.
 - **Checks:** the editor's panels have scripts (`tools/editor-scripts/`, `--script`); the template game has no script driver (its Quit row, steering and music sync are unit-tested only).
 - **Editor:** the event graph panel edits a rule's starting event, conditions and `set_flag` actions and creates and deletes rules, but not other actions or triggers.

@@ -9,6 +9,7 @@
 #include "engine/core/mat4.h"
 #include "engine/gfx/grade.h"
 #include "engine/gfx/lightmap.h"
+#include "engine/gfx/morph.h"
 #include "engine/gfx/lod.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/particles.h"
@@ -73,6 +74,11 @@ struct ModelInstance {
   // Bone matrices (see SkinMatrices in gfx/skeleton.h, at most kMaxBones) for
   // a model uploaded with skinned batches; empty for a static model.
   std::vector<Mat4f> skin;
+  // Weights of the morph targets the model was uploaded with (`UploadModel`'s
+  // `morphs`), at most `SceneRenderer::kMaxMorphTargets`; empty for none. The
+  // vertex shader blends the targets, so the weights can change every frame
+  // for the cost of a uniform. Instances with weights are drawn one by one.
+  std::vector<float> morph;
 };
 
 // One planar mirror: the glass center (world), its horizontal normal (nx, nz;
@@ -292,6 +298,13 @@ class SceneRenderer {
 
   // Uploads a model and returns its id for `ModelInstance::model`.
   int UploadModel(const std::vector<Batch>& batches);
+  // As above, with morph targets: `morphs[i]` belongs to `batches[i]` (a
+  // skinned batch: its vertices keep their order, so a vertex id finds its
+  // delta; the deltas go in a texture). Targets beyond kMaxMorphTargets are
+  // left out. `GltfModel::morphs` has the data.
+  int UploadModel(const std::vector<Batch>& batches,
+                  const std::vector<BatchMorph>& morphs);
+  static constexpr int kMaxMorphTargets = 8;
 
   // Replaces the geometry of an uploaded model (a model that changed on disk):
   // instances of `id` draw the new one from the next frame. Returns false for
@@ -404,6 +417,9 @@ class SceneRenderer {
     float opacity = 1.0f;
     // Vertices carry joints and weights (see SkinWeights).
     bool skinned = false;
+    // Morph targets: deltas in a texture (`morph_texture`), see UploadModel.
+    GlTexture morph_texture;
+    int morph_targets = 0, morph_verts = 0;
     float bmin[3] = {0, 0, 0}, bmax[3] = {0, 0, 0};
   };
 
@@ -491,7 +507,9 @@ class SceneRenderer {
   bool ao_in_world_ =
       false;  // this frame's occlusion was applied in the world pass
   int ao_screen_w_ = 1,
-      ao_screen_h_ = 1;    // size of the target the occlusion is read for
+      ao_screen_h_ = 1;  // size of the target the occlusion is read for
+  bool depth_only_ =
+      false;  // the occlusion pre-pass: the world shader returns early
   float ao_world_ = 0.0f;  // strength the world pass applies (0 = not)
   const ViewBasis* sky_basis_override_ = nullptr;  // a probe face's axes
   int env_probe_ = -1;   // the probe this frame's world pass reflects
@@ -522,7 +540,10 @@ class SceneRenderer {
 
   // Splits batches into 8-cell chunks, uploads them and resolves their texture
   // maps by name (falling back to "missing").
-  void UploadBatches(BatchList& dst, const std::vector<Batch>& src);
+  void UploadBatches(BatchList& dst, const std::vector<Batch>& src,
+                     const std::vector<BatchMorph>* morphs = nullptr);
+  void AttachMorph(GpuBatch& gpu, const Batch& batch, const BatchMorph& morph);
+  std::vector<float> morph_weights_;  // the instance being drawn
 
   // Binds a batch's textures and flags, skipping what `draw_state_` shows is
   // already bound.
@@ -677,7 +698,7 @@ class SceneRenderer {
     gl::GLuint texture = ~0u;
     gl::GLuint normal = ~0u;
     gl::GLuint material = ~0u;
-    int emissive = -1, alpha_test = -1;
+    int emissive = -1, alpha_test = -1, morph = -1;
     float opacity = -1.0f;
   } draw_state_;
   // The solid pass draws batches with opacity 1, the blended pass the others.
@@ -685,18 +706,19 @@ class SceneRenderer {
   gl::GLint u_decal_ = -1;
 
   gl::GLint u_model_ = -1, u_emissive_ = -1, u_alpha_test_ = -1,
-            u_opacity_ = -1, u_skinned_ = -1, u_bones_ = -1;
+            u_opacity_ = -1, u_skinned_ = -1, u_bones_ = -1,
+            u_morph_count_ = -1, u_morph_verts_ = -1, u_morph_w_ = -1;
   // False during shadow passes, which use no normal or material maps.
   bool bind_normals_ = true;
 
   // Cached uniform locations of the world program.
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, view_pos = -1, flash_dir = -1,
-              flash_on = -1, lighter = -1, torch_warm = -1, torch_power = -1, outdoor = -1,
-              moon_dir = -1, sun_color = -1, probe = -1, probe_h = -1,
-              sun_shadow = -1, sun_vp = -1, env = -1, env_pos = -1,
-              env_half = -1, env_pos2 = -1, env_half2 = -1, env_blend = -1,
-              sun_texel = -1, sky_ambient = -1, fog_color = -1,
+              flash_on = -1, lighter = -1, torch_warm = -1, torch_power = -1,
+              outdoor = -1, moon_dir = -1, sun_color = -1, probe = -1,
+              probe_h = -1, sun_shadow = -1, sun_vp = -1, env = -1,
+              env_pos = -1, env_half = -1, env_pos2 = -1, env_half2 = -1,
+              env_blend = -1, sun_texel = -1, sky_ambient = -1, fog_color = -1,
               fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
               lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
               light_count = -1, light_pos = -1, light_color = -1,

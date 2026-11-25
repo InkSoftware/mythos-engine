@@ -101,6 +101,8 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 }
 
 int main(const int argc, char** const argv) {
+  // `--morph` gives the guide a morph target (a synthetic "puff up": the
+  // guide's file has none) whose weight swells and relaxes, blended on the GPU.
   // `--shake` slams a door's worth of camera shake at frame 85 (to see it in
   // a `--screenshot`).
   // `--at X Z ANGLE` puts the player there (radians, the facing is (cos, sin)
@@ -128,6 +130,7 @@ int main(const int argc, char** const argv) {
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
   bool shake = false;
+  bool morph = false;
   bool place_player = false;
   double at_x = 0, at_z = 0, at_angle = 0;
   bool outdoor = false;
@@ -170,6 +173,7 @@ int main(const int argc, char** const argv) {
     if (arg == "--debug") start_debug = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
     if (arg == "--shake") shake = true;
+    if (arg == "--morph") morph = true;
     if (i + 3 < argc && arg == "--at") {
       place_player = true;
       at_x = std::strtod(argv[i + 1], nullptr);
@@ -240,7 +244,24 @@ int main(const int argc, char** const argv) {
   };
   upload_world();
   renderer.UploadDoorPanel(mythos::BuildDoorPanel());
-  const int guide_model = renderer.UploadModel(guide.batches);
+  // With `--morph` one synthetic target per batch pushes every vertex out along
+  // its normal; the vertex shader blends it by the instance's weight.
+  std::vector<mythos::BatchMorph> guide_morphs;
+  if (morph) {
+    for (const mythos::Batch& b : guide.batches) {
+      mythos::BatchMorph m;
+      m.targets.emplace_back();
+      for (const mythos::Vertex& v : b.verts) {
+        m.targets[0].position.insert(
+            m.targets[0].position.end(),
+            {v.nx * 0.12f, v.ny * 0.12f, v.nz * 0.12f});
+      }
+      guide_morphs.push_back(std::move(m));
+    }
+  }
+  const int guide_model =
+      morph ? renderer.UploadModel(guide.batches, guide_morphs)
+            : renderer.UploadModel(guide.batches);
   renderer.SetInstancing(instancing);
   if (reflections) {
     // One in the middle of each room, with the room's size so what a surface
@@ -621,6 +642,8 @@ int main(const int argc, char** const argv) {
     PlaceMatrix(game.guide_pos().x, game.guide_pos().y, game.guide_angle(),
                 pete.matrix);
     pete.skin = mythos::SkinMatrices(guide.skeleton, game.guide_pose());
+    if (morph)
+      pete.morph = {static_cast<float>(0.5 + 0.5 * std::sin(Seconds()))};
     cam.instances.push_back(pete);
     // `--clones N`: the guide again, standing in the first room in her pose:
     // skinned instances of one model are one instanced draw per batch (the
