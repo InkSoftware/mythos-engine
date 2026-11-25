@@ -2641,8 +2641,8 @@ TEST(EditorChecksFurnitureInWallsMissingModelsAndStairwells) {
   const std::vector<std::string> models = {"table", "vase", "lamp"};
   CHECK(p.Check(w, models).empty());
   editor::LevelDoc* doc = p.Level("ground");
-  doc->furniture.push_back({0, 0, "table", 0});
-  doc->furniture.push_back({1, 1, "no_such_model", 0});
+  doc->furniture.push_back({0, 0, "table", 0, 0, 0, 0, ""});
+  doc->furniture.push_back({1, 1, "no_such_model", 0, 0, 0, 0, ""});
   bool wall = false, missing = false;
   for (const auto& pr : p.Check(w, models)) {
     wall |= pr.text.find("inside a wall") != std::string::npos;
@@ -6159,9 +6159,9 @@ TEST(lightmap_bakes_shadows_and_finds_tiles_by_position) {
   CHECK(m.Sample(5.0, 1.0, 2.5, 1, 0, 0, &covered)[0] < 1e-6f);
   CHECK(covered);
   // Furniture height and a point in a wall are not on a tile.
-  m.Sample(2.5, 0.8, 2.5, 0, 1, 0, &covered);
+  (void)m.Sample(2.5, 0.8, 2.5, 0, 1, 0, &covered);
   CHECK(!covered);
-  m.Sample(0.0, 1.0, 0.5, -1, 0, 0, &covered);
+  (void)m.Sample(0.0, 1.0, 0.5, -1, 0, 0, &covered);
   CHECK(!covered);
   // Nearer the lamp is brighter along the floor.
   CHECK(m.Sample(2.5, 0, 2.5, 0, 1, 0)[0] > m.Sample(1.5, 0, 1.5, 0, 1, 0)[0]);
