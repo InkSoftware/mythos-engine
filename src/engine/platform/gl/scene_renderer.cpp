@@ -1159,6 +1159,13 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Uniform3f(u.cam, f.eye[0], f.eye[1], f.eye[2]);
   Uniform3f(u.view_pos, f.view_eye[0], f.view_eye[1], f.view_eye[2]);
   world_program_.Set("uHdr", capturing_probe_ ? 1 : 0);
+  world_program_.Set("uAoWorld", ao_world_);
+  world_program_.Set("uAoTex", 15);
+  world_program_.Set("uAoScreen", static_cast<float>(ao_screen_w_),
+                     static_cast<float>(ao_screen_h_));
+  ActiveTexture(kTexture0 + 15);
+  ao_a_.Color().Bind();
+  ActiveTexture(kTexture0);
   Uniform3f(u.flash_dir, f.flash[0], f.flash[1], f.flash[2]);
   Uniform1f(u.flash_on, cam.flash_on ? 1.0f : 0.0f);
   Uniform1f(u.lighter, cam.lighter ? 1.0f : 0.0f);
@@ -1523,8 +1530,22 @@ void SceneRenderer::DrawMirrorView(const CameraState& cam, const Frame& f) {
   ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   Clear(kColorBufferBit | kDepthBufferBit);
   Disable(kBlend);
+  if (cam.ssao > 0.0 && cam.ssao_ambient) {
+    // As the main view: a depth pre-pass for the occlusion of the reflection.
+    ao_screen_w_ = w;
+    ao_screen_h_ = h;
+    DrawWorld(cam, fm);
+    if (BuildAo(cam, fm, mirror_target_)) {
+      mirror_target_.Bind();
+      Viewport(0, 0, w, h);
+      Clear(kColorBufferBit);
+      Disable(kBlend);
+      ao_world_ = static_cast<float>(std::clamp(cam.ssao, 0.0, 1.0));
+    }
+  }
   if (cam.outdoor) DrawSky(cam, fm, n);
   DrawWorld(cam, fm);
+  ao_world_ = 0.0f;
 }
 
 void SceneRenderer::DrawMirrorGlass(const CameraState& cam, const Frame& f) {
@@ -1748,7 +1769,8 @@ void SceneRenderer::MotionBlurSmear(const CameraState& cam, const Frame& f,
 // The occlusion pass: reads the resolved depth of the scene, writes the
 // occlusion at half size, then blurs it (the bloom blur, no threshold) to hide
 // the per-pixel rotation of the sample ring. Returns whether `ao_a_` holds it.
-bool SceneRenderer::BuildAo(const CameraState& cam, const Frame& f) {
+bool SceneRenderer::BuildAo(const CameraState& cam, const Frame& f,
+                            const RenderTarget& src) {
   if (cam.ssao <= 0.0 || !ssao_program_.Valid() || !bloom_program_.Valid() ||
       !ao_a_.Width()) {
     return false;
@@ -1759,13 +1781,13 @@ bool SceneRenderer::BuildAo(const CameraState& cam, const Frame& f) {
   Viewport(0, 0, ao_a_.Width(), ao_a_.Height());
   ssao_program_.Use();
   ActiveTexture(kTexture0);
-  target_.DepthTexture().Bind();
+  src.DepthTexture().Bind();
   ssao_program_.Set("uDepth", 0);
   const float tan_half_y = std::tan(f.fov_y * 0.5f);
   ssao_program_.Set("uTan", tan_half_y * f.aspect, tan_half_y);
   ssao_program_.Set("uNearFar", kNearPlane, kFarPlane);
-  ssao_program_.Set("uTexel", 1.0f / static_cast<float>(target_.Width()),
-                    1.0f / static_cast<float>(target_.Height()));
+  ssao_program_.Set("uTexel", 1.0f / static_cast<float>(src.Width()),
+                    1.0f / static_cast<float>(src.Height()));
   ssao_program_.Set("uRadius", 0.7f);
   DrawQuad();
 
@@ -1836,7 +1858,9 @@ void SceneRenderer::Composite(const CameraState& cam, const Frame& f,
   float bx = 0.0f, by = 0.0f;
   MotionBlurSmear(cam, f, bx, by);
 
-  const bool ao = BuildAo(cam, f);
+  // With ssao_ambient the world pass already used the occlusion.
+  const bool ao = !ao_in_world_ && BuildAo(cam, f, target_);
+  ao_in_world_ = false;
   const bool bloom = BuildBloom(cam);
   RenderTarget::BindWindow();
   Viewport(0, 0, window_w, window_h);
@@ -1995,8 +2019,25 @@ void SceneRenderer::DrawMainView(const CameraState& cam, const Frame& f,
   ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
   Clear(kColorBufferBit | kDepthBufferBit);
   Disable(kBlend);
+  if (cam.ssao > 0.0 && cam.ssao_ambient) {
+    ao_screen_w_ = target_.Width();
+    ao_screen_h_ = target_.Height();
+    // Depth pre-pass: the world once, resolved for the occlusion, then the
+    // colour is cleared and the real pass reads the occlusion per pixel.
+    DrawWorld(cam, f);
+    target_.Resolve();
+    if (BuildAo(cam, f, target_)) {
+      target_.Bind();
+      Viewport(0, 0, target_.Width(), target_.Height());
+      Clear(kColorBufferBit);
+      Disable(kBlend);
+      ao_world_ = static_cast<float>(std::clamp(cam.ssao, 0.0, 1.0));
+      ao_in_world_ = true;
+    }
+  }
   if (cam.outdoor) DrawSky(cam, f);
   DrawWorld(cam, f);
+  ao_world_ = 0.0f;
   DrawParticles(cam, f);
   DrawGlassPanes(cam, f);
   if (mirrored) DrawMirrorGlass(cam, f);

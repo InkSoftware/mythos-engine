@@ -158,6 +158,11 @@ struct CameraState {
   // buffer, less where the picture is already bright (it stands in for the
   // ambient term only).
   double ssao = 0;
+  // With `ssao`: apply the occlusion to the ambient term inside the world
+  // shader instead of to the finished picture. The world is drawn twice (a
+  // depth pre-pass builds the occlusion, then the real pass reads it), so
+  // lamps are never dimmed by it and bright surfaces are not guessed at.
+  bool ssao_ambient = false;
 
   // How much of the uploaded baked light (`SceneRenderer::UploadProbes`) is
   // added, 0 (none) to 1 (as baked); without an upload it does nothing.
@@ -471,6 +476,11 @@ class SceneRenderer {
   };
   ReflectionProbe reflection_[kMaxReflectionProbes];
   int reflection_count_ = 0;
+  bool ao_in_world_ =
+      false;  // this frame's occlusion was applied in the world pass
+  int ao_screen_w_ = 1,
+      ao_screen_h_ = 1;    // size of the target the occlusion is read for
+  float ao_world_ = 0.0f;  // strength the world pass applies (0 = not)
   const ViewBasis* sky_basis_override_ = nullptr;  // a probe face's axes
   int env_probe_ = -1;   // the probe this frame's world pass reflects
   int env_probe2_ = -1;  // the next nearest, blended in by `env_blend_`
@@ -594,7 +604,7 @@ class SceneRenderer {
   RenderTarget ao_a_, ao_b_;
   GlProgram ssao_program_;
   GlProgram probe_filter_program_;  // prefilters a probe capture per roughness
-  bool BuildAo(const CameraState& cam, const Frame& f);
+  bool BuildAo(const CameraState& cam, const Frame& f, const RenderTarget& src);
   RenderTarget mirror_target_;
   GlVertexArray mirror_vao_;
   GlBuffer mirror_vbo_;

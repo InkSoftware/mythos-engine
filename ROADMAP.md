@@ -217,8 +217,8 @@ more than was built.
 ### 4.2 SSAO (M) - first version
 - **Progress:** done as a post pass (`ssao.frag` at half size, a blur, multiplied in the composite, less on bright
   pixels), behind the Ambient occlusion setting (off by default; `CameraState::ssao`); the scene target's depth is now a
-  texture, copied out of the multisampled target only while it is on. The template shows it with `--ssao`. Not done:
-  applying it to the ambient term inside the world shader (it would need the depth before the lit pass) and the mirror view.
+  texture, copied out of the multisampled target only while it is on. The template shows it with `--ssao`. Also applied
+  to the ambient term inside the world shader (`CameraState::ssao_ambient`, a depth pre-pass, `--ssao-ambient`), and in the mirror view with it.
 - **Where:** a half-resolution pass beside bloom, multiplied into the ambient
   term only. Needs a depth/normal copy of the multisampled target (resolve).
   Setting: off / on, off keeps pixel parity.
@@ -319,9 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** ambient occlusion in the mirror (screen space, main picture only);
-  lightmaps; SSAO applied to
-  the ambient term inside the world shader.
+- **Rendering:** lightmaps; automatic simplification of walls and mesher detail for LOD.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   formations for the AI.
 - **Audio:** nothing named.

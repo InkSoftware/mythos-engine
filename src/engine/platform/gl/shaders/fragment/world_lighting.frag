@@ -31,6 +31,9 @@ uniform vec3 uEnvPos2;
 uniform vec3 uEnvHalf2;
 uniform float uEnvBlend;            // 0 = only the first probe
 uniform vec3 uEnvHalf;             // half the box of the room around it for parallax correction (0 = none)
+uniform sampler2D uAoTex;      // screen-space occlusion of this frame (half size, from a depth pre-pass), read at the pixel
+uniform float uAoWorld;        // 0: not used; else its strength (the ambient term is multiplied by it)
+uniform vec2 uAoScreen;        // the target's size in pixels
 uniform sampler2DArray uProbeTex;  // baked light over the floor plan: a layer per face of the ambient cube (+x -x +y -y +z -z)
 uniform int uProbeN;           // heights of probes (1..4)
 uniform vec4 uProbeH;          // their heights in metres, ascending
@@ -293,6 +296,9 @@ void main() {
             // A dark interior: dim ambient, slightly stronger near the player (both per era).
             ambient = uAmbientBase + uAmbientNear * clamp(1.0 - dist / 3.5, 0.0, 1.0);
         }
+
+        // Screen-space occlusion dims the ambient term only (a lamp's light is not occluded).
+        if (uAoWorld > 0.0) ambient *= mix(1.0, texture(uAoTex, gl_FragCoord.xy / uAoScreen).r, uAoWorld);
 
         // Lightning: a cold white-blue flash that fills the room from the windows.
         float flash = uLightning;

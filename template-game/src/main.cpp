@@ -113,12 +113,16 @@ int main(const int argc, char** const argv) {
   // `--sun-shadow` (with `--outdoor`) adds the shadow of the sun or the moon.
   // `--baked` bakes the lamps into light probes instead of lighting with them
   // live (no shadows from them, no 32-lamp limit).
-  // `--ssao` turns on ambient occlusion (the Ambient occlusion setting).
+  // `--mirror` puts a mirror on a wall of the first room.
+  // `--ssao` turns on ambient occlusion (the Ambient occlusion setting);
+  // `--ssao-ambient` applies it to the ambient term in the world shader.
   // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
   bool outdoor = false;
   bool ssao = false;
+  bool ssao_ambient = false;
+  bool mirror = false;
   bool baked = false;
   bool sun_shadow = false;
   bool reflections = false;
@@ -133,7 +137,9 @@ int main(const int argc, char** const argv) {
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--outdoor") outdoor = true;
+    if (arg == "--mirror") mirror = true;
     if (arg == "--ssao") ssao = true;
+    if (arg == "--ssao-ambient") ssao = ssao_ambient = true;
     if (arg == "--baked") baked = true;
     if (arg == "--sun-shadow") sun_shadow = true;
     if (arg == "--reflections") reflections = true;
@@ -526,6 +532,17 @@ int main(const int argc, char** const argv) {
     cam.outdoor = outdoor;
     cam.sun_shadow = sun_shadow ? 1.0 : 0.0;
     cam.reflections = reflections ? 1.0 : 0.0;
+    cam.ssao_ambient = ssao_ambient;
+    if (mirror) {  // a mirror on the first room's north wall
+      cam.mirror.on = true;
+      cam.mirror.x = 5.5;
+      cam.mirror.y = 1.3;
+      cam.mirror.z = 1.02;
+      cam.mirror.nx = 0;
+      cam.mirror.nz = 1;
+      cam.mirror.half_w = 0.9;
+      cam.mirror.half_h = 0.7;
+    }
     if (outdoor)
       cam.time_of_day = std::fmod(hour + clock.Seconds() / 10.0, 24.0);
     for (const mythos::Vec3& p :
