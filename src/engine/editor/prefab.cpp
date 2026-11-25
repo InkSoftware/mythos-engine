@@ -460,8 +460,8 @@ bool UpdateLinked(LevelDoc& doc, const std::string& link_id,
       doc.links, [&](const PrefabLink& l) { return l.id == link_id; });
   if (it == doc.links.end()) return false;
   // A copy: RemoveLinked erases the record.
-  const PrefabLink link =
-      *it;  // NOLINT(performance-unnecessary-copy-initialization)
+  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+  const PrefabLink link = *it;
   RemoveLinked(doc, link_id);
   Prefab named = prefab;
   if (named.name.empty()) named.name = link.prefab;
