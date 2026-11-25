@@ -312,6 +312,9 @@ class SceneRenderer {
   // no flicker, for static lamps a game keeps out of `CameraState::lights`.
   // An empty grid removes it.
   void UploadProbes(const ProbeGrid& grid);
+  // Probes at several heights (`BakeProbeStack`): the shader blends the two
+  // grids around a surface's height.
+  void UploadProbes(const ProbeStack& stack);
 
   // Beyond `distance` metres from the eye an instance of `model` is drawn as
   // `far_model` (a cheaper upload of the same thing) in the main and mirror
@@ -486,6 +489,8 @@ class SceneRenderer {
   uint64_t sun_key_[kSunCascades] = {};
   GlTexture probe_tex_;
   float probe_scale_[2] = {0, 0};  // 1 / extent in metres; 0 = none
+  int probe_count_ = 0;            // heights uploaded
+  float probe_heights_[kMaxProbeHeights] = {};
   ModelLods no_lods_;  // always empty: shadow passes do not swap models
   std::vector<LodRequest> lod_requests_;
   std::vector<const ModelInstance*> lod_instances_;
@@ -663,12 +668,13 @@ class SceneRenderer {
   struct WorldUniforms {
     gl::GLint view = -1, proj = -1, cam = -1, view_pos = -1, flash_dir = -1,
               flash_on = -1, lighter = -1, torch_warm = -1, outdoor = -1,
-              moon_dir = -1, sun_color = -1, probe = -1, sun_shadow = -1,
-              sun_vp = -1, env = -1, env_pos = -1, env_half = -1, env_pos2 = -1,
-              env_half2 = -1, env_blend = -1, sun_texel = -1, sky_ambient = -1,
-              fog_color = -1, fog_density = -1, time = -1, ambient_base = -1,
-              ambient_near = -1, lightning = -1, zone_count = -1, zone_xz = -1,
-              zone_y = -1, light_count = -1, light_pos = -1, light_color = -1,
+              moon_dir = -1, sun_color = -1, probe = -1, probe_h = -1,
+              sun_shadow = -1, sun_vp = -1, env = -1, env_pos = -1,
+              env_half = -1, env_pos2 = -1, env_half2 = -1, env_blend = -1,
+              sun_texel = -1, sky_ambient = -1, fog_color = -1,
+              fog_density = -1, time = -1, ambient_base = -1, ambient_near = -1,
+              lightning = -1, zone_count = -1, zone_xz = -1, zone_y = -1,
+              light_count = -1, light_pos = -1, light_color = -1,
               light_radius = -1, light_halo = -1, shadow_count = -1,
               shadow_texel = -1, hand_shadow = -1, hand_pos = -1,
               hand_origin = -1, hand_faces = -1, res = -1, grain = -1,

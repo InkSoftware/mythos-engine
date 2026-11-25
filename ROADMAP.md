@@ -253,7 +253,7 @@ more than was built.
 - **Progress:** light probes first: `gfx/probes.h` (`BakeProbes`, `ProbeGrid`, a text file; headless and tested) and
   `SceneRenderer::UploadProbes` (a float texture over the floor plan, added in `world_lighting.frag`; off and
   pixel-identical without an upload). Each probe is an ambient cube (six directions, so a surface's normal matters).
-  The template bakes its lamps with `--baked`. The mirror view uses it too (by world position). Not done: lightmaps and probes at several heights. `tools/bake/mythos_bake_probes` bakes a level and a lamps file into
+  The template bakes its lamps with `--baked`. The mirror view uses it too (by world position). Probes at several heights are done (`BakeProbeStack`, `--heights`). Not done: lightmaps. `tools/bake/mythos_bake_probes` bakes a level and a lamps file into
   a `.probes` file (the template loads its checked-in `hall.probes`, and a ctest re-bakes it).
 - Lightmaps or light probes for static lamps, lifting the 32-light limit for
   static geometry. A bake tool in `tools/` (CPU, cell-based), light probes
@@ -320,7 +320,7 @@ The order the items were built in. All have a first version.
 Gaps named in the Progress lines, by area:
 
 - **Rendering:** ambient occlusion in the mirror (screen space, main picture only);
-  lightmaps and probes at several heights; SSAO applied to
+  lightmaps; SSAO applied to
   the ambient term inside the world shader.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   formations for the AI.

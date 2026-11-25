@@ -351,6 +351,7 @@ void SceneRenderer::LookUpWorldUniforms() {
   u.moon_dir = world_program_.Uniform("uMoonDir");
   u.sun_color = world_program_.Uniform("uSunColor");
   u.probe = world_program_.Uniform("uProbe");
+  u.probe_h = world_program_.Uniform("uProbeH");
   u.env = world_program_.Uniform("uEnv");
   u.env_pos = world_program_.Uniform("uEnvPos");
   u.env_half = world_program_.Uniform("uEnvHalf");
@@ -645,22 +646,43 @@ int SceneRenderer::UploadModel(const std::vector<Batch>& batches) {
 }
 
 void SceneRenderer::UploadProbes(const ProbeGrid& grid) {
+  ProbeStack stack;
+  if (!grid.Empty()) {
+    stack.heights = {1.2};
+    stack.grids = {grid};
+  }
+  UploadProbes(stack);
+}
+
+void SceneRenderer::UploadProbes(const ProbeStack& stack) {
   ++scene_revision_;
-  if (grid.Empty()) {
+  if (stack.Empty()) {
     probe_scale_[0] = probe_scale_[1] = 0.0f;
+    probe_count_ = 0;
     probe_tex_.Reset();
     return;
   }
-  // One layer a face of the ambient cube: +x, -x, +y, -y, +z, -z.
+  const ProbeGrid& first = stack.grids[0];
+  const auto count =
+      static_cast<int>(std::min<size_t>(stack.grids.size(), kMaxProbeHeights));
+  // One layer a face of the ambient cube (+x, -x, +y, -y, +z, -z), the faces
+  // of one height together: layer = height * 6 + face.
   const auto cells =
-      static_cast<size_t>(grid.width) * static_cast<size_t>(grid.depth);
+      static_cast<size_t>(first.width) * static_cast<size_t>(first.depth);
   std::vector<float> rgba;
-  rgba.reserve(cells * kProbeFaces * 4);
-  for (int face = 0; face < kProbeFaces; ++face) {
-    for (int j = 0; j < grid.depth; ++j) {
-      for (int i = 0; i < grid.width; ++i) {
-        const auto v = grid.Face(i, j, face);
-        rgba.insert(rgba.end(), {v[0], v[1], v[2], 1.0f});
+  rgba.reserve(cells * kProbeFaces * 4 * static_cast<size_t>(count));
+  for (int g = 0; g < count; ++g) {
+    const ProbeGrid& grid = stack.grids[static_cast<size_t>(g)];
+    for (int face = 0; face < kProbeFaces; ++face) {
+      for (int j = 0; j < first.depth; ++j) {
+        for (int i = 0; i < first.width; ++i) {
+          // A grid of another size reads as black rather than out of range.
+          const bool same =
+              grid.width == first.width && grid.depth == first.depth;
+          const auto v =
+              same ? grid.Face(i, j, face) : std::array<float, 3>{0, 0, 0};
+          rgba.insert(rgba.end(), {v[0], v[1], v[2], 1.0f});
+        }
       }
     }
   }
@@ -668,14 +690,19 @@ void SceneRenderer::UploadProbes(const ProbeGrid& grid) {
   probe_tex_.Create();
   BindTexture(gl::kTexture2DArray, probe_tex_.Id());
   gl::TexImage3D(gl::kTexture2DArray, 0, static_cast<gl::GLint>(gl::kRgba16f),
-                 grid.width, grid.depth, kProbeFaces, 0, gl::kRgba, kFloat,
-                 rgba.data());
+                 first.width, first.depth, kProbeFaces * count, 0, gl::kRgba,
+                 kFloat, rgba.data());
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMinFilter, kLinear);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMagFilter, kLinear);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureWrapS, kClampToEdge);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureWrapT, kClampToEdge);
-  probe_scale_[0] = static_cast<float>(1.0 / (grid.width * grid.spacing));
-  probe_scale_[1] = static_cast<float>(1.0 / (grid.depth * grid.spacing));
+  probe_scale_[0] = static_cast<float>(1.0 / (first.width * first.spacing));
+  probe_scale_[1] = static_cast<float>(1.0 / (first.depth * first.spacing));
+  probe_count_ = count;
+  for (int g = 0; g < kMaxProbeHeights; ++g) {
+    probe_heights_[g] = static_cast<float>(
+        stack.heights[static_cast<size_t>(std::min(g, count - 1))]);
+  }
 }
 
 int SceneRenderer::AddReflectionProbe(const double x, const double y,
@@ -1127,6 +1154,9 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
         u.probe, probes ? probe_scale_[0] : 0.0f,
         probes ? probe_scale_[1] : 0.0f,
         probes ? static_cast<float>(std::min(cam.baked_light, 4.0)) : 0.0f);
+    Uniform1i(world_program_.Uniform("uProbeN"), probe_count_);
+    Uniform4f(u.probe_h, probe_heights_[0], probe_heights_[1],
+              probe_heights_[2], probe_heights_[3]);
     if (probes) {
       ActiveTexture(kTexture0 + 8);
       BindTexture(gl::kTexture2DArray, probe_tex_.Id());

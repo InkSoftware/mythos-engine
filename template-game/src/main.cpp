@@ -220,9 +220,9 @@ int main(const int argc, char** const argv) {
   // `mythos_bake_probes` from `hall.lamps`); a level edited while the game
   // runs is baked again here from the lamps of the level.
   const auto load_baked = [&] {
-    mythos::ProbeGrid grid;
+    mythos::ProbeStack grid;
     std::string why;
-    if (mythos::ParseProbes(
+    if (mythos::ParseProbeStack(
             mythos::ReadTextFile(GameAssets() + "/levels/hall.probes"), &grid,
             &why)) {
       renderer.UploadProbes(grid);
@@ -235,7 +235,9 @@ int main(const int argc, char** const argv) {
     for (const mythos::Vec3& p : game.LampPositions()) {
       lamps.push_back({p.x, p.y, p.z, 1.0, 0.78, 0.5, 7.0});
     }
-    renderer.UploadProbes(mythos::BakeProbes(game.level(), lamps));
+    // Three heights (knee, chest, head): the light under a lamp differs.
+    renderer.UploadProbes(
+        mythos::BakeProbeStack(game.level(), lamps, {0.4, 1.2, 2.1}));
   };
   if (baked && !load_baked()) bake();
 

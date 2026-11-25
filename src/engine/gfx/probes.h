@@ -75,6 +75,35 @@ struct ProbeGrid {
 ProbeGrid BakeProbes(const Level& level, const std::vector<ProbeLamp>& lamps,
                      const ProbeOptions& options = {});
 
+// Probes at several heights: one grid per height (ascending), so a tall room
+// or a lamp near the ceiling lights a surface by its height. The renderer
+// blends the two grids around a surface's y. At most `kMaxProbeHeights`.
+inline constexpr int kMaxProbeHeights = 4;
+struct ProbeStack {
+  std::vector<double> heights;  // metres, ascending, one per grid
+  std::vector<ProbeGrid> grids;
+
+  [[nodiscard]] bool Empty() const { return grids.empty() || grids[0].Empty(); }
+  // The light on a surface at (x, y, z) with unit normal n: the two grids
+  // around y blended linearly (clamped above and below).
+  [[nodiscard]] std::array<float, 3> SampleNormal(double x, double y, double z,
+                                                  double nx, double ny,
+                                                  double nz) const;
+};
+
+// Bakes one grid per height (`options.height` is replaced by each of them;
+// sorted, at most `kMaxProbeHeights`, at least one).
+ProbeStack BakeProbeStack(const Level& level,
+                          const std::vector<ProbeLamp>& lamps,
+                          std::vector<double> heights,
+                          const ProbeOptions& options = {});
+
+// A stack as text: for each grid a line `height <y>` then its `probes6` block.
+// `ParseProbeStack` also reads a plain single-grid file (one height, 1.2).
+std::string SerializeProbeStack(const ProbeStack& stack);
+bool ParseProbeStack(const std::string& text, ProbeStack* out,
+                     std::string* error);
+
 // A text file: `probes6 <spacing> <width> <depth>` then one line per row of
 // probes, each probe six `r g b` triples. `ParseProbes` also reads the old
 // one-colour form (`probes`, one triple a probe, used for every face) and

@@ -228,4 +228,102 @@ bool ParseProbes(const std::string& text, ProbeGrid* const out,
   *out = std::move(g);
   return true;
 }
+
+std::array<float, 3> ProbeStack::SampleNormal(const double x, const double y,
+                                              const double z, const double nx,
+                                              const double ny,
+                                              const double nz) const {
+  if (Empty()) return {0, 0, 0};
+  const size_t n = grids.size();
+  size_t hi = 0;
+  while (hi < n && heights[hi] < y) ++hi;
+  if (hi == 0) return grids[0].SampleNormal(x, z, nx, ny, nz);
+  if (hi == n) return grids[n - 1].SampleNormal(x, z, nx, ny, nz);
+  const double span = heights[hi] - heights[hi - 1];
+  const auto t =
+      static_cast<float>(span > 1e-9 ? (y - heights[hi - 1]) / span : 0.0);
+  const auto a = grids[hi - 1].SampleNormal(x, z, nx, ny, nz);
+  const auto b = grids[hi].SampleNormal(x, z, nx, ny, nz);
+  return {a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t,
+          a[2] + (b[2] - a[2]) * t};
+}
+
+ProbeStack BakeProbeStack(const Level& level,
+                          const std::vector<ProbeLamp>& lamps,
+                          std::vector<double> heights,
+                          const ProbeOptions& options) {
+  if (heights.empty()) heights.push_back(options.height);
+  std::sort(heights.begin(), heights.end());
+  if (heights.size() > static_cast<size_t>(kMaxProbeHeights))
+    heights.resize(static_cast<size_t>(kMaxProbeHeights));
+  ProbeStack stack;
+  for (const double h : heights) {
+    ProbeOptions o = options;
+    o.height = h;
+    stack.heights.push_back(h);
+    stack.grids.push_back(BakeProbes(level, lamps, o));
+  }
+  return stack;
+}
+
+std::string SerializeProbeStack(const ProbeStack& stack) {
+  std::ostringstream out;
+  out.imbue(std::locale::classic());
+  for (size_t g = 0; g < stack.grids.size(); ++g) {
+    out << "height " << stack.heights[g] << "\n"
+        << SerializeProbes(stack.grids[g]);
+  }
+  return out.str();
+}
+
+bool ParseProbeStack(const std::string& text, ProbeStack* const out,
+                     std::string* const error) {
+  ProbeStack stack;
+  if (text.rfind("height", 0) != 0) {  // a plain single grid
+    ProbeGrid g;
+    if (!ParseProbes(text, &g, error)) return false;
+    stack.heights = {1.2};
+    stack.grids.push_back(std::move(g));
+    *out = std::move(stack);
+    return true;
+  }
+  // Split into `height` blocks.
+  size_t pos = 0;
+  while (pos < text.size()) {
+    const size_t eol = text.find('\n', pos);
+    std::istringstream head(text.substr(pos, eol - pos));
+    head.imbue(std::locale::classic());
+    std::string word;
+    double h = 0;
+    if (!(head >> word >> h) || word != "height" || !std::isfinite(h)) {
+      if (error != nullptr) *error = "bad height line";
+      return false;
+    }
+    const size_t next =
+        text.find("\nheight", eol == std::string::npos ? 0 : eol);
+    const size_t end = next == std::string::npos ? text.size() : next + 1;
+    ProbeGrid g;
+    if (eol == std::string::npos ||
+        !ParseProbes(text.substr(eol + 1, end - eol - 1), &g, error)) {
+      return false;
+    }
+    if (!stack.heights.empty() && h <= stack.heights.back()) {
+      if (error != nullptr) *error = "heights must ascend";
+      return false;
+    }
+    stack.heights.push_back(h);
+    stack.grids.push_back(std::move(g));
+    if (stack.grids.size() > static_cast<size_t>(kMaxProbeHeights)) {
+      if (error != nullptr) *error = "too many heights";
+      return false;
+    }
+    pos = end;
+  }
+  if (stack.grids.empty()) {
+    if (error != nullptr) *error = "no grids";
+    return false;
+  }
+  *out = std::move(stack);
+  return true;
+}
 }

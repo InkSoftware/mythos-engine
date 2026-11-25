@@ -5120,6 +5120,39 @@ void Project(const float* m, const float* p, float* out) {
 }
 }
 
+TEST(probe_stack_blends_heights_and_round_trips) {
+  mythos::Level l;
+  std::string error;
+  CHECK(l.Parse({".......", ".......", "......."}));
+  mythos::ProbeLamp lamp;
+  lamp.x = 2.5;
+  lamp.y = 0.4;
+  lamp.z = 1.5;
+  lamp.radius = 4;
+  const mythos::ProbeStack s =
+      mythos::BakeProbeStack(l, {lamp}, {2.0, 0.4, 1.2});
+  CHECK_EQ(s.grids.size(), size_t{3});
+  CHECK(s.heights[0] < s.heights[1] && s.heights[1] < s.heights[2]);
+  // The lamp is low: the low grid is brighter at its spot than the high one.
+  const float low = s.SampleNormal(3.5, 0.4, 1.5, 1, 0, 0)[0];
+  const float high = s.SampleNormal(3.5, 2.0, 1.5, 1, 0, 0)[0];
+  CHECK(low > high);
+  const float mid = s.SampleNormal(3.5, 0.8, 1.5, 1, 0, 0)[0];
+  CHECK(mid < low && mid > s.SampleNormal(3.5, 1.2, 1.5, 1, 0, 0)[0]);
+  // Clamped outside the heights.
+  CHECK(s.SampleNormal(3.5, -5, 1.5, 1, 0, 0)[0] == low);
+  mythos::ProbeStack back;
+  CHECK(mythos::ParseProbeStack(mythos::SerializeProbeStack(s), &back, &error));
+  CHECK_EQ(back.grids.size(), size_t{3});
+  CHECK(std::fabs(back.heights[1] - 1.2) < 1e-9);
+  CHECK(std::fabs(back.SampleNormal(3.5, 0.8, 1.5, 1, 0, 0)[0] - mid) < 1e-3f);
+  // A plain single grid file reads as one height.
+  mythos::ProbeStack one;
+  CHECK(mythos::ParseProbeStack(mythos::SerializeProbes(s.grids[0]), &one,
+                                &error));
+  CHECK_EQ(one.grids.size(), size_t{1});
+}
+
 TEST(sun_shadow_box_covers_the_viewer_and_does_not_shimmer) {
   const float eye[3] = {10.3f, 1.6f, 7.7f};
   const float sun[3] = {0.4f, 0.8f, 0.3f};

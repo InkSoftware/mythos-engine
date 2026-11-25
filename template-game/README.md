@@ -36,7 +36,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--outdoor [--hour H]` | no roof, and a day that runs (ten seconds an hour) | `CameraState::outdoor`, `time_of_day` |
 | `--sun-shadow` | with `--outdoor`: the shadow of the sun or moon | `CameraState::sun_shadow` |
 | `--ssao` | ambient occlusion (also the Ambient occlusion setting) | `CameraState::ssao` |
-| `--baked` | the lamps baked into light probes instead of live lamps | `BakeProbes`, `UploadProbes` |
+| `--baked` | the lamps baked into light probes instead of live lamps (re-baked at three heights when the level changes) | `BakeProbeStack`, `UploadProbes` |
 | `--reflections` | a reflection probe in each room, with the room's box for parallax correction (the toolbox and bucket are shiny; the two nearest blend as you cross between rooms) | `AddReflectionProbe` |
 | `--lod D` | the furniture in cell columns farther than D metres is drawn as boxes (the baked world has a far version) | `UploadWorldLod`, `ModelLibrary::BoundingBoxes` |
 | `--clones N` | N more copies of the guide (skinned model instances): one instanced draw per batch, `--no-instancing` draws them one by one | skinned GPU instancing (bones in a texture) |

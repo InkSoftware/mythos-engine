@@ -58,12 +58,24 @@ int main(const int argc, char** const argv) {
                     out_path = argv[3];
   std::string tiles_path;
   mythos::ProbeOptions options;
+  std::vector<double> heights;  // empty: one grid at options.height
   for (int i = 4; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--tiles" && i + 1 < argc) {
       tiles_path = argv[++i];
     } else if (arg == "--spacing" && i + 1 < argc) {
       options.spacing = std::strtod(argv[++i], nullptr);
+    } else if (arg == "--heights" && i + 1 < argc) {
+      // Comma separated metres: a grid of probes at each (at most 4).
+      std::string list = argv[++i];
+      for (size_t at = 0; at < list.size();) {
+        const size_t comma = list.find(',', at);
+        heights.push_back(std::strtod(
+            list.substr(at, comma == std::string::npos ? comma : comma - at)
+                .c_str(),
+            nullptr));
+        at = comma == std::string::npos ? list.size() : comma + 1;
+      }
     } else if (arg == "--ambient" && i + 3 < argc) {
       for (float& c : options.ambient) {
         c = static_cast<float>(std::strtod(argv[++i], nullptr));
@@ -101,14 +113,23 @@ int main(const int argc, char** const argv) {
     std::fprintf(stderr, "mythos_bake_probes: %s\n", error.c_str());
     return 1;
   }
-  const mythos::ProbeGrid grid = mythos::BakeProbes(level, lamps, options);
+  const mythos::ProbeStack stack =
+      heights.empty() ? mythos::ProbeStack{}
+                      : mythos::BakeProbeStack(level, lamps, heights, options);
+  const mythos::ProbeGrid grid = heights.empty()
+                                     ? mythos::BakeProbes(level, lamps, options)
+                                     : stack.grids[0];
   if (grid.Empty() ||
-      !mythos::WriteFileAtomic(out_path, mythos::SerializeProbes(grid))) {
+      !mythos::WriteFileAtomic(
+          out_path, heights.empty() ? mythos::SerializeProbes(grid)
+                                    : mythos::SerializeProbeStack(stack))) {
     std::fprintf(stderr, "mythos_bake_probes: cannot write %s\n",
                  out_path.c_str());
     return 1;
   }
-  std::printf("baked %zu lamp(s) into %d x %d probes: %s\n", lamps.size(),
-              grid.width, grid.depth, out_path.c_str());
+  std::printf("baked %zu lamp(s) into %d x %d probes at %zu height(s): %s\n",
+              lamps.size(), grid.width, grid.depth,
+              heights.empty() ? size_t{1} : stack.grids.size(),
+              out_path.c_str());
   return 0;
 }

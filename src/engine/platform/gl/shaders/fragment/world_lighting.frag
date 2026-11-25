@@ -32,6 +32,8 @@ uniform vec3 uEnvHalf2;
 uniform float uEnvBlend;            // 0 = only the first probe
 uniform vec3 uEnvHalf;             // half the box of the room around it for parallax correction (0 = none)
 uniform sampler2DArray uProbeTex;  // baked light over the floor plan: a layer per face of the ambient cube (+x -x +y -y +z -z)
+uniform int uProbeN;           // heights of probes (1..4)
+uniform vec4 uProbeH;          // their heights in metres, ascending
 uniform vec3 uProbe;           // 1 / extent x, 1 / extent z (metres), strength; strength 0 = none
 uniform float uSunShadow;      // 1: a shadow map of the outdoor light is bound
 uniform mat4 uSunVP[3];        // world -> each cascade's clip space (0 close, 1 wide, 2 far)
@@ -309,9 +311,24 @@ void main() {
         if (uProbe.z > 0.0) {
             vec2 puv = vWorld.xz * uProbe.xy;
             vec3 nn = n * n;  // an ambient cube: the faces the normal looks at, by the squares of its components
-            light += uProbe.z * (nn.x * texture(uProbeTex, vec3(puv, n.x < 0.0 ? 1.0 : 0.0)).rgb +
-                                 nn.y * texture(uProbeTex, vec3(puv, n.y < 0.0 ? 3.0 : 2.0)).rgb +
-                                 nn.z * texture(uProbeTex, vec3(puv, n.z < 0.0 ? 5.0 : 4.0)).rgb);
+            // Two heights around this point's y, blended (one grid: no blend).
+            int h0 = 0, h1 = 0;
+            float ht = 0.0;
+            for (int h = 1; h < uProbeN; ++h) {
+                if (vWorld.y > uProbeH[h - 1]) {
+                    h0 = h - 1; h1 = h;
+                    ht = clamp((vWorld.y - uProbeH[h - 1]) / max(uProbeH[h] - uProbeH[h - 1], 1e-4), 0.0, 1.0);
+                }
+            }
+            vec3 baked = vec3(0.0);
+            for (int k = 0; k < 2; ++k) {
+                float base = float((k == 0 ? h0 : h1) * 6);
+                vec3 c = nn.x * texture(uProbeTex, vec3(puv, base + (n.x < 0.0 ? 1.0 : 0.0))).rgb +
+                         nn.y * texture(uProbeTex, vec3(puv, base + (n.y < 0.0 ? 3.0 : 2.0))).rgb +
+                         nn.z * texture(uProbeTex, vec3(puv, base + (n.z < 0.0 ? 5.0 : 4.0))).rgb;
+                baked += c * (k == 0 ? 1.0 - ht : ht);
+            }
+            light += uProbe.z * baked;
         }
 
         // Lamps: small positional lights, fading out smoothly at their radius.
