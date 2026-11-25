@@ -59,6 +59,39 @@ EventGraph BuildEventGraph(const LevelDoc& doc);
 // a source that is a rule, or no such node or rule.
 bool Connect(LevelDoc& doc, GraphNodeKind kind, const std::string& id,
              const std::string& rule_id);
+
+// More edits the graph panel makes on the rules (each returns false for no
+// such rule, or an empty name):
+// - `AddSetFlag`: the rule gets a `set_flag` action for the flag (once).
+// - `AddCondition`: the rule reads the flag (`value` is what it must be; an
+//   existing condition on that flag is changed).
+// - `RemoveCondition`: drops the conditions on that flag.
+// - `DeleteRule`: removes the rule.
+// - `AddRuleFrom`: a new rule (the next `rule_N`) started by a trigger, timer
+//   or flag, no actions yet; returns its id, or empty for a bad source.
+bool AddSetFlag(LevelDoc& doc, const std::string& rule_id,
+                const std::string& flag);
+bool AddCondition(LevelDoc& doc, const std::string& rule_id,
+                  const std::string& flag, bool value = true);
+bool RemoveCondition(LevelDoc& doc, const std::string& rule_id,
+                     const std::string& flag);
+bool DeleteRule(LevelDoc& doc, const std::string& rule_id);
+std::string AddRuleFrom(LevelDoc& doc, GraphNodeKind kind,
+                        const std::string& id);
+
+// Node positions the player arranged, as text for a file next to the level:
+// one `kind id x y` line each (`kind` the `GraphNodeKind` number, `id` a token
+// without spaces; x and y in panel pixels). `ParseGraphLayout` skips lines it
+// cannot read.
+struct GraphPlacement {
+  int kind = 0;
+  std::string id;
+  float x = 0, y = 0;
+
+  bool operator==(const GraphPlacement&) const = default;
+};
+std::string SerializeGraphLayout(const std::vector<GraphPlacement>& nodes);
+std::vector<GraphPlacement> ParseGraphLayout(const std::string& text);
 }
 
 #endif

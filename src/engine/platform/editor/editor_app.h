@@ -285,7 +285,7 @@ class EditorApp {
   // The event graph panel: where the player moved nodes (by kind and id), the
   // node being dragged and the wire being drawn from a source node.
   std::map<std::string, std::array<float, 2>> graph_pos_;
-  std::string graph_drag_;
+  std::string graph_drag_, graph_sel_, graph_loaded_;
   int graph_wire_ = -1;
   float cut_scrub_ = 0.0f;
   KeyRef cut_drag_;  // the timeline key being dragged

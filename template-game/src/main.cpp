@@ -101,6 +101,11 @@ void PlaceMatrix(const double x, const double z, const double angle, float* m) {
 }
 
 int main(const int argc, char** const argv) {
+  // `--shake` slams a door's worth of camera shake at frame 85 (to see it in
+  // a `--screenshot`).
+  // `--at X Z ANGLE` puts the player there (radians, the facing is (cos, sin)
+  // on x, z). A `--screenshot` run is deterministic: a fixed 1/60 s step, no
+  // input, the clock counted in frames, so two runs of one command match.
   // `--screenshot file.ppm` renders 90 frames, saves the last and exits: a
   // smoke test that needs no one at the keyboard.
   // `--debug` opens the debug console with the frame stats and graph on.
@@ -122,6 +127,9 @@ int main(const int argc, char** const argv) {
   // `--outdoor [--hour H]` takes the roof off and runs a day: the sun, sky
   // and light follow a time of day that moves on (ten seconds an hour).
   std::string screenshot;
+  bool shake = false;
+  bool place_player = false;
+  double at_x = 0, at_z = 0, at_angle = 0;
   bool outdoor = false;
   bool ssao = false;
   bool ssao_ambient = false;
@@ -161,6 +169,13 @@ int main(const int argc, char** const argv) {
     if (arg == "--menu") start_menu = true;
     if (arg == "--debug") start_debug = true;
     if (i + 1 < argc && arg == "--screenshot") screenshot = argv[i + 1];
+    if (arg == "--shake") shake = true;
+    if (i + 3 < argc && arg == "--at") {
+      place_player = true;
+      at_x = std::strtod(argv[i + 1], nullptr);
+      at_z = std::strtod(argv[i + 2], nullptr);
+      at_angle = std::strtod(argv[i + 3], nullptr);
+    }
     if (i + 1 < argc && arg == "--hour")
       hour = std::strtod(argv[i + 1], nullptr);
   }
@@ -396,16 +411,27 @@ int main(const int argc, char** const argv) {
   mythos::CameraFx camera_fx;
   camera_fx.params.max_roll = 0.02;
   mythos::FrameClock clock;
+  int frame_now = 0;  // the frame number, for the deterministic clock
+  const auto Seconds = [&] {
+    return screenshot.empty() ? clock.Seconds() : frame_now / 60.0;
+  };
   mythos::Surface overlay(640, 360, 0);
   bool f5_was = false, f9_was = false, was_in_back_room = false;
 
+  if (place_player) game.PlacePlayer(at_x, at_z, at_angle);
   for (int frame = 0;; ++frame) {
+    frame_now = frame;
     mythos::MoveInput move;
     mythos::UiInput ui;
     mythos::ActionInput act;
     const mythos::InputPoll poll =
         mythos::PollInput(move, ui, act, true, nullptr);
     if (poll.quit) break;
+    if (!screenshot.empty()) {  // deterministic: no input
+      move = {};
+      act = {};
+      ui = {};
+    }
 
     // The console: typing and editing keys while it is open.
     const mythos::ConsoleInput& typed = poll.console;
@@ -475,7 +501,8 @@ int main(const int argc, char** const argv) {
     f5_was = keys[SDL_SCANCODE_F5];
     f9_was = keys[SDL_SCANCODE_F9];
 
-    const double dt = std::min(clock.Step(false), 0.1);
+    const double dt = screenshot.empty() ? std::min(clock.Step(false), 0.1)
+                                         : (clock.Step(false), 1.0 / 60.0);
     if (!menu_open) game.Update(dt, move, act);
 
     bool level_changed = false, textures_changed = false,
@@ -538,6 +565,7 @@ int main(const int argc, char** const argv) {
     cam.pitch = game.player().pitch;
     // The shake and tilt ride on the player's camera (the cutscene has its
     // own).
+    if (shake && frame == 85) camera_fx.AddShake(0.45);
     camera_fx.Update(dt);
     mythos::ApplyCameraFx(camera_fx.Sample(), cam);
     // A cutscene takes the camera from the player.
@@ -550,7 +578,7 @@ int main(const int argc, char** const argv) {
       cam.pitch = film.pitch;
       cam.fov_scale = film.fov_scale;
     }
-    cam.time = clock.Seconds();
+    cam.time = Seconds();
     cam.outdoor = outdoor;
     cam.sun_shadow = sun_shadow ? 1.0 : 0.0;
     cam.reflections = reflections ? 1.0 : 0.0;
@@ -565,8 +593,7 @@ int main(const int argc, char** const argv) {
       cam.mirror.half_w = 0.9;
       cam.mirror.half_h = 0.7;
     }
-    if (outdoor)
-      cam.time_of_day = std::fmod(hour + clock.Seconds() / 10.0, 24.0);
+    if (outdoor) cam.time_of_day = std::fmod(hour + Seconds() / 10.0, 24.0);
     for (const mythos::Vec3& p :
          baked ? std::vector<mythos::Vec3>{} : game.LampPositions()) {
       mythos::PointLight lamp;
@@ -652,12 +679,12 @@ int main(const int argc, char** const argv) {
       mythos::UiCanvas canvas{overlay, text_layer, nullptr};
       if (page == mythos::SettingsPage::kControls) {
         mythos::DrawControlsPage(canvas, theme, bindings, mythos::kPlayContext,
-                                 controls, clock.Seconds());
+                                 controls, Seconds());
       } else {
         mythos::DrawSettingsPage(
             canvas, theme, settings, page, menu_index,
             settings.language == mythos::Lang::kGreek ? "ΕΛΛΗΝΙΚΑ" : "ENGLISH",
-            clock.Seconds());
+            Seconds());
       }
     } else if (!game.message().empty()) {
       const std::string line = mythos::Tr(game.message());
@@ -670,7 +697,7 @@ int main(const int argc, char** const argv) {
     {
       mythos::UiCanvas debug_canvas{overlay, text_layer, nullptr};
       mythos::DrawDebugOverlay(debug_canvas, debug, debug_theme, frames,
-                               renderer.Stats(), &console, clock.Seconds());
+                               renderer.Stats(), &console, Seconds());
     }
     for (const std::string& cue : game.TakeSounds()) {
       if (cue == "door_close") camera_fx.AddShake(0.45);

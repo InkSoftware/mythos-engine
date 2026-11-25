@@ -6549,6 +6549,93 @@ TEST(event_graph_lays_out_chains_and_rewires_rules) {
   CHECK(!editor::Connect(doc, editor::GraphNodeKind::kRule, "greet", "greet"));
 }
 
+TEST(lightmap_is_continuous_across_tiles_and_round_trips) {
+  mythos::Level l;
+  std::vector<std::string> rows;
+  rows.push_back(std::string(14, '#'));
+  for (int i = 0; i < 12; ++i) rows.push_back("#" + std::string(12, '.') + "#");
+  rows.push_back(std::string(14, '#'));
+  CHECK(l.Parse(rows));
+  mythos::ProbeLamp lamp;
+  lamp.x = 7.0;
+  lamp.y = 1.8;
+  lamp.z = 7.0;
+  lamp.radius = 9;
+  mythos::LightmapOptions options;
+  options.texels_per_m = 8;
+  const mythos::Lightmap m = mythos::BakeLightmap(l, {lamp}, options);
+  // Across a cell boundary the floor changes by about a texel's worth, not a
+  // jump (the tiles are clamped to texel centres, so nothing bleeds).
+  float worst_floor = 0, worst_wall = 0;
+  for (double x = 2.0; x < 12.0; x += 1.0) {
+    const float a = m.Sample(x - 0.03, 0, 5.5, 0, 1, 0)[0];
+    const float b = m.Sample(x + 0.03, 0, 5.5, 0, 1, 0)[0];
+    worst_floor = std::max(worst_floor, std::fabs(a - b));
+  }
+  for (double z = 2.0; z < 12.0; z += 1.0) {  // the west wall, face +x
+    const float a = m.Sample(1.0, 1.2, z - 0.03, 1, 0, 0)[0];
+    const float b = m.Sample(1.0, 1.2, z + 0.03, 1, 0, 0)[0];
+    worst_wall = std::max(worst_wall, std::fabs(a - b));
+  }
+  CHECK(worst_floor < 0.03f);
+  CHECK(worst_wall < 0.03f);
+  // The file round trips to half precision.
+  mythos::Lightmap back;
+  std::string error;
+  CHECK(mythos::ParseLightmap(mythos::SerializeLightmap(m), &back, &error));
+  CHECK(back.cells_x == m.cells_x && back.texels == m.texels &&
+        back.wall_rows == m.wall_rows && back.rgba.size() == m.rgba.size());
+  const float lit = m.Sample(7.0, 0, 7.0, 0, 1, 0)[0];
+  CHECK(std::fabs(back.Sample(7.0, 0, 7.0, 0, 1, 0)[0] - lit) < 1e-3f * lit);
+  CHECK(!mythos::ParseLightmap("nope", &back, &error));
+  std::string cut = mythos::SerializeLightmap(m);
+  cut.pop_back();
+  CHECK(!mythos::ParseLightmap(cut, &back, &error));
+}
+
+TEST(event_graph_edits_conditions_actions_rules_and_layout) {
+  using namespace mythos;
+  editor::LevelDoc doc;
+  std::string error;
+  CHECK(editor::ParseLevelDoc("[map]\n...\n...\n", &doc, &error));
+  Trigger t;
+  t.id = "door";
+  t.shape = TriggerShape::kCell;
+  t.event = TriggerEvent::kUse;
+  doc.triggers.push_back(t);
+  const std::string id =
+      editor::AddRuleFrom(doc, editor::GraphNodeKind::kTrigger, "door");
+  CHECK(id == "rule_1");
+  CHECK(doc.rules[0].event.id == "door" && doc.rules[0].event.detail == "use");
+  CHECK(editor::AddRuleFrom(doc, editor::GraphNodeKind::kRule, "x").empty());
+  CHECK(editor::AddRuleFrom(doc, editor::GraphNodeKind::kTrigger, "nope")
+            .empty());
+  CHECK_EQ(doc.rules.size(), size_t{1});
+  // Actions and conditions.
+  CHECK(editor::AddSetFlag(doc, id, "open"));
+  CHECK(editor::AddSetFlag(doc, id, "open"));  // once
+  CHECK_EQ(doc.rules[0].actions.size(), size_t{1});
+  CHECK(editor::AddCondition(doc, id, "locked", false));
+  CHECK(editor::AddCondition(doc, id, "locked", true));  // changes it
+  CHECK(doc.rules[0].conditions.size() == 1 &&
+        doc.rules[0].conditions[0].value);
+  CHECK(editor::RemoveCondition(doc, id, "locked"));
+  CHECK(!editor::RemoveCondition(doc, id, "locked"));
+  CHECK(!editor::AddSetFlag(doc, "nope", "x") &&
+        !editor::AddCondition(doc, id, "", true));
+  // The graph shows the flag it sets.
+  CHECK(editor::BuildEventGraph(doc).Find(editor::GraphNodeKind::kFlag,
+                                          "open") >= 0);
+  CHECK(editor::DeleteRule(doc, id) && doc.rules.empty());
+  CHECK(!editor::DeleteRule(doc, id));
+  // The layout file round trips and skips bad lines.
+  const std::vector<editor::GraphPlacement> layout = {
+      {0, "door", 12.5f, 30}, {3, "rule_1", 200, 4.25f}};
+  CHECK(editor::ParseGraphLayout(editor::SerializeGraphLayout(layout)) ==
+        layout);
+  CHECK_EQ(editor::ParseGraphLayout("junk\n1 flag 2 3\n").size(), size_t{1});
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

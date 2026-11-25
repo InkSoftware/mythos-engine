@@ -76,6 +76,13 @@ class Game {
   [[nodiscard]] const mythos::Level& level() const { return level_; }
   [[nodiscard]] const mythos::ModelLibrary& models() const { return models_; }
   [[nodiscard]] const mythos::Player& player() const { return player_; }
+  // Puts the player at a place and facing (radians), for a screenshot or a
+  // test; the walls are not checked.
+  void PlacePlayer(const double x, const double z, const double angle) {
+    player_.pos = {x, z};
+    player_.angle = angle;
+    player_.pitch = 0;
+  }
   [[nodiscard]] const mythos::RoomDoors& doors() const { return doors_; }
   [[nodiscard]] const mythos::Progress& progress() const { return progress_; }
   [[nodiscard]] const mythos::GltfModel& guide_model() const { return guide_; }

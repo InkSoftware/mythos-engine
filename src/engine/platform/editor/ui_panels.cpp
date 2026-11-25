@@ -1124,9 +1124,13 @@ void EditorApp::DrawAssets() {
 // from the viewport, the problems, and Save. The format is world/cutscene.h's.
 // The level's triggers, rules and flags as a graph: columns from what starts a
 // chain to what it sets. Drag a node to move it (positions are kept for the
-// session), click a rule to edit it in the Rules section, and drag from the
-// dot on the right of a trigger, timer or flag onto a rule to make that the
-// event that starts it.
+// level's `.graph` file), click a rule to edit it in the Rules section, and
+// drag from the dot on the right of a node:
+//   trigger, timer or flag -> rule: it becomes the event that starts the rule;
+//   flag -> rule with Shift held: the rule reads the flag (Alt: stops reading);
+//   rule -> flag: the rule sets that flag.
+// "New rule" makes one from the selected trigger, timer or flag, and Delete
+// removes the selected rule.
 void EditorApp::DrawEventGraph() {
   if (!ImGui::Begin("Event graph", &show_graph_)) {
     ImGui::End();
@@ -1138,12 +1142,55 @@ void EditorApp::DrawEventGraph() {
     ImGui::End();
     return;
   }
+  const std::string layout_path =
+      project_.AssetDir() + "/levels/" + level_ + ".graph";
+  if (graph_loaded_ != level_) {  // this level's saved layout
+    graph_loaded_ = level_;
+    graph_pos_.clear();
+    graph_sel_.clear();
+    for (const GraphPlacement& p :
+         ParseGraphLayout(ReadTextFile(layout_path))) {
+      graph_pos_[std::to_string(p.kind) + ":" + p.id] = {p.x, p.y};
+    }
+  }
+  const auto save_layout = [&] {
+    std::vector<GraphPlacement> placed;
+    for (const auto& [key, at] : graph_pos_) {
+      const size_t colon = key.find(':');
+      placed.push_back({static_cast<int>(std::strtol(
+                            key.substr(0, colon).c_str(), nullptr, 10)),
+                        key.substr(colon + 1), at[0], at[1]});
+    }
+    WriteFileAtomic(layout_path, SerializeGraphLayout(placed));
+  };
   const EventGraph graph = BuildEventGraph(*doc);
-  if (ImGui::SmallButton("Reset layout")) graph_pos_.clear();
+  if (ImGui::SmallButton("Reset layout")) {
+    graph_pos_.clear();
+    save_layout();
+  }
+  ImGui::SameLine();
+  {
+    // The selected trigger, timer or flag starts a new rule.
+    const bool have = !graph_sel_.empty();
+    ImGui::BeginDisabled(!have);
+    if (ImGui::SmallButton("New rule from selection")) {
+      const size_t colon = graph_sel_.find(':');
+      const auto kind = static_cast<GraphNodeKind>(static_cast<int>(
+          std::strtol(graph_sel_.substr(0, colon).c_str(), nullptr, 10)));
+      const std::string id =
+          AddRuleFrom(*doc, kind, graph_sel_.substr(colon + 1));
+      if (!id.empty()) {
+        project_.Touch(level_);
+        rule_sel_ = id;
+        rule_draft_ = doc->rules.back();
+      }
+    }
+    ImGui::EndDisabled();
+  }
   ImGui::SameLine();
   ImGui::TextDisabled(
-      "%zu triggers, %zu rules. Drag a dot onto a rule to wire it; click a "
-      "rule to edit it.",
+      "%zu triggers, %zu rules. Drag a dot to wire (Shift: condition, Alt: "
+      "remove it); Delete removes the selected rule.",
       doc->triggers.size(), doc->rules.size());
 
   const ImVec2 origin = ImGui::GetCursorScreenPos();
@@ -1237,7 +1284,7 @@ void EditorApp::DrawEventGraph() {
       dl->AddText({lo.x + 10, lo.y + kHead + kLine * static_cast<float>(l) - 2},
                   IM_COL32(190, 200, 190, 255), n.lines[l].c_str());
     }
-    if (n.kind != GraphNodeKind::kRule) {
+    {
       const ImVec2 pin = out_pin(i);
       const bool pin_hot = (mouse.x - pin.x) * (mouse.x - pin.x) +
                                (mouse.y - pin.y) * (mouse.y - pin.y) <
@@ -1252,11 +1299,13 @@ void EditorApp::DrawEventGraph() {
         continue;
       }
     }
-    if (graph_wire_ >= 0 && n.kind == GraphNodeKind::kRule && hovered)
+    if (graph_wire_ >= 0 && hovered && !std::cmp_equal(i, graph_wire_))
       wire_target = static_cast<int>(i);
     if (over_canvas && mouse_clicked && hovered && graph_wire_ < 0) {
       graph_drag_ = key_of(n);
+      if (n.kind != GraphNodeKind::kRule) graph_sel_ = key_of(n);
       if (n.kind == GraphNodeKind::kRule) {
+        graph_sel_.clear();
         const auto rule = std::ranges::find_if(
             doc->rules, [&](const EventRule& r) { return r.id == n.id; });
         if (rule != doc->rules.end()) {
@@ -1276,11 +1325,30 @@ void EditorApp::DrawEventGraph() {
     dl->AddLine(a, mouse, IM_COL32(255, 255, 255, 200), 2.0f);
     if (!mouse_down) {
       const GraphNode& source = graph.nodes[static_cast<size_t>(graph_wire_)];
-      if (wire_target >= 0 &&
-          Connect(*doc, source.kind, source.id,
-                  graph.nodes[static_cast<size_t>(wire_target)].id)) {
+      bool changed = false;
+      std::string rule_to_show;
+      if (wire_target >= 0) {
+        const GraphNode& target = graph.nodes[static_cast<size_t>(wire_target)];
+        const ImGuiIO& io = ImGui::GetIO();
+        if (source.kind == GraphNodeKind::kRule &&
+            target.kind == GraphNodeKind::kFlag) {
+          changed = AddSetFlag(*doc, source.id, target.id);
+          rule_to_show = source.id;
+        } else if (source.kind != GraphNodeKind::kRule &&
+                   target.kind == GraphNodeKind::kRule) {
+          if (source.kind == GraphNodeKind::kFlag && io.KeyShift) {
+            changed = AddCondition(*doc, target.id, source.id, true);
+          } else if (source.kind == GraphNodeKind::kFlag && io.KeyAlt) {
+            changed = RemoveCondition(*doc, target.id, source.id);
+          } else {
+            changed = Connect(*doc, source.kind, source.id, target.id);
+          }
+          rule_to_show = target.id;
+        }
+      }
+      if (changed) {
         project_.Touch(level_);
-        rule_sel_ = graph.nodes[static_cast<size_t>(wire_target)].id;
+        rule_sel_ = rule_to_show;
         const auto rule = std::ranges::find_if(
             doc->rules, [&](const EventRule& r) { return r.id == rule_sel_; });
         if (rule != doc->rules.end()) rule_draft_ = *rule;
@@ -1288,7 +1356,16 @@ void EditorApp::DrawEventGraph() {
       graph_wire_ = -1;
     }
   }
-  if (!mouse_down) graph_drag_.clear();
+  if (!mouse_down && !graph_drag_.empty()) {
+    graph_drag_.clear();
+    save_layout();  // a node was moved
+  }
+  if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+      ImGui::IsKeyPressed(ImGuiKey_Delete) && !rule_sel_.empty() &&
+      DeleteRule(*doc, rule_sel_)) {
+    project_.Touch(level_);
+    rule_sel_.clear();
+  }
   dl->PopClipRect();
   ImGui::End();
 }

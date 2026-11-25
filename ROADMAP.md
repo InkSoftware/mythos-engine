@@ -319,10 +319,10 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
+- **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, a `MYLM1` file format); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets are applied on the CPU (a GPU path for many morphing models is not done), and only skinned mesh nodes are read.
 - **Audio:** nothing named.
-- **Editor:** the event graph panel only shows, selects and rewires a rule's starting event (no creating or deleting nodes by dragging, no editing conditions or actions in it, no saved node positions).
+- **Editor:** the event graph panel edits a rule's starting event, conditions and `set_flag` actions and creates and deletes rules, but not other actions or triggers; a linked prefab's update replaces edits to its items.
 - **Tools and data:** nothing named.
 
 ## Out of scope for now

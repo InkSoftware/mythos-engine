@@ -12,6 +12,7 @@
 #define MYTHOS_ENGINE_GFX_LIGHTMAP_H_
 
 #include <array>
+#include <string>
 #include <vector>
 
 #include "engine/gfx/probes.h"
@@ -59,6 +60,14 @@ struct Lightmap {
 // line from the lamp to a point just off the surface is clear.
 Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
                       const LightmapOptions& options = {});
+
+// A lightmap as bytes for a file: the magic `MYLM1`, the cell counts, texels
+// and wall rows as 32-bit little-endian integers, then the layers as 16-bit
+// half floats (RGBA, as the GPU holds them). `ParseLightmap` reads it back
+// (to half precision) and returns false, leaving `out`, on a bad or short file.
+std::string SerializeLightmap(const Lightmap& map);
+bool ParseLightmap(const std::string& bytes, Lightmap* out,
+                   std::string* error = nullptr);
 }
 
 #endif

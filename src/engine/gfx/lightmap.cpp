@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <utility>
 
 #include "engine/gfx/mesh.h"
 
@@ -177,5 +180,114 @@ Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
     }
   }
   return m;
+}
+
+namespace {
+uint16_t ToHalf(const float f) {
+  uint32_t b = 0;
+  std::memcpy(&b, &f, 4);
+  const uint32_t sign = (b >> 16) & 0x8000u;
+  int exp = static_cast<int>((b >> 23) & 0xFF) - 127 + 15;
+  uint32_t mant = b & 0x7FFFFFu;
+  if (((b >> 23) & 0xFF) == 0xFF)
+    return static_cast<uint16_t>(sign | 0x7C00u | (mant ? 0x200u : 0));
+  if (exp >= 31) return static_cast<uint16_t>(sign | 0x7C00u);
+  if (exp <= 0) {
+    if (exp < -10) return static_cast<uint16_t>(sign);
+    mant |= 0x800000u;
+    const int shift = 14 - exp;
+    return static_cast<uint16_t>(sign |
+                                 ((mant + (1u << (shift - 1))) >> shift));
+  }
+  return static_cast<uint16_t>(sign | (static_cast<uint32_t>(exp) << 10) |
+                               ((mant + 0x1000u) >> 13));
+}
+
+float FromHalf(const uint16_t h) {
+  const uint32_t sign = (h & 0x8000u) << 16;
+  const uint32_t exp = (h >> 10) & 0x1F, mant = h & 0x3FFu;
+  uint32_t b = 0;
+  if (exp == 0) {
+    if (mant == 0) {
+      b = sign;
+    } else {  // subnormal
+      int e = -1;
+      uint32_t m = mant;
+      do {
+        ++e;
+        m <<= 1;
+      } while ((m & 0x400u) == 0);
+      b = sign | (static_cast<uint32_t>(127 - 15 - e) << 23) |
+          ((m & 0x3FFu) << 13);
+    }
+  } else if (exp == 31) {
+    b = sign | 0x7F800000u | (mant << 13);
+  } else {
+    b = sign | ((exp + 127 - 15) << 23) | (mant << 13);
+  }
+  float f = 0;
+  std::memcpy(&f, &b, 4);
+  return f;
+}
+
+void PutU32(std::string& s, const uint32_t v) {
+  for (int i = 0; i < 4; ++i)
+    s.push_back(static_cast<char>((v >> (8 * i)) & 0xFF));
+}
+
+uint32_t GetU32(const std::string& s, const size_t at) {
+  uint32_t v = 0;
+  for (int i = 0; i < 4; ++i)
+    v |= static_cast<uint32_t>(
+             static_cast<unsigned char>(s[at + static_cast<size_t>(i)]))
+         << (8 * i);
+  return v;
+}
+}
+
+std::string SerializeLightmap(const Lightmap& map) {
+  std::string s = "MYLM1";
+  PutU32(s, static_cast<uint32_t>(map.cells_x));
+  PutU32(s, static_cast<uint32_t>(map.cells_z));
+  PutU32(s, static_cast<uint32_t>(map.texels));
+  PutU32(s, static_cast<uint32_t>(map.wall_rows));
+  for (const float f : map.rgba) {
+    const uint16_t h = ToHalf(f);
+    s.push_back(static_cast<char>(h & 0xFF));
+    s.push_back(static_cast<char>(h >> 8));
+  }
+  return s;
+}
+
+bool ParseLightmap(const std::string& bytes, Lightmap* const out,
+                   std::string* const error) {
+  const auto fail = [&](const char* why) {
+    if (error != nullptr) *error = why;
+    return false;
+  };
+  if (bytes.size() < 21 || bytes.compare(0, 5, "MYLM1") != 0)
+    return fail("not a lightmap file");
+  Lightmap m;
+  m.cells_x = static_cast<int>(GetU32(bytes, 5));
+  m.cells_z = static_cast<int>(GetU32(bytes, 9));
+  m.texels = static_cast<int>(GetU32(bytes, 13));
+  m.wall_rows = static_cast<int>(GetU32(bytes, 17));
+  if (m.cells_x < 1 || m.cells_z < 1 || m.texels < 1 || m.wall_rows < 1 ||
+      m.cells_x > 4096 || m.cells_z > 4096 || m.texels > 64 ||
+      m.wall_rows > 256)
+    return fail("bad sizes");
+  const size_t count = static_cast<size_t>(kLightmapFaces) *
+                       static_cast<size_t>(m.Width()) *
+                       static_cast<size_t>(m.Height()) * 4;
+  if (count > 4 * kMaxTexels || bytes.size() != 21 + count * 2)
+    return fail("the size does not match the data");
+  m.rgba.resize(count);
+  for (size_t i = 0; i < count; ++i) {
+    const auto lo = static_cast<unsigned char>(bytes[21 + i * 2]);
+    const auto hi = static_cast<unsigned char>(bytes[22 + i * 2]);
+    m.rgba[i] = FromHalf(static_cast<uint16_t>(lo | (hi << 8)));
+  }
+  *out = std::move(m);
+  return true;
 }
 }

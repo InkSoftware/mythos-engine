@@ -46,7 +46,8 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--formation NAME` | with `--clones N`: the copies stand around the guide in a `line`, `column`, `wedge`, `circle` or `grid` | `FormationSlots` (`AssignSlots`, `FormationSteer` move a group into one) |
 | `--crowd N` | N chairs as model instances; `--no-instancing` draws them one by one | GPU instancing |
 | `--debug` | opens the debug console (the ` key or F12 anywhere) with the frame stats and graph on: every setting is a variable, `cutscene.play intro` runs a cutscene, `help` lists it all | `CvarRegistry`, `DebugConsole`, `DrawDebugOverlay`, `RegisterCutsceneCommands` |
-| `--screenshot file.ppm` | renders 90 frames, saves the last, prints the draw calls, exits | `WriteFramebufferPpm`, `RenderStats` |
+| `--at X Z ANGLE`, `--shake` | puts the player there (radians), slams a door's worth of camera shake at frame 85 | `Game::PlacePlayer`, `CameraFx::AddShake` |
+| `--screenshot file.ppm` | renders 90 frames (a fixed 1/60 s step, no input: two runs of one command match byte for byte), saves the last, prints the draw calls, exits | `WriteFramebufferPpm`, `RenderStats` |
 
 ## What is in it
 

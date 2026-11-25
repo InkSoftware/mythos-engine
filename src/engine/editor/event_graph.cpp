@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <sstream>
 #include <utility>
 
 namespace mythos::editor {
@@ -137,5 +138,84 @@ bool Connect(LevelDoc& doc, const GraphNodeKind kind, const std::string& id,
     rule->event = {EventKind::kTimer, id, "", false};
   }
   return true;
+}
+
+namespace {
+EventRule* FindRule(LevelDoc& doc, const std::string& id) {
+  const auto it = std::ranges::find_if(
+      doc.rules, [&](const EventRule& r) { return r.id == id; });
+  return it == doc.rules.end() ? nullptr : &*it;
+}
+}
+
+bool AddSetFlag(LevelDoc& doc, const std::string& rule_id,
+                const std::string& flag) {
+  EventRule* r = FindRule(doc, rule_id);
+  if (r == nullptr || flag.empty()) return false;
+  const EventAction action{"set_flag", flag};
+  if (std::ranges::find(r->actions, action) == r->actions.end())
+    r->actions.push_back(action);
+  return true;
+}
+
+bool AddCondition(LevelDoc& doc, const std::string& rule_id,
+                  const std::string& flag, const bool value) {
+  EventRule* r = FindRule(doc, rule_id);
+  if (r == nullptr || flag.empty()) return false;
+  for (EventCondition& c : r->conditions) {
+    if (c.flag == flag) {
+      c.value = value;
+      return true;
+    }
+  }
+  r->conditions.push_back({flag, value});
+  return true;
+}
+
+bool RemoveCondition(LevelDoc& doc, const std::string& rule_id,
+                     const std::string& flag) {
+  EventRule* r = FindRule(doc, rule_id);
+  if (r == nullptr) return false;
+  return std::erase_if(r->conditions, [&](const EventCondition& c) {
+           return c.flag == flag;
+         }) > 0;
+}
+
+bool DeleteRule(LevelDoc& doc, const std::string& rule_id) {
+  return std::erase_if(doc.rules,
+                       [&](const EventRule& r) { return r.id == rule_id; }) > 0;
+}
+
+std::string AddRuleFrom(LevelDoc& doc, const GraphNodeKind kind,
+                        const std::string& id) {
+  if (kind == GraphNodeKind::kRule) return {};
+  EventRule rule;
+  rule.id = NewRuleId(doc);
+  doc.rules.push_back(rule);
+  if (!Connect(doc, kind, id, rule.id)) {
+    doc.rules.pop_back();
+    return {};
+  }
+  return rule.id;
+}
+
+std::string SerializeGraphLayout(const std::vector<GraphPlacement>& nodes) {
+  std::string s;
+  for (const GraphPlacement& n : nodes) {
+    s += std::to_string(n.kind) + " " + n.id + " " + FormatNumber(n.x) + " " +
+         FormatNumber(n.y) + "\n";
+  }
+  return s;
+}
+
+std::vector<GraphPlacement> ParseGraphLayout(const std::string& text) {
+  std::vector<GraphPlacement> out;
+  std::istringstream in(text);
+  for (std::string line; std::getline(in, line);) {
+    std::istringstream ls(line);
+    GraphPlacement p;
+    if (ls >> p.kind >> p.id >> p.x >> p.y) out.push_back(std::move(p));
+  }
+  return out;
 }
 }
