@@ -7,8 +7,10 @@
 // number); TRS or matrix nodes; triangle primitives with or without indices;
 // JOINTS_0 / WEIGHTS_0 (bytes, shorts or floats); translation, rotation and
 // scale channels with LINEAR, STEP (read as linear) or CUBICSPLINE (the values,
-// without tangents) samplers; sparse accessors. Not supported: morph targets,
-// more than one skin, more than kMaxBones joints. The skeleton's inverse bind
+// without tangents) samplers; sparse accessors. Several skins are joined into
+// one skeleton (a joint shared by two is one bone). Morph targets (POSITION and
+// NORMAL deltas) and weight animations are read (`GltfModel::morphs`). Not
+// supported: more than kMaxBones joints in all. The skeleton's inverse bind
 // matrices are rebuilt from the bind pose, not read from the file.
 #ifndef MYTHOS_ENGINE_GFX_GLTF_H_
 #define MYTHOS_ENGINE_GFX_GLTF_H_
@@ -19,6 +21,7 @@
 #include <vector>
 
 #include "engine/gfx/mesh.h"
+#include "engine/gfx/morph.h"
 #include "engine/gfx/skeleton.h"
 #include "engine/gfx/surface.h"
 
@@ -38,6 +41,11 @@ struct GltfModel {
   std::map<std::string, Surface> textures;
   Skeleton skeleton;
   std::vector<Clip> clips;
+  // Morph targets, one entry per batch (`Empty()` for a batch with none), and
+  // the weights animations give them (a clip with only weight channels has no
+  // bone tracks). See gfx/morph.h: `ApplyMorph(batches[i], morphs[i], w)`.
+  std::vector<BatchMorph> morphs;
+  std::vector<MorphTrack> morph_tracks;
 
   // The clip called `name`, or nullptr.
   [[nodiscard]] const Clip* FindClip(const std::string& name) const;

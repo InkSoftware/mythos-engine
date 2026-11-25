@@ -194,6 +194,15 @@ int main(const int argc, char** const argv) {
                  own != guide.textures.end() ? own->second
                                              : FlatColor(guide.base_colors[i]));
   }
+  // The model's PBR companions (`<material>_rough`, `_metal`, `_nrm`, `_ao`):
+  // roughness and metal factors become flat maps, a textured material's maps
+  // come as they are.
+  for (const auto& [name, surface] : guide.textures) {
+    if (name.ends_with("_rough") || name.ends_with("_metal") ||
+        name.ends_with("_nrm") || name.ends_with("_ao")) {
+      textures.Add(name, surface);
+    }
+  }
 
   mythos::SceneRenderer renderer;
   if (!renderer.Init(textures)) {

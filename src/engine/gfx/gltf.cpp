@@ -263,6 +263,15 @@ Mat4f Multiply(const Mat4f& a, const Mat4f& b) {
   return out;
 }
 
+// The image of texture `index`, decoded; false when it cannot be.
+bool DecodeTexture(const Doc& doc, const int index, Surface& image) {
+  const json::Value& tex = doc.Item("textures", index);
+  std::string bytes;
+  return tex.contains("source") &&
+         doc.ImageBytes(tex["source"].get<int>(), &bytes) &&
+         DecodeImage(bytes, image);
+}
+
 void Build(const Doc& doc, GltfModel& out) {
   const json::Value& root = doc.Root();
   const json::Value* nodes = json::Find(root, "nodes");
@@ -281,17 +290,23 @@ void Build(const Doc& doc, GltfModel& out) {
     }
   }
 
-  // The first node with both a mesh and a skin.
-  int mesh_node = -1;
-  for (int i = 0; i < node_count && mesh_node < 0; ++i) {
+  // Every node with both a mesh and a skin; their skins' joints are joined
+  // into one skeleton (a joint two skins share is one bone).
+  std::vector<int> mesh_nodes;
+  for (int i = 0; i < node_count; ++i) {
     const json::Value& n = (*nodes)[static_cast<size_t>(i)];
-    if (n.contains("mesh") && n.contains("skin")) mesh_node = i;
+    if (n.contains("mesh") && n.contains("skin")) mesh_nodes.push_back(i);
   }
-  if (mesh_node < 0) Throw("no skinned mesh");
-  const json::Value& mesh_n = (*nodes)[static_cast<size_t>(mesh_node)];
-  const json::Value& skin = doc.Item("skins", mesh_n["skin"].get<int>());
+  if (mesh_nodes.empty()) Throw("no skinned mesh");
   std::vector<int> joint_nodes;
-  for (const auto& j : skin["joints"]) joint_nodes.push_back(j.get<int>());
+  for (const int mn : mesh_nodes) {
+    const json::Value& skin =
+        doc.Item("skins", (*nodes)[static_cast<size_t>(mn)]["skin"].get<int>());
+    for (const auto& j : skin["joints"]) {
+      if (std::ranges::find(joint_nodes, j.get<int>()) == joint_nodes.end())
+        joint_nodes.push_back(j.get<int>());
+    }
+  }
   if (joint_nodes.empty()) Throw("a skin without joints");
 
   // Bones in an order with parents first; joints keep the file's order unless
@@ -361,116 +376,215 @@ void Build(const Doc& doc, GltfModel& out) {
     if (remaining == before) Throw("the joints do not form a tree");
   }
   if (!out.skeleton.Set(bones)) Throw("too many joints or a bad hierarchy");
-  // Skin joint list index -> bone index.
-  std::vector<float> joint_to_bone(joint_nodes.size());
-  for (size_t i = 0; i < joint_nodes.size(); ++i) {
-    joint_to_bone[i] = static_cast<float>(bone_of_node[joint_nodes[i]]);
-  }
-
-  // The mesh.
-  const json::Value& mesh = doc.Item("meshes", mesh_n["mesh"].get<int>());
-  for (const auto& prim : mesh["primitives"]) {
-    if (prim.value("mode", 4) != 4) Throw("only triangle primitives");
-    const json::Value& attrs = prim["attributes"];
-    if (!attrs.contains("POSITION") || !attrs.contains("JOINTS_0") ||
-        !attrs.contains("WEIGHTS_0")) {
-      Throw("a primitive without positions, joints and weights");
+  // The meshes, each with its own skin's joint list mapped onto the bones.
+  std::map<int, std::pair<size_t, size_t>>
+      node_batches;  // node -> first, count
+  for (const int mesh_node : mesh_nodes) {
+    const size_t first_batch = out.batches.size();
+    const json::Value& mesh_n = (*nodes)[static_cast<size_t>(mesh_node)];
+    const json::Value& skin = doc.Item("skins", mesh_n["skin"].get<int>());
+    std::vector<float> joint_to_bone;
+    for (const auto& j : skin["joints"]) {
+      joint_to_bone.push_back(static_cast<float>(bone_of_node[j.get<int>()]));
     }
-    int c = 0;
-    const std::vector<float> pos = doc.Read(attrs["POSITION"].get<int>(), &c);
-    const size_t vcount = pos.size() / 3;
-    std::vector<float> nrm, uv;
-    if (attrs.contains("NORMAL"))
-      nrm = doc.Read(attrs["NORMAL"].get<int>(), &c);
-    if (attrs.contains("TEXCOORD_0")) {
-      uv = doc.Read(attrs["TEXCOORD_0"].get<int>(), &c);
-    }
-    const std::vector<float> joints =
-        doc.Read(attrs["JOINTS_0"].get<int>(), &c);
-    const std::vector<float> weights =
-        doc.Read(attrs["WEIGHTS_0"].get<int>(), &c);
-    if (joints.size() != vcount * 4 || weights.size() != vcount * 4) {
-      Throw("joint and weight counts do not match the positions");
-    }
-    std::vector<size_t> index;
-    if (prim.contains("indices")) {
-      for (const float f : doc.Read(prim["indices"].get<int>(), &c)) {
-        index.push_back(static_cast<size_t>(f));
+    const json::Value& mesh = doc.Item("meshes", mesh_n["mesh"].get<int>());
+    for (const auto& prim : mesh["primitives"]) {
+      if (prim.value("mode", 4) != 4) Throw("only triangle primitives");
+      const json::Value& attrs = prim["attributes"];
+      if (!attrs.contains("POSITION") || !attrs.contains("JOINTS_0") ||
+          !attrs.contains("WEIGHTS_0")) {
+        Throw("a primitive without positions, joints and weights");
       }
-    } else {
-      for (size_t i = 0; i < vcount; ++i) index.push_back(i);
-    }
-    Batch batch;
-    std::array<float, 4> color = {1, 1, 1, 1};
-    batch.texture = "missing";
-    if (prim.contains("material")) {
-      const json::Value& mat =
-          doc.Item("materials", prim["material"].get<int>());
-      const std::string name = mat.value("name", std::string());
-      if (!name.empty()) batch.texture = name;
-      if (const json::Value* pbr = json::Find(mat, "pbrMetallicRoughness")) {
-        if (const json::Value* f = json::Find(*pbr, "baseColorFactor");
-            f != nullptr && f->size() == 4) {
-          for (size_t i = 0; i < 4; ++i) color[i] = (*f)[i].get<float>();
+      int c = 0;
+      const std::vector<float> pos = doc.Read(attrs["POSITION"].get<int>(), &c);
+      const size_t vcount = pos.size() / 3;
+      std::vector<float> nrm, uv;
+      if (attrs.contains("NORMAL"))
+        nrm = doc.Read(attrs["NORMAL"].get<int>(), &c);
+      if (attrs.contains("TEXCOORD_0")) {
+        uv = doc.Read(attrs["TEXCOORD_0"].get<int>(), &c);
+      }
+      const std::vector<float> joints =
+          doc.Read(attrs["JOINTS_0"].get<int>(), &c);
+      const std::vector<float> weights =
+          doc.Read(attrs["WEIGHTS_0"].get<int>(), &c);
+      if (joints.size() != vcount * 4 || weights.size() != vcount * 4) {
+        Throw("joint and weight counts do not match the positions");
+      }
+      std::vector<size_t> index;
+      if (prim.contains("indices")) {
+        for (const float f : doc.Read(prim["indices"].get<int>(), &c)) {
+          index.push_back(static_cast<size_t>(f));
         }
-        // The colour texture, decoded once per material name.
-        if (const json::Value* t = json::Find(*pbr, "baseColorTexture");
-            t != nullptr && t->contains("index") && !name.empty() &&
-            !out.textures.contains(name)) {
-          const json::Value& tex =
-              doc.Item("textures", (*t)["index"].get<int>());
-          std::string bytes;
-          Surface image;
-          if (tex.contains("source") &&
-              doc.ImageBytes(tex["source"].get<int>(), &bytes) &&
-              DecodeImage(bytes, image)) {
-            out.textures[name] = std::move(image);
+      } else {
+        for (size_t i = 0; i < vcount; ++i) index.push_back(i);
+      }
+      Batch batch;
+      std::array<float, 4> color = {1, 1, 1, 1};
+      batch.texture = "missing";
+      if (prim.contains("material")) {
+        const json::Value& mat =
+            doc.Item("materials", prim["material"].get<int>());
+        const std::string name = mat.value("name", std::string());
+        if (!name.empty()) batch.texture = name;
+        if (const json::Value* pbr = json::Find(mat, "pbrMetallicRoughness")) {
+          if (const json::Value* f = json::Find(*pbr, "baseColorFactor");
+              f != nullptr && f->size() == 4) {
+            for (size_t i = 0; i < 4; ++i) color[i] = (*f)[i].get<float>();
+          }
+          // The colour texture, decoded once per material name.
+          if (const json::Value* t = json::Find(*pbr, "baseColorTexture");
+              t != nullptr && t->contains("index") && !name.empty() &&
+              !out.textures.contains(name)) {
+            Surface image;
+            if (DecodeTexture(doc, (*t)["index"].get<int>(), image)) {
+              out.textures[name] = std::move(image);
+            }
+          }
+          // The companion maps a physically based material has (see gfx/pbr.h):
+          // `<name>_rough` and `<name>_metal` (green channel) from the
+          // metallic-roughness texture (green: roughness, blue: metal) or a
+          // constant factor, `<name>_nrm` the tangent-space normal and
+          // `<name>_ao` (occlusion, red channel) as is.
+          if (!name.empty() && !out.textures.contains(name + "_rough")) {
+            Surface mr;
+            const json::Value* t = json::Find(*pbr, "metallicRoughnessTexture");
+            if (t != nullptr && t->contains("index") &&
+                DecodeTexture(doc, (*t)["index"].get<int>(), mr)) {
+              Surface rough = mr, metal = mr;
+              for (size_t i = 0; i < mr.px.size(); ++i) {
+                const int g = static_cast<int>((mr.px[i] >> 8) & 0xFF);
+                const int b = static_cast<int>(mr.px[i] & 0xFF);
+                rough.px[i] = Rgba(g, g, g);
+                metal.px[i] = Rgba(b, b, b);
+              }
+              out.textures[name + "_rough"] = std::move(rough);
+              out.textures[name + "_metal"] = std::move(metal);
+            } else {
+              const auto constant = [&](const char* key, const double def,
+                                        const std::string& suffix) {
+                const double v = pbr->value(key, def);
+                if (std::fabs(v - def) < 1e-6) return;
+                Surface one;
+                one.w = one.h = 1;
+                const int g =
+                    static_cast<int>(std::lround(Clampd(v, 0, 1) * 255));
+                one.px = {Rgba(g, g, g)};
+                out.textures[name + suffix] = std::move(one);
+              };
+              constant("roughnessFactor", 1.0, "_rough");
+              constant("metallicFactor", 0.0, "_metal");
+            }
+          }
+        }
+        if (!name.empty() && !out.textures.contains(name + "_nrm")) {
+          if (const json::Value* t = json::Find(mat, "normalTexture");
+              t != nullptr && t->contains("index")) {
+            Surface image;
+            if (DecodeTexture(doc, (*t)["index"].get<int>(), image))
+              out.textures[name + "_nrm"] = std::move(image);
+          }
+        }
+        if (!name.empty() && !out.textures.contains(name + "_ao")) {
+          if (const json::Value* t = json::Find(mat, "occlusionTexture");
+              t != nullptr && t->contains("index")) {
+            Surface image;
+            if (DecodeTexture(doc, (*t)["index"].get<int>(), image)) {
+              for (uint32_t& px : image.px) {
+                const int r = static_cast<int>((px >> 16) & 0xFF);
+                px = Rgba(r, r, r);
+              }
+              out.textures[name + "_ao"] = std::move(image);
+            }
           }
         }
       }
-    }
-    for (size_t i = 0; i + 2 < index.size(); i += 3) {
-      for (size_t k = 0; k < 3; ++k) {
-        const size_t v = index[i + k];
-        if (v >= vcount) Throw("an index past the vertices");
-        Vertex vert{};
-        vert.px = pos[v * 3];
-        vert.py = pos[v * 3 + 1];
-        vert.pz = pos[v * 3 + 2];
-        if (!nrm.empty()) {
-          vert.nx = nrm[v * 3];
-          vert.ny = nrm[v * 3 + 1];
-          vert.nz = nrm[v * 3 + 2];
-        } else {
-          vert.ny = 1;
+      // Morph targets: deltas per source vertex, expanded to the batch's
+      // vertices below.
+      BatchMorph morph;
+      std::vector<std::vector<float>> raw_pos, raw_nrm;
+      if (const json::Value* targets = json::Find(prim, "targets")) {
+        for (const auto& t : *targets) {
+          raw_pos.emplace_back();
+          raw_nrm.emplace_back();
+          if (t.contains("POSITION"))
+            raw_pos.back() = doc.Read(t["POSITION"].get<int>(), &c);
+          if (t.contains("NORMAL"))
+            raw_nrm.back() = doc.Read(t["NORMAL"].get<int>(), &c);
+          if ((!raw_pos.back().empty() &&
+               raw_pos.back().size() != vcount * 3) ||
+              (!raw_nrm.back().empty() &&
+               raw_nrm.back().size() != vcount * 3)) {
+            Throw("a morph target that does not match the vertices");
+          }
+          morph.targets.emplace_back();
         }
-        if (!uv.empty()) {
-          vert.u = uv[v * 2];
-          vert.v = 1.0f - uv[v * 2 + 1];  // glTF's v runs down, the engine's up
+        morph.default_weights.assign(morph.targets.size(), 0.0f);
+        if (const json::Value* w = json::Find(mesh, "weights")) {
+          for (size_t i = 0; i < w->size() && i < morph.targets.size(); ++i)
+            morph.default_weights[i] = (*w)[i].get<float>();
         }
-        batch.verts.push_back(vert);
-        SkinWeights w;
-        float sum = 0;
-        for (size_t j = 0; j < 4; ++j) {
-          const auto joint = static_cast<size_t>(joints[v * 4 + j]);
-          w.weights[j] = weights[v * 4 + j];
-          // A weightless slot may name any joint; keep it in range.
-          w.joints[j] = w.weights[j] > 0 && joint < joint_to_bone.size()
-                            ? joint_to_bone[joint]
-                            : 0;
-          sum += w.weights[j];
-        }
-        if (sum > 1e-6f) {
-          for (float& x : w.weights) x /= sum;
-        } else {
-          w.weights[0] = 1;
-        }
-        batch.skin.push_back(w);
       }
+      for (size_t i = 0; i + 2 < index.size(); i += 3) {
+        for (size_t k = 0; k < 3; ++k) {
+          const size_t v = index[i + k];
+          if (v >= vcount) Throw("an index past the vertices");
+          Vertex vert{};
+          vert.px = pos[v * 3];
+          vert.py = pos[v * 3 + 1];
+          vert.pz = pos[v * 3 + 2];
+          if (!nrm.empty()) {
+            vert.nx = nrm[v * 3];
+            vert.ny = nrm[v * 3 + 1];
+            vert.nz = nrm[v * 3 + 2];
+          } else {
+            vert.ny = 1;
+          }
+          if (!uv.empty()) {
+            vert.u = uv[v * 2];
+            vert.v =
+                1.0f - uv[v * 2 + 1];  // glTF's v runs down, the engine's up
+          }
+          batch.verts.push_back(vert);
+          for (size_t t = 0; t < morph.targets.size(); ++t) {
+            if (!raw_pos[t].empty()) {
+              morph.targets[t].position.insert(
+                  morph.targets[t].position.end(),
+                  raw_pos[t].begin() + static_cast<std::ptrdiff_t>(v * 3),
+                  raw_pos[t].begin() + static_cast<std::ptrdiff_t>(v * 3 + 3));
+            }
+            if (!raw_nrm[t].empty()) {
+              morph.targets[t].normal.insert(
+                  morph.targets[t].normal.end(),
+                  raw_nrm[t].begin() + static_cast<std::ptrdiff_t>(v * 3),
+                  raw_nrm[t].begin() + static_cast<std::ptrdiff_t>(v * 3 + 3));
+            }
+          }
+          SkinWeights w;
+          float sum = 0;
+          for (size_t j = 0; j < 4; ++j) {
+            const auto joint = static_cast<size_t>(joints[v * 4 + j]);
+            w.weights[j] = weights[v * 4 + j];
+            // A weightless slot may name any joint; keep it in range.
+            w.joints[j] = w.weights[j] > 0 && joint < joint_to_bone.size()
+                              ? joint_to_bone[joint]
+                              : 0;
+            sum += w.weights[j];
+          }
+          if (sum > 1e-6f) {
+            for (float& x : w.weights) x /= sum;
+          } else {
+            w.weights[0] = 1;
+          }
+          batch.skin.push_back(w);
+        }
+      }
+      if (batch.verts.empty()) continue;
+      out.batches.push_back(std::move(batch));
+      out.base_colors.push_back(color);
+      out.morphs.push_back(std::move(morph));
     }
-    if (batch.verts.empty()) continue;
-    out.batches.push_back(std::move(batch));
-    out.base_colors.push_back(color);
+    node_batches[mesh_node] = {first_batch, out.batches.size() - first_batch};
   }
   if (out.batches.empty()) Throw("the mesh has no triangles");
 
@@ -483,6 +597,44 @@ void Build(const Doc& doc, GltfModel& out) {
       for (const auto& ch : a["channels"]) {
         const json::Value& target = ch["target"];
         if (!target.contains("node")) continue;
+        if (target.value("path", std::string()) == "weights") {
+          // Morph weights of a mesh node: one value per target a key.
+          const auto nb = node_batches.find(target["node"].get<int>());
+          if (nb == node_batches.end() || nb->second.second == 0) continue;
+          const size_t targets = out.morphs[nb->second.first].targets.size();
+          if (targets == 0) continue;
+          const json::Value& sampler =
+              a["samplers"][ch["sampler"].get<size_t>()];
+          int cin = 0, cout = 0;
+          const std::vector<float> times =
+              doc.Read(sampler["input"].get<int>(), &cin);
+          const std::vector<float> vals =
+              doc.Read(sampler["output"].get<int>(), &cout);
+          const size_t stride =
+              sampler.value("interpolation", std::string("LINEAR")) ==
+                      "CUBICSPLINE"
+                  ? 3
+                  : 1;
+          if (vals.size() < times.size() * targets * stride) {
+            Throw("a weight sampler with too few values");
+          }
+          MorphTrack track;
+          track.clip = out.clips.size();
+          track.first_batch = nb->second.first;
+          track.batch_count = nb->second.second;
+          track.targets = targets;
+          for (size_t i = 0; i < times.size(); ++i) {
+            track.times.push_back(times[i]);
+            clip.duration = std::max(clip.duration, double{times[i]});
+            const size_t at = (i * stride + (stride == 3 ? 1 : 0)) * targets;
+            track.weights.insert(
+                track.weights.end(),
+                vals.begin() + static_cast<std::ptrdiff_t>(at),
+                vals.begin() + static_cast<std::ptrdiff_t>(at + targets));
+          }
+          out.morph_tracks.push_back(std::move(track));
+          continue;
+        }
         const auto bone = bone_of_node.find(target["node"].get<int>());
         if (bone == bone_of_node.end()) continue;  // not a joint
         const json::Value& sampler = a["samplers"][ch["sampler"].get<size_t>()];

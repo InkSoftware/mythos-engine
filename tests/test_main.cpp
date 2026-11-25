@@ -56,6 +56,7 @@
 #include "engine/gfx/materials.h"
 #include "engine/gfx/mesh.h"
 #include "engine/gfx/model.h"
+#include "engine/gfx/morph.h"
 #include "engine/gfx/normalmap.h"
 #include "engine/gfx/particles.h"
 #include "engine/gfx/pbr.h"
@@ -5699,6 +5700,11 @@ TEST(gltf_decodes_material_textures_and_flips_v) {
   j["textures"] = {{{"source", 0}}};
   j["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"] = {
       {"index", 0}};
+  // The same image as every map, to read each one's channel.
+  j["materials"][0]["pbrMetallicRoughness"]["metallicRoughnessTexture"] = {
+      {"index", 0}};
+  j["materials"][0]["normalTexture"] = {{"index", 0}};
+  j["materials"][0]["occlusionTexture"] = {{"index", 0}};
   j["accessors"].push_back({{"bufferView", views - 1},
                             {"componentType", 5126},
                             {"count", 3},
@@ -5724,7 +5730,21 @@ TEST(gltf_decodes_material_textures_and_flips_v) {
   std::string error;
   CHECK(mythos::ParseGlb(glb, m, &error));
   CHECK(error.empty());
-  CHECK_EQ(m.textures.size(), 1u);
+  // The colour texture and the PBR companions (roughness, metal, normal, ao).
+  CHECK_EQ(m.textures.size(), 5u);
+  if (m.textures.contains("skin_rough") && m.textures.contains("skin_metal") &&
+      m.textures.contains("skin_nrm") && m.textures.contains("skin_ao")) {
+    // Green pixel (bottom right) is full roughness, blue (top left) full
+    // metal, red (bottom left) full occlusion; the normal map is the image.
+    CHECK(m.textures["skin_rough"].At(1, 1) == mythos::Rgba(255, 255, 255));
+    CHECK(m.textures["skin_rough"].At(0, 0) == mythos::Rgba(0, 0, 0));
+    CHECK(m.textures["skin_metal"].At(0, 0) == mythos::Rgba(255, 255, 255));
+    CHECK(m.textures["skin_metal"].At(1, 1) == mythos::Rgba(0, 0, 0));
+    CHECK(m.textures["skin_ao"].At(0, 1) == mythos::Rgba(255, 255, 255));
+    CHECK(m.textures["skin_nrm"].At(1, 0) == mythos::Rgba(255, 255, 255));
+  } else {
+    CHECK(false);
+  }
   const auto it = m.textures.find("skin");
   CHECK(it != m.textures.end());
   if (it != m.textures.end()) {
@@ -5739,12 +5759,121 @@ TEST(gltf_decodes_material_textures_and_flips_v) {
   // Texture coordinates come out with v flipped (the engine's v runs up).
   CHECK(m.batches[0].verts[2].v == 0.75f && m.batches[0].verts[0].v == 1.0f);
   CHECK(m.batches[0].verts[1].u == 1.0f);
-  // The shipped character has no textures: only colours.
+  // The shipped character has no images: only colours and constant factors
+  // (a flat roughness or metal map).
   mythos::GltfModel pete;
   CHECK(mythos::LoadGlb(
       std::string(MYTHOS_TEST_ASSET_DIR) + "/characters/prototype_pete.glb",
       pete));
-  CHECK(pete.textures.empty());
+  for (const auto& [name, surface] : pete.textures) {
+    const bool factor = name.ends_with("_rough") || name.ends_with("_metal");
+    CHECK(factor);
+    CHECK(surface.w == 1 && surface.h == 1);
+  }
+}
+
+TEST(gltf_joins_several_skins_and_reads_morph_targets) {
+  std::string bin;
+  const auto f = [&](std::initializer_list<float> v) {
+    for (const float x : v) bin.append(reinterpret_cast<const char*>(&x), 4);
+  };
+  f({0, 0, 0, 1, 0, 0, 0, 1, 0});           // positions 0..36
+  bin.append(12, '\0');                     // joints: all joint 0, 36..48
+  f({1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0});  // weights 48..96
+  f({0, 1, 0, 0, 1, 0, 0, 1, 0});           // morph deltas: +1 in y, 96..132
+  f({0, 1});                                // times 132..140
+  f({0, 1});                                // weight keys 140..148
+  const auto count = [](const int n) { return n; };
+  mythos::json::Value j = {
+      {"asset", {{"version", "2.0"}}},
+      {"scene", 0},
+      {"scenes", {{{"nodes", {0, 1, 2, 3}}}}},
+      {"nodes",
+       {{{"name", "a"}},
+        {{"name", "b"}},
+        {{"name", "mesh_a"}, {"mesh", 0}, {"skin", 0}},
+        {{"name", "mesh_b"}, {"mesh", 1}, {"skin", 1}}}},
+      {"skins", {{{"joints", {0}}}, {{"joints", {1}}}}},
+      {"meshes",
+       {{{"weights", {0.0}},
+         {"primitives",
+          {{{"attributes",
+             {{"POSITION", 0}, {"JOINTS_0", 1}, {"WEIGHTS_0", 2}}},
+            {"targets", {{{"POSITION", 5}}}}}}}},
+        {{"primitives",
+          {{{"attributes",
+             {{"POSITION", 0}, {"JOINTS_0", 1}, {"WEIGHTS_0", 2}}}}}}}}},
+      {"animations",
+       {{{"name", "smile"},
+         {"samplers", {{{"input", 3}, {"output", 4}}}},
+         {"channels",
+          {{{"sampler", 0},
+            {"target", {{"node", 2}, {"path", "weights"}}}}}}}}},
+      {"accessors",
+       {{{"bufferView", 0},
+         {"componentType", 5126},
+         {"count", 3},
+         {"type", "VEC3"}},
+        {{"bufferView", 1},
+         {"componentType", 5121},
+         {"count", 3},
+         {"type", "VEC4"}},
+        {{"bufferView", 2},
+         {"componentType", 5126},
+         {"count", 3},
+         {"type", "VEC4"}},
+        {{"bufferView", 4},
+         {"componentType", 5126},
+         {"count", 2},
+         {"type", "SCALAR"}},
+        {{"bufferView", 5},
+         {"componentType", 5126},
+         {"count", 2},
+         {"type", "SCALAR"}},
+        {{"bufferView", 3},
+         {"componentType", 5126},
+         {"count", 3},
+         {"type", "VEC3"}}}},
+      {"bufferViews",
+       {{{"buffer", 0}, {"byteOffset", 0}, {"byteLength", 36}},
+        {{"buffer", 0}, {"byteOffset", 36}, {"byteLength", 12}},
+        {{"buffer", 0}, {"byteOffset", 48}, {"byteLength", 48}},
+        {{"buffer", 0}, {"byteOffset", 96}, {"byteLength", 36}},
+        {{"buffer", 0}, {"byteOffset", 132}, {"byteLength", 8}},
+        {{"buffer", 0}, {"byteOffset", 140}, {"byteLength", 8}}}},
+      {"buffers",
+       {{{"byteLength", count(static_cast<int>(bin.size()))},
+         {"uri", "data:application/octet-stream;base64," + Base64(bin)}}}}};
+  mythos::GltfModel m;
+  std::string error;
+  CHECK(mythos::ParseGltf(j.dump(), "", m, &error));
+  CHECK(error.empty());
+  // Two skins, one skeleton of both joints, each batch on its own joint.
+  CHECK_EQ(m.batches.size(), size_t{2});
+  CHECK_EQ(m.skeleton.Count(), 2);
+  CHECK(m.batches[0].skin[0].joints[0] != m.batches[1].skin[0].joints[0]);
+  // Morph targets: one on the first batch, none on the second.
+  CHECK_EQ(m.morphs.size(), size_t{2});
+  CHECK_EQ(m.morphs[0].targets.size(), size_t{1});
+  CHECK_EQ(m.morphs[0].targets[0].position.size(), size_t{9});
+  CHECK(m.morphs[1].Empty());
+  // The weights animation: a clip with no bone tracks and one morph track.
+  CHECK_EQ(m.morph_tracks.size(), size_t{1});
+  CHECK_EQ(m.clips.size(), size_t{1});
+  CHECK(m.clips[0].tracks.empty());
+  CHECK(std::fabs(m.clips[0].duration - 1.0) < 1e-9);
+  const auto half = m.morph_tracks[0].Sample(0.5);
+  CHECK_EQ(half.size(), size_t{1});
+  CHECK(std::fabs(half[0] - 0.5f) < 1e-6f);
+  CHECK(m.morph_tracks[0].Sample(9.0)[0] == 1.0f);
+  // Applying the weight moves each vertex up by it.
+  const mythos::Batch moved =
+      mythos::ApplyMorph(m.batches[0], m.morphs[0], {0.5f});
+  CHECK(std::fabs(moved.verts[0].py - (m.batches[0].verts[0].py + 0.5f)) <
+        1e-6f);
+  const mythos::Batch rest = mythos::ApplyMorph(m.batches[0], m.morphs[0], {});
+  CHECK(rest.verts[2].py == m.batches[0].verts[2].py);
+  CHECK(!moved.skin.empty());
 }
 
 TEST(reverb_send_bus_feeds_from_its_own_block) {
