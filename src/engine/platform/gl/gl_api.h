@@ -47,6 +47,7 @@ constexpr GLenum kDepthTest = 0x0B71;
 constexpr GLenum kBlend = 0x0BE2;
 constexpr GLenum kPolygonOffsetFill = 0x8037;
 constexpr GLenum kLequal = 0x0203;
+constexpr GLenum kEqual = 0x0202;
 constexpr GLenum kOne = 0x0001;
 constexpr GLenum kSrcAlpha = 0x0302;
 constexpr GLenum kOneMinusSrcAlpha = 0x0303;

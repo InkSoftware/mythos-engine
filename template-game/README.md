@@ -37,7 +37,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `--sun-shadow` | with `--outdoor`: the shadow of the sun or moon | `CameraState::sun_shadow` |
 | `--ssao` | ambient occlusion (also the Ambient occlusion setting) | `CameraState::ssao` |
 | `--mirror` | a mirror on a wall of the first room (with `--ssao-ambient` its picture has the occlusion too) | `CameraState::mirror` |
-| `--ssao-ambient` | ambient occlusion applied to the ambient term inside the world shader (a depth pre-pass that skips the lighting, so the geometry is drawn twice) | `CameraState::ssao_ambient` |
+| `--ssao-ambient` | ambient occlusion applied to the ambient term inside the world shader (a depth pre-pass that skips the lighting; the lit pass then tests depth `EQUAL`, so only its geometry is drawn twice, not the lighting) | `CameraState::ssao_ambient` |
 | `--lightmap` | `--baked` plus lightmaps on the walls, floors and ceilings (sharp shadows from the lamps; furniture and the guide keep the probes) | `BakeLightmap`, `UploadLightmap` |
 | `--baked` | the lamps baked into light probes instead of live lamps (re-baked at three heights when the level changes) | `BakeProbeStack`, `UploadProbes` |
 | `--reflections` | a reflection probe in each room, with the room's box for parallax correction (the toolbox and bucket are shiny; the two nearest blend as you cross between rooms) | `AddReflectionProbe` |

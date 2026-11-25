@@ -217,7 +217,7 @@ more than was built.
 - **Progress:** done as a post pass (`ssao.frag` at half size, a blur, multiplied in the composite, less on bright
   pixels), behind the Ambient occlusion setting (off by default; `CameraState::ssao`); the scene target's depth is now a
   texture, copied out of the multisampled target only while it is on. The template shows it with `--ssao`. Also applied
-  to the ambient term inside the world shader (`CameraState::ssao_ambient`, a depth pre-pass, `--ssao-ambient`), and in the mirror view with it.
+  to the ambient term inside the world shader (`CameraState::ssao_ambient`, a depth pre-pass the lit pass then tests `EQUAL` against, so it is lit once; `--ssao-ambient`), and in the mirror view with it.
 - **Where:** a half-resolution pass beside bloom, multiplied into the ambient
   term only. Needs a depth/normal copy of the multisampled target (resolve).
   Setting: off / on, off keeps pixel parity.
@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls, doorway jambs and stacked floors included, a `MYLM1` file) do not cover a doorway's lintel, window glass and frames or models (stacked floors, thin walls and doorway jambs are covered); `ssao_ambient` draws the geometry twice (the pre-pass skips the lighting); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
+- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls, doorway jambs and stacked floors included, a `MYLM1` file) do not cover a doorway's lintel, window glass and frames or models (stacked floors, thin walls and doorway jambs are covered); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets blend on the GPU (up to 8 per skinned batch, weights per instance; not instanced, and static batches cannot use it); only skinned mesh nodes are read.
 - **Audio:** nothing named.
 - **Checks:** the editor's panels have scripts (`tools/editor-scripts/`, `--script`) and so does the template game (`tools/game-scripts/`: Quit row, door, flag and music, the guide near the player); both need a display, so CI does not run them.

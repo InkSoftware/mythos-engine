@@ -1251,7 +1251,10 @@ void SceneRenderer::BindShadowCubes() {
 
 void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
   Enable(kDepthTest);
-  DepthFunc(kLequal);
+  // The second pass of ssao_ambient finds the depth the pre-pass left (the same
+  // vertices through the same program, so the same values): only the visible
+  // surface is lit, once.
+  DepthFunc(ao_world_ > 0.0f ? gl::kEqual : kLequal);
 
   world_program_.Use();
   const WorldUniforms& u = world_u_;
