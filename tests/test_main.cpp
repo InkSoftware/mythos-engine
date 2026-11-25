@@ -6037,6 +6037,33 @@ TEST(lightmap_bakes_shadows_and_finds_tiles_by_position) {
   CHECK(m.Sample(2.5, 0, 2.5, 0, 1, 0)[0] > m.Sample(1.5, 0, 1.5, 0, 1, 0)[0]);
 }
 
+TEST(far_geometry_drops_window_frames) {
+  mythos::Level l;
+  l.SetTiles(ThinLegend());
+  CHECK(l.Parse({"#####", "#...#", "##w##", "#...#", "#####"}));
+  mythos::ModelLibrary models;
+  const auto count = [](const mythos::SceneGeometry& g) {
+    size_t n = 0;
+    for (const auto& b : g.world) n += b.verts.size();
+    return n;
+  };
+  const mythos::SceneGeometry full =
+      mythos::BuildSceneGeometry(l, models, false);
+  const mythos::SceneGeometry far = mythos::BuildFarGeometry(l, models);
+  CHECK(count(far) < count(full));
+  const auto of = [](const mythos::SceneGeometry& g, const char* texture) {
+    size_t n = 0;
+    for (const auto& b : g.world)
+      if (b.texture == texture) n += b.verts.size();
+    return n;
+  };
+  CHECK(of(far, "glass") > 0);  // the pane stays
+  // The sill board and the mullions go (they share the texture "door" with
+  // the wall of this plain legend, so compare).
+  CHECK(of(far, "door") < of(full, "door"));
+  CHECK(far.decals.empty());
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

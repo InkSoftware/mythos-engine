@@ -118,8 +118,13 @@ SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
 
 // As above, with every vertex raised by `y` meters: one floor of a house (floor
 // index times kFloorPitch).
+// How much the mesher builds: `kFar` leaves out the small detail (a window's
+// sill board and mullions, decals) for a far level of detail.
+enum class GeometryDetail { kFull, kFar };
+
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
-                                 bool outdoor, float y);
+                                 bool outdoor, float y,
+                                 GeometryDetail detail = GeometryDetail::kFull);
 
 // Moves the batches of `from` onto `into`, joining the floors of a house into
 // one scene.

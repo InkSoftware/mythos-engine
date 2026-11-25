@@ -245,4 +245,12 @@ SimplifyStats SimplifyGeometry(SceneGeometry& geometry, const float column) {
   a.triangles_after += b.triangles_after;
   return a;
 }
+
+SceneGeometry BuildFarGeometry(const Level& level, const ModelLibrary& models,
+                               const bool outdoor, const float column) {
+  SceneGeometry g =
+      BuildSceneGeometry(level, models, outdoor, 0.0f, GeometryDetail::kFar);
+  SimplifyGeometry(g, column);
+  return g;
+}
 }

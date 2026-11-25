@@ -206,10 +206,10 @@ int main(const int argc, char** const argv) {
     if (world_lod > 0) {
       // The far set: boxes for the furniture, and the walls, floors and
       // ceilings joined into larger quads.
-      mythos::SceneGeometry far_world = mythos::BuildSceneGeometry(
-          game.level(), game.models().BoundingBoxes(), outdoor);
-      mythos::SimplifyGeometry(far_world);
-      renderer.UploadWorldLod(far_world, world_lod);
+      renderer.UploadWorldLod(
+          mythos::BuildFarGeometry(game.level(), game.models().BoundingBoxes(),
+                                   outdoor),
+          world_lod);
     }
   };
   upload_world();

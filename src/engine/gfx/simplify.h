@@ -30,6 +30,12 @@ SimplifyStats SimplifyBatches(std::vector<Batch>& batches, float column = 8.0f);
 
 // The world and the props of a scene geometry (not the decals).
 SimplifyStats SimplifyGeometry(SceneGeometry& geometry, float column = 8.0f);
+
+// The far set for `SceneRenderer::UploadWorldLod`: the level built with
+// `GeometryDetail::kFar` (no window frames, no decals) and then simplified.
+// Pass the library of cheaper models (`ModelLibrary::BoundingBoxes()`).
+SceneGeometry BuildFarGeometry(const Level& level, const ModelLibrary& models,
+                               bool outdoor = false, float column = 8.0f);
 }
 
 #endif

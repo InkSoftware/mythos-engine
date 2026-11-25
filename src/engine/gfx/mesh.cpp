@@ -209,8 +209,12 @@ void AppendModel(std::vector<Batch>& world, const Model& model,
 class SceneBuilder {
  public:
   // `level` must outlive the builder.
-  SceneBuilder(const Level& level, const bool outdoor)
-      : level_(level), tiles_(level.Tiles()), outdoor_(outdoor) {
+  SceneBuilder(const Level& level, const bool outdoor,
+               const GeometryDetail detail = GeometryDetail::kFull)
+      : level_(level),
+        tiles_(level.Tiles()),
+        outdoor_(outdoor),
+        far_(detail == GeometryDetail::kFar) {
     geometry_.world.reserve(32);
     geometry_.props.reserve(8);
   }
@@ -220,7 +224,7 @@ class SceneBuilder {
       for (int x = 0; x < level_.Width(); ++x) AddCell(x, y);
     }
     AddFurniture(models);
-    AddDecals();
+    if (!far_) AddDecals();  // a far set has no decals
     return std::move(geometry_);
   }
 
@@ -819,12 +823,15 @@ class SceneBuilder {
                 {.x = fx + hi, .y = kSill, .z = fz + 0.5f},
                 {.x = fx + hi, .y = kHead, .z = fz + 0.5f},
                 {.x = fx + lo, .y = kHead, .z = fz + 0.5f}, 0, 0, 1, 1, 1);
-        AddBox(wood, fx + lo, kSill, fz + a - 0.03f, fx + hi, kSill + 0.04f,
-               fz + b + 0.03f);
-        AddBox(wood, fx + 0.5f - 0.02f, kSill, fz + 0.5f - 0.03f,
-               fx + 0.5f + 0.02f, kHead, fz + 0.5f + 0.03f);
-        AddBox(wood, fx + lo, 0.5f * (kSill + kHead) - 0.02f, fz + 0.5f - 0.03f,
-               fx + hi, 0.5f * (kSill + kHead) + 0.02f, fz + 0.5f + 0.03f);
+        if (!far_) {
+          AddBox(wood, fx + lo, kSill, fz + a - 0.03f, fx + hi, kSill + 0.04f,
+                 fz + b + 0.03f);
+          AddBox(wood, fx + 0.5f - 0.02f, kSill, fz + 0.5f - 0.03f,
+                 fx + 0.5f + 0.02f, kHead, fz + 0.5f + 0.03f);
+          AddBox(wood, fx + lo, 0.5f * (kSill + kHead) - 0.02f,
+                 fz + 0.5f - 0.03f, fx + hi, 0.5f * (kSill + kHead) + 0.02f,
+                 fz + 0.5f + 0.03f);
+        }
       } else {
         AddBox(wall, fx + a, kSill, fz, fx + b, kHead, fz + lo);
         AddBox(wall, fx + a, kSill, fz + hi, fx + b, kHead, fz + 1);
@@ -832,12 +839,15 @@ class SceneBuilder {
                 {.x = fx + 0.5f, .y = kSill, .z = fz + hi},
                 {.x = fx + 0.5f, .y = kHead, .z = fz + hi},
                 {.x = fx + 0.5f, .y = kHead, .z = fz + lo}, 1, 0, 0, 1, 1);
-        AddBox(wood, fx + a - 0.03f, kSill, fz + lo, fx + b + 0.03f,
-               kSill + 0.04f, fz + hi);
-        AddBox(wood, fx + 0.5f - 0.03f, kSill, fz + 0.5f - 0.02f,
-               fx + 0.5f + 0.03f, kHead, fz + 0.5f + 0.02f);
-        AddBox(wood, fx + 0.5f - 0.03f, 0.5f * (kSill + kHead) - 0.02f, fz + lo,
-               fx + 0.5f + 0.03f, 0.5f * (kSill + kHead) + 0.02f, fz + hi);
+        if (!far_) {
+          AddBox(wood, fx + a - 0.03f, kSill, fz + lo, fx + b + 0.03f,
+                 kSill + 0.04f, fz + hi);
+          AddBox(wood, fx + 0.5f - 0.03f, kSill, fz + 0.5f - 0.02f,
+                 fx + 0.5f + 0.03f, kHead, fz + 0.5f + 0.02f);
+          AddBox(wood, fx + 0.5f - 0.03f, 0.5f * (kSill + kHead) - 0.02f,
+                 fz + lo, fx + 0.5f + 0.03f, 0.5f * (kSill + kHead) + 0.02f,
+                 fz + hi);
+        }
       }
     }
 
@@ -954,6 +964,7 @@ class SceneBuilder {
   const Level& level_;
   const TileSet& tiles_;
   bool outdoor_;
+  bool far_;  // less detail: no window frames, no decals
   SceneGeometry geometry_;
 };
 }
@@ -1051,8 +1062,9 @@ SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
 }
 
 SceneGeometry BuildSceneGeometry(const Level& level, const ModelLibrary& models,
-                                 const bool outdoor, const float y) {
-  SceneGeometry g = BuildSceneGeometry(level, models, outdoor);
+                                 const bool outdoor, const float y,
+                                 const GeometryDetail detail) {
+  SceneGeometry g = SceneBuilder(level, outdoor, detail).Build(models);
   if (y == 0.0f) return g;
   for (auto* part : {&g.world, &g.props, &g.decals})
     for (Batch& b : *part)

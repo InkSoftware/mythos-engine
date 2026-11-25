@@ -263,7 +263,7 @@ more than was built.
 - **Progress:** `gfx/lod.h` plans each pass's model instances: a distance cull (`ModelInstance::max_distance`), a far model
   swapped in beyond a distance (`SceneRenderer::SetModelLod`) and a sort by model. Shadow casters are never culled or
   swapped. GPU instancing: runs of static instances of one model draw as one instanced draw per batch (200 chairs:
-  13 draw calls instead of 212). Skinned models instance too (bones in a texture, `--clones N` in the template). `UploadWorldLod` draws a far version of the baked world (cheaper furniture, e.g. boxes) beyond a distance (`--lod D` in the template). Flat quads of the far set are joined (`SimplifyBatches`). Not done: simplifying the mesher's own detail (window frames, thin walls).
+  13 draw calls instead of 212). Skinned models instance too (bones in a texture, `--clones N` in the template). `UploadWorldLod` draws a far version of the baked world (cheaper furniture, e.g. boxes) beyond a distance (`--lod D` in the template). Flat quads of the far set are joined (`SimplifyBatches`). The far set also drops window frames (`BuildFarGeometry`).
 - Instanced draw for repeated props (same model, many matrices) and a
   distance LOD or cull per model. The 8-cell chunking already helps; this
   removes per-prop draw calls.
@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); simplifying the mesher's own detail (window frames, thin walls) for LOD (flat quads are joined: `SimplifyBatches`).
+- **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** glTF morph targets, several skins and PBR maps on skinned models;
   formations for the AI.
 - **Audio:** nothing named.
