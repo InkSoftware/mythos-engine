@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 #include <queue>
 #include <vector>
 
@@ -381,8 +382,8 @@ enum class Formation {
       }
       case Formation::kCircle: {
         const double radius =
-            std::max(spacing, spacing * n / (2 * 3.14159265358979));
-        const double angle = 2 * 3.14159265358979 * k / std::max(1.0, n);
+            std::max(spacing, spacing * n / (2 * std::numbers::pi));
+        const double angle = 2 * std::numbers::pi * k / std::max(1.0, n);
         slots.push_back(at(std::cos(angle) * radius, std::sin(angle) * radius));
         break;
       }
@@ -403,7 +404,7 @@ enum class Formation {
 // Needs as many slots as members; surplus slots stay empty.
 [[nodiscard]] inline std::vector<size_t> AssignSlots(
     const std::vector<Vec2>& members, const std::vector<Vec2>& slots) {
-  const size_t none = static_cast<size_t>(-1);
+  const auto none = static_cast<size_t>(-1);
   std::vector<size_t> result(members.size(), none);
   std::vector<bool> taken(slots.size(), false);
   for (size_t round = 0; round < std::min(members.size(), slots.size());
