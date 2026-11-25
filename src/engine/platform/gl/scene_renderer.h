@@ -9,9 +9,9 @@
 #include "engine/core/mat4.h"
 #include "engine/gfx/grade.h"
 #include "engine/gfx/lightmap.h"
-#include "engine/gfx/morph.h"
 #include "engine/gfx/lod.h"
 #include "engine/gfx/mesh.h"
+#include "engine/gfx/morph.h"
 #include "engine/gfx/particles.h"
 #include "engine/gfx/probes.h"
 #include "engine/gfx/render_stats.h"
@@ -345,6 +345,9 @@ class SceneRenderer {
   // ceilings: a surface on a baked tile takes its light from the map (and
   // not from the probes), by its position and normal. An empty one removes it.
   void UploadLightmap(const Lightmap& map);
+  // The lightmaps of stacked floors (all of one size; the extra floors beyond
+  // a different-sized one are left out): the shader picks the floor by y.
+  void UploadLightmap(const LightmapStack& stack);
 
   // Beyond `distance` metres from the eye an instance of `model` is drawn as
   // `far_model` (a cheaper upload of the same thing) in the main and mirror
@@ -531,8 +534,10 @@ class SceneRenderer {
   GlTexture probe_tex_;
   GlTexture lightmap_tex_;
   float lightmap_info_[4] = {0, 0, 0, 0};  // cells x, z, texels, wall rows
-  float probe_scale_[2] = {0, 0};          // 1 / extent in metres; 0 = none
-  int probe_count_ = 0;                    // heights uploaded
+  int lightmap_floors_ = 0;
+  float lightmap_pitch_ = 2.51f;
+  float probe_scale_[2] = {0, 0};  // 1 / extent in metres; 0 = none
+  int probe_count_ = 0;            // heights uploaded
   float probe_heights_[kMaxProbeHeights] = {};
   ModelLods no_lods_;  // always empty: shadow passes do not swap models
   std::vector<LodRequest> lod_requests_;

@@ -6793,6 +6793,69 @@ TEST(new_trigger_ids_skip_used_ones) {
   CHECK(mythos::editor::NewTriggerId(doc) == "trigger_4");
 }
 
+TEST(lightmap_stack_reads_the_floor_by_height) {
+  mythos::Level l;
+  CHECK(l.Parse({"#######", "#.....#", "#.....#", "#######"}));
+  mythos::ProbeLamp lit;  // lights the lower floor only
+  lit.x = 3.5;
+  lit.y = 1.8;
+  lit.z = 2.0;
+  lit.radius = 6;
+  mythos::LightmapOptions options;
+  options.texels_per_m = 4;
+  mythos::LightmapStack stack;
+  stack.floors.push_back(mythos::BakeLightmap(l, {lit}, options));
+  stack.floors.push_back(mythos::BakeLightmap(l, {}, options));  // dark floor
+  bool covered = false;
+  const float low = stack.Sample(3.5, 0.0, 2.0, 0, 1, 0, &covered)[0];
+  CHECK(covered && low > 0.1f);
+  // The upper floor's floor is a pitch up, and dark.
+  const double up = mythos::kFloorPitch;
+  const float high = stack.Sample(3.5, up, 2.0, 0, 1, 0, &covered)[0];
+  CHECK(covered && high < 1e-6f);
+  // The lower floor's ceiling (2.5, a hair under the next floor) is still the
+  // lower floor's; a wall at a height on the upper floor reads the upper one.
+  (void)stack.Sample(3.5, mythos::kWallHeight, 2.0, 0, -1, 0, &covered);
+  CHECK(covered);
+  CHECK(stack.Sample(1.0, up + 1.2, 2.0, 1, 0, 0, &covered)[0] < 1e-6f &&
+        covered);
+  CHECK(stack.Sample(1.0, 1.2, 2.0, 1, 0, 0, &covered)[0] > 0.0f && covered);
+  // Above the last floor, or below the first, nothing.
+  (void)stack.Sample(3.5, 2 * up + 0.5, 2.0, 0, 1, 0, &covered);
+  CHECK(!covered);
+  (void)stack.Sample(3.5, -1.0, 2.0, 0, 1, 0, &covered);
+  CHECK(!covered);
+}
+
+TEST(lightmap_covers_a_doorways_jambs) {
+  mythos::Level l;
+  auto tiles = std::make_shared<mythos::TileSet>();
+  (*tiles)['#'].solid = true;
+  (*tiles)['n'].door = mythos::DoorKind::kOpen;
+  l.SetTiles(tiles);
+  // A wall down column 4 with an open door in it at row 2.
+  CHECK(l.Parse(
+      {"#########", "#...#...#", "#...n...#", "#...#...#", "#########"}));
+  mythos::ProbeLamp lamp;
+  lamp.x = 2.5;
+  lamp.y = 1.8;
+  lamp.z = 2.5;
+  lamp.radius = 6;
+  mythos::LightmapOptions options;
+  options.texels_per_m = 4;
+  const mythos::Lightmap m = mythos::BakeLightmap(l, {lamp}, options);
+  bool covered = false;
+  // The doorway's passage is along x, its jambs at the cell's ends in z: the
+  // inner faces, on the planes 0.15 and 0.85 into the cell.
+  const auto near_jamb = m.Sample(4.5, 1.2, 2.15, 0, 0, 1, &covered);
+  CHECK(covered && near_jamb[0] > 0.0f);
+  const auto far_jamb = m.Sample(4.5, 1.2, 2.85, 0, 0, -1, &covered);
+  CHECK(covered && far_jamb[0] > 0.0f);
+  // A point between the planes is on neither.
+  (void)m.Sample(4.5, 1.2, 2.5, 0, 0, 1, &covered);
+  CHECK(!covered);
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

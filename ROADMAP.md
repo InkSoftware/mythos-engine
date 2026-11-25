@@ -319,7 +319,7 @@ The order the items were built in. All have a first version.
 
 Gaps named in the Progress lines, by area:
 
-- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls included, a `MYLM1` file) do not cover doorway frames, window glass and frames, models or stacked floors; `ssao_ambient` draws the geometry twice (the pre-pass skips the lighting); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
+- **Rendering:** lightmaps (`BakeLightmap`, per-cell tiles addressed by position, thin walls, doorway jambs and stacked floors included, a `MYLM1` file) do not cover a doorway's lintel, window glass and frames or models (stacked floors, thin walls and doorway jambs are covered); `ssao_ambient` draws the geometry twice (the pre-pass skips the lighting); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets blend on the GPU (up to 8 per skinned batch, weights per instance; not instanced, and static batches cannot use it); only skinned mesh nodes are read.
 - **Audio:** nothing named.
 - **Checks:** the editor's panels have scripts (`tools/editor-scripts/`, `--script`) and so does the template game (`tools/game-scripts/`: Quit row, door, flag and music, the guide near the player); both need a display, so CI does not run them.

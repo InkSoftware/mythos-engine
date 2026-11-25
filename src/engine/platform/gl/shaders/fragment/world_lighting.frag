@@ -35,6 +35,8 @@ uniform vec3 uEnvHalf;             // half the box of the room around it for par
 uniform sampler2DArray uLmTex;  // lightmaps: a layer a facing (+x -x +y -y +z -z), a tile per open cell
 uniform vec4 uLmInfo;           // cells x, cells z, texels a metre, rows of a wall tile
 uniform float uLmStrength;      // 0 = no lightmap
+uniform int uLmFloors;          // stacked floors in the layers (floor * 14 + layer)
+uniform float uLmPitch;         // their spacing in y
 uniform sampler2D uAoTex;      // screen-space occlusion of this frame (half size, from a depth pre-pass), read at the pixel
 uniform int uDepthOnly;        // 1: the depth pre-pass of ssao_ambient: only the depth (and the alpha test) matters
 uniform float uAoWorld;        // 0: not used; else its strength (the ambient term is multiplied by it)
@@ -323,6 +325,10 @@ void main() {
         // ceilings only: a point off the tile's plane, such as furniture, is not on one).
         float lmCov = 0.0;
         if (uLmStrength > 0.0) {
+            int lfl = int(floor((vWorld.y + 0.004) / uLmPitch));  // the floor this point is on
+            float ly = vWorld.y - float(lfl) * uLmPitch;           // its height above that floor
+            float lbase = float(lfl * 14);
+            bool lok = lfl >= 0 && lfl < uLmFloors;
             vec3 ag = abs(geo);
             int face = (ag.x >= ag.y && ag.x >= ag.z) ? (geo.x >= 0.0 ? 0 : 1)
                      : (ag.y >= ag.z ? (geo.y >= 0.0 ? 2 : 3) : (geo.z >= 0.0 ? 4 : 5));
@@ -332,37 +338,44 @@ void main() {
             float rows = uLmInfo.w;
             if (face < 2) {
                 plane = cell.x + float(face); along = vWorld.x;
-                tuv = vec2(vWorld.z - cell.y, vWorld.y / 2.5);
+                tuv = vec2(vWorld.z - cell.y, ly / 2.5);
             } else if (face < 4) {
-                plane = face == 2 ? 0.0 : 2.5; along = vWorld.y;
+                plane = face == 2 ? 0.0 : 2.5; along = ly;
                 tuv = vec2(vWorld.x - cell.x, vWorld.z - cell.y);
                 rows = uLmInfo.z;
             } else {
                 plane = cell.y + float(face - 4); along = vWorld.z;
-                tuv = vec2(vWorld.x - cell.x, vWorld.y / 2.5);
+                tuv = vec2(vWorld.x - cell.x, ly / 2.5);
             }
-            if (all(greaterThanEqual(cell, vec2(0.0))) && all(lessThan(cell, uLmInfo.xy)) &&
-                abs(along - plane) < 0.03 && vWorld.y > -0.03 && vWorld.y < 2.53) {
+            if (lok && all(greaterThanEqual(cell, vec2(0.0))) && all(lessThan(cell, uLmInfo.xy)) &&
+                abs(along - plane) < 0.03 && ly > -0.03 && ly < 2.53) {
                 vec2 slot = vec2(uLmInfo.z, uLmInfo.w);
                 vec2 t = clamp(tuv * vec2(uLmInfo.z, rows), vec2(0.5), vec2(uLmInfo.z, rows) - 0.5);
-                vec4 lm = texture(uLmTex, vec3((cell * slot + t) / (uLmInfo.xy * slot), float(face)));
+                vec4 lm = texture(uLmTex, vec3((cell * slot + t) / (uLmInfo.xy * slot), float(face) + lbase));
                 lmCov = step(0.5, lm.a);
                 light += uLmStrength * lm.rgb * lmCov;
             }
-            // A thin wall's face: layers 6 +x, 7 -x, 8 +z, 9 -z, in the cell the point is in, on the plane
-            // half the wall's thickness (0.1) either side of the middle.
-            if (lmCov < 0.5 && (face < 2 || face >= 4) && vWorld.y > -0.03 && vWorld.y < 2.53) {
+            // A face inside a cell, in the cell the point is in, on a plane at a fixed depth:
+            // layers 6 +x 0.6, 7 -x 0.4, 8 +z 0.6, 9 -z 0.4 (a thin wall), 10 +x 0.15, 11 -x 0.85,
+            // 12 +z 0.15, 13 -z 0.85 (a doorway's jambs).
+            if (lok && lmCov < 0.5 && (face < 2 || face >= 4) && ly > -0.03 && ly < 2.53) {
                 vec2 c2 = floor(vWorld.xz);
-                int tl = face < 2 ? (geo.x >= 0.0 ? 6 : 7) : (geo.z >= 0.0 ? 8 : 9);
-                float tplane = tl == 6 ? c2.x + 0.6 : tl == 7 ? c2.x + 0.4 : tl == 8 ? c2.y + 0.6 : c2.y + 0.4;
-                float talong = tl < 8 ? vWorld.x : vWorld.z;
-                if (all(greaterThanEqual(c2, vec2(0.0))) && all(lessThan(c2, uLmInfo.xy)) && abs(talong - tplane) < 0.03) {
-                    float tu = tl < 8 ? vWorld.z - c2.y : vWorld.x - c2.x;
-                    vec2 slot = vec2(uLmInfo.z, uLmInfo.w);
-                    vec2 t = clamp(vec2(tu, vWorld.y / 2.5) * slot, vec2(0.5), slot - 0.5);
-                    vec4 lm = texture(uLmTex, vec3((c2 * slot + t) / (uLmInfo.xy * slot), float(tl)));
-                    lmCov = step(0.5, lm.a);
-                    light += uLmStrength * lm.rgb * lmCov;
+                if (all(greaterThanEqual(c2, vec2(0.0))) && all(lessThan(c2, uLmInfo.xy))) {
+                    bool xs = face < 2;
+                    bool pos = xs ? geo.x >= 0.0 : geo.z >= 0.0;
+                    float talong = xs ? vWorld.x - c2.x : vWorld.z - c2.y;
+                    float tu = xs ? vWorld.z - c2.y : vWorld.x - c2.x;
+                    for (int k = 0; k < 2; ++k) {
+                        int tl = (xs ? 0 : 2) + (pos ? 0 : 1) + (k == 0 ? 6 : 10);
+                        float tat = k == 0 ? (pos ? 0.6 : 0.4) : (pos ? 0.15 : 0.85);
+                        if (lmCov < 0.5 && abs(talong - tat) < 0.03) {
+                            vec2 slot = vec2(uLmInfo.z, uLmInfo.w);
+                            vec2 t = clamp(vec2(tu, ly / 2.5) * slot, vec2(0.5), slot - 0.5);
+                            vec4 lm = texture(uLmTex, vec3((c2 * slot + t) / (uLmInfo.xy * slot), float(tl) + lbase));
+                            lmCov = step(0.5, lm.a);
+                            light += uLmStrength * lm.rgb * lmCov;
+                        }
+                    }
                 }
             }
         }

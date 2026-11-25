@@ -760,23 +760,44 @@ void SceneRenderer::UploadProbes(const ProbeStack& stack) {
 }
 
 void SceneRenderer::UploadLightmap(const Lightmap& map) {
+  LightmapStack one;
+  if (!map.Empty()) one.floors.push_back(map);
+  UploadLightmap(one);
+}
+
+void SceneRenderer::UploadLightmap(const LightmapStack& stack) {
   ++scene_revision_;
   lightmap_tex_.Reset();
   lightmap_info_[0] = lightmap_info_[1] = 0.0f;
-  if (map.Empty()) return;
+  lightmap_floors_ = 0;
+  if (stack.Empty()) return;
+  const Lightmap& first = stack.floors[0];
+  // The floors of one size, one after another as layers: floor * 10 + layer.
+  std::vector<float> rgba;
+  int floors = 0;
+  for (const Lightmap& m : stack.floors) {
+    if (m.cells_x != first.cells_x || m.cells_z != first.cells_z ||
+        m.texels != first.texels || m.wall_rows != first.wall_rows)
+      break;
+    rgba.insert(rgba.end(), m.rgba.begin(), m.rgba.end());
+    ++floors;
+  }
   lightmap_tex_.Create();
   BindTexture(gl::kTexture2DArray, lightmap_tex_.Id());
   gl::TexImage3D(gl::kTexture2DArray, 0, static_cast<gl::GLint>(gl::kRgba16f),
-                 map.Width(), map.Height(), kLightmapLayers, 0, gl::kRgba,
-                 kFloat, map.rgba.data());
+                 first.Width(), first.Height(), kLightmapLayers * floors, 0,
+                 gl::kRgba, kFloat, rgba.data());
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMinFilter, kLinear);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureMagFilter, kLinear);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureWrapS, kClampToEdge);
   gl::TexParameteri(gl::kTexture2DArray, gl::kTextureWrapT, kClampToEdge);
-  lightmap_info_[0] = static_cast<float>(map.cells_x);
-  lightmap_info_[1] = static_cast<float>(map.cells_z);
-  lightmap_info_[2] = static_cast<float>(map.texels);
-  lightmap_info_[3] = static_cast<float>(map.wall_rows);
+  lightmap_info_[0] = static_cast<float>(first.cells_x);
+  lightmap_info_[1] = static_cast<float>(first.cells_z);
+  lightmap_info_[2] = static_cast<float>(first.texels);
+  lightmap_info_[3] = static_cast<float>(first.wall_rows);
+  lightmap_floors_ = floors;
+  lightmap_pitch_ =
+      static_cast<float>(stack.pitch > 0 ? stack.pitch : kFloorPitch);
 }
 
 int SceneRenderer::AddReflectionProbe(const double x, const double y,
@@ -1268,6 +1289,8 @@ void SceneRenderer::DrawWorld(const CameraState& cam, const Frame& f) {
           "uLmStrength",
           lm ? static_cast<float>(std::min(cam.lightmap, 4.0)) : 0.0f);
       world_program_.Set("uLmTex", 16);
+      world_program_.Set("uLmFloors", lightmap_floors_);
+      world_program_.Set("uLmPitch", lightmap_pitch_);
       Uniform4f(world_program_.Uniform("uLmInfo"), lightmap_info_[0],
                 lightmap_info_[1], lightmap_info_[2], lightmap_info_[3]);
       ActiveTexture(kTexture0 + 16);

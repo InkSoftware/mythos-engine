@@ -23,10 +23,12 @@ namespace mythos {
 // cell's west side), -x (east side), +y (the floor), -y (the ceiling), +z
 // (north side), -z (south side).
 inline constexpr int kLightmapFaces = 6;
-// A thin wall's four faces get tiles of their own, as layers after the six:
-// +x (the plane at the cell's middle plus half the wall's thickness), -x, +z
-// and -z. The tile covers the whole cell along the wall.
-inline constexpr int kLightmapLayers = kLightmapFaces + 4;
+// Faces inside a cell get tiles of their own, as layers after the six, each
+// covering the whole cell along the plane: a thin wall's four faces (6 +x on
+// the plane 0.6 into the cell, 7 -x on 0.4, 8 +z on 0.6, 9 -z on 0.4) and a
+// doorway's inner jamb faces (10 +x on 0.15, 11 -x on 0.85, 12 +z on 0.15,
+// 13 -z on 0.85).
+inline constexpr int kLightmapLayers = kLightmapFaces + 8;
 
 struct LightmapOptions {
   // Texels a metre. Halved (down to 2) until the maps fit about 8 million
@@ -64,6 +66,23 @@ struct Lightmap {
 // line from the lamp to a point just off the surface is clear.
 Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
                       const LightmapOptions& options = {});
+
+// The lightmaps of a house of stacked floors (`kFloorPitch` apart in y, the
+// way `AppendSceneGeometry` joins them): one `Lightmap` a floor, each baked
+// from that floor's level with its lamps' heights taken from the floor (y
+// from 0), all of one size. `Sample` picks the floor by y and reads it at the
+// height above that floor.
+struct LightmapStack {
+  std::vector<Lightmap> floors;
+  double pitch = 0;  // kFloorPitch when 0
+
+  [[nodiscard]] bool Empty() const {
+    return floors.empty() || floors[0].Empty();
+  }
+  [[nodiscard]] std::array<float, 3> Sample(double x, double y, double z,
+                                            double nx, double ny, double nz,
+                                            bool* covered = nullptr) const;
+};
 
 // A lightmap as bytes for a file: the magic `MYLM1`, the cell counts, texels
 // and wall rows as 32-bit little-endian integers, then the layers as 16-bit

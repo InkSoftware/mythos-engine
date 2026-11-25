@@ -15,6 +15,22 @@ namespace {
 constexpr double kPlaneTolerance = 0.03;
 constexpr size_t kMaxTexels = 8000000;
 
+// The in-cell planes of layers 6..13: the axis (0 x, 2 z), the sign of the
+// normal and how far into the cell the plane is.
+struct PlaneLayer {
+  int axis;
+  double sign;
+  double at;
+};
+constexpr PlaneLayer kPlaneLayers[8] = {{0, 1, 0.5 + kThinWallThickness / 2},
+                                        {0, -1, 0.5 - kThinWallThickness / 2},
+                                        {2, 1, 0.5 + kThinWallThickness / 2},
+                                        {2, -1, 0.5 - kThinWallThickness / 2},
+                                        {0, 1, 0.15},
+                                        {0, -1, 0.85},
+                                        {2, 1, 0.15},
+                                        {2, -1, 0.85}};
+
 // The face a normal looks along, by its dominant axis.
 int FaceOf(const double nx, const double ny, const double nz) {
   const double ax = std::fabs(nx), ay = std::fabs(ny), az = std::fabs(nz);
@@ -106,29 +122,45 @@ std::array<float, 3> Lightmap::Sample(const double x, const double y,
       }
     }
   }
-  // A thin wall's face: in the cell the point is in, on the plane half the
-  // wall's thickness either side of the middle.
+  // A face inside a cell (a thin wall's, a doorway's jamb): in the cell the
+  // point is in, on a plane at a fixed depth into it.
   if (vertical) {
     const int tx = static_cast<int>(std::floor(x));
     const int tz = static_cast<int>(std::floor(z));
     if (tx < 0 || tz < 0 || tx >= cells_x || tz >= cells_z) return {0, 0, 0};
-    constexpr double kHalf = kThinWallThickness / 2.0;
-    const int layer = face < 2 ? (nx >= 0 ? 6 : 7) : (nz >= 0 ? 8 : 9);
-    const double plane = layer == 6   ? tx + 0.5 + kHalf
-                         : layer == 7 ? tx + 0.5 - kHalf
-                         : layer == 8 ? tz + 0.5 + kHalf
-                                      : tz + 0.5 - kHalf;
-    const double along = layer < 8 ? x : z;
-    if (std::fabs(along - plane) > kPlaneTolerance) return {0, 0, 0};
-    const double u = layer < 8 ? z - tz : x - tx;
-    const auto out =
-        TileSample(*this, layer, tx, tz, u, y / kWallHeight, wall_rows);
-    if (out[3] > 0.5f) {
-      if (covered != nullptr) *covered = true;
-      return {out[0], out[1], out[2]};
+    for (int layer = 6; layer < kLightmapLayers; ++layer) {
+      const PlaneLayer& pl = kPlaneLayers[layer - 6];
+      if (pl.sign * (pl.axis == 0 ? nx : nz) <= 0 ||
+          std::fabs(pl.axis == 0 ? nx : nz) < 0.5)
+        continue;
+      const double plane = (pl.axis == 0 ? tx : tz) + pl.at;
+      const double along = pl.axis == 0 ? x : z;
+      if (std::fabs(along - plane) > kPlaneTolerance) continue;
+      const double u = pl.axis == 0 ? z - tz : x - tx;
+      const auto out =
+          TileSample(*this, layer, tx, tz, u, y / kWallHeight, wall_rows);
+      if (out[3] > 0.5f) {
+        if (covered != nullptr) *covered = true;
+        return {out[0], out[1], out[2]};
+      }
     }
   }
   return {0, 0, 0};
+}
+
+std::array<float, 3> LightmapStack::Sample(const double x, const double y,
+                                           const double z, const double nx,
+                                           const double ny, const double nz,
+                                           bool* const covered) const {
+  if (covered != nullptr) *covered = false;
+  if (Empty()) return {0, 0, 0};
+  const double step = pitch > 0 ? pitch : kFloorPitch;
+  // The ceiling of a floor is a hair under the next floor's level.
+  const auto floor_index = static_cast<int64_t>(std::floor((y + 0.004) / step));
+  if (floor_index < 0 || std::cmp_greater_equal(floor_index, floors.size()))
+    return {0, 0, 0};
+  return floors[static_cast<size_t>(floor_index)].Sample(
+      x, y - static_cast<double>(floor_index) * step, z, nx, ny, nz, covered);
 }
 
 Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
@@ -215,27 +247,28 @@ Lightmap BakeLightmap(const Level& level, const std::vector<ProbeLamp>& lamps,
       }
     }
   }
-  // Thin walls: the four faces of each thin cell, along the whole cell.
-  constexpr double kHalf = kThinWallThickness / 2.0;
+  // Faces inside a cell: a thin wall's four, a doorway's four jamb planes,
+  // along the whole cell.
   for (int cz = 0; cz < m.cells_z; ++cz) {
     for (int cx = 0; cx < m.cells_x; ++cx) {
-      if (!level.Tiles().Thin(level.At(cx, cz))) continue;
+      const char glyph = level.At(cx, cz);
+      const bool thin = level.Tiles().Thin(glyph);
+      const bool door = level.Tiles().IsDoor(glyph);
+      if (!thin && !door) continue;
       for (int layer = 6; layer < kLightmapLayers; ++layer) {
-        const bool along_x = layer >= 8;  // the tile runs along x
-        const double n[3] = {layer == 6 ? 1.0 : (layer == 7 ? -1.0 : 0.0), 0.0,
-                             layer == 8 ? 1.0 : (layer == 9 ? -1.0 : 0.0)};
+        if ((layer < 10) != thin && (layer >= 10) != door) continue;
+        if (layer < 10 && !thin) continue;
+        if (layer >= 10 && !door) continue;
+        const PlaneLayer& pl = kPlaneLayers[layer - 6];
+        const bool along_x = pl.axis == 2;  // the tile runs along x
+        const double n[3] = {pl.axis == 0 ? pl.sign : 0.0, 0.0,
+                             pl.axis == 2 ? pl.sign : 0.0};
         for (int j = 0; j < m.wall_rows; ++j) {
           for (int i = 0; i < m.texels; ++i) {
             const double a = (i + 0.5) / m.texels;
             const double py = (j + 0.5) / m.wall_rows * kWallHeight;
-            double px = 0, pz = 0;
-            if (along_x) {
-              px = cx + a;
-              pz = cz + 0.5 + n[2] * kHalf;
-            } else {
-              px = cx + 0.5 + n[0] * kHalf;
-              pz = cz + a;
-            }
+            const double px = along_x ? cx + a : cx + pl.at;
+            const double pz = along_x ? cz + pl.at : cz + a;
             double r = options.ambient[0], g = options.ambient[1],
                    b = options.ambient[2];
             const double sx = px + n[0] * 0.05, sz = pz + n[2] * 0.05;
