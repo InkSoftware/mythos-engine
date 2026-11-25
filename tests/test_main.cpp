@@ -42,6 +42,7 @@
 #include "engine/data/save.h"
 #include "engine/data/translation.h"
 #include "engine/editor/adapter.h"
+#include "engine/editor/event_graph.h"
 #include "engine/editor/history.h"
 #include "engine/editor/level_doc.h"
 #include "engine/editor/prefab.h"
@@ -6461,6 +6462,91 @@ TEST(cutscene_keys_can_be_found_and_moved_for_a_timeline) {
   // After a drag past another key, SortCutscene restores the order.
   SortCutscene(scene);
   CHECK(scene.camera[0].time == 2.0 && scene.camera[1].time == 2.5);
+}
+
+TEST(event_graph_lays_out_chains_and_rewires_rules) {
+  using namespace mythos;
+  editor::LevelDoc doc;
+  std::string error;
+  CHECK(editor::ParseLevelDoc("[map]\n.....\n.....\n", &doc, &error));
+  Trigger door;
+  door.id = "door";
+  door.shape = TriggerShape::kCell;
+  door.event = TriggerEvent::kUse;
+  Trigger room = door;
+  room.id = "room";
+  room.event = TriggerEvent::kEnter;
+  room.cell_x = 2;
+  doc.triggers = {door, room};
+  // door -> open_gate (sets gate_open) -> greet (needs gate_open, sets met)
+  // -> loop back: a rule started by "met" that sets gate_open again.
+  EventRule open_gate;
+  open_gate.id = "open_gate";
+  open_gate.event = {EventKind::kTrigger, "door", "use", false};
+  open_gate.actions = {{"set_flag", "gate_open"}, {"message", "hello"}};
+  EventRule greet;
+  greet.id = "greet";
+  greet.event = {EventKind::kFlag, "gate_open", "", true};
+  greet.conditions = {{"not_rude", false}};
+  greet.actions = {{"set_flag", "met"}};
+  EventRule again;
+  again.id = "again";
+  again.event = {EventKind::kFlag, "met", "", true};
+  again.actions = {{"set_flag", "gate_open"}};
+  doc.rules = {open_gate, greet, again};
+  const editor::EventGraph g = editor::BuildEventGraph(doc);
+  const auto at = [&](editor::GraphNodeKind k, const char* id) {
+    return g.Find(k, id);
+  };
+  CHECK(at(editor::GraphNodeKind::kTrigger, "door") >= 0);
+  CHECK(at(editor::GraphNodeKind::kTrigger, "room") >=
+        0);  // no rule: still shown
+  CHECK(at(editor::GraphNodeKind::kFlag, "gate_open") >= 0);
+  CHECK(at(editor::GraphNodeKind::kFlag, "not_rude") >= 0);
+  CHECK_EQ(g.nodes[static_cast<size_t>(
+                       at(editor::GraphNodeKind::kRule, "open_gate"))]
+               .lines.size(),
+           size_t{2});
+  // A chain reads left to right: trigger, rule, flag, rule, flag.
+  const auto col = [&](editor::GraphNodeKind k, const char* id) {
+    return g.nodes[static_cast<size_t>(at(k, id))].column;
+  };
+  CHECK(col(editor::GraphNodeKind::kTrigger, "door") <
+        col(editor::GraphNodeKind::kRule, "open_gate"));
+  CHECK(col(editor::GraphNodeKind::kRule, "open_gate") <
+        col(editor::GraphNodeKind::kFlag, "gate_open"));
+  CHECK(col(editor::GraphNodeKind::kFlag, "gate_open") <
+        col(editor::GraphNodeKind::kRule, "greet"));
+  CHECK(col(editor::GraphNodeKind::kRule, "greet") <
+        col(editor::GraphNodeKind::kFlag, "met"));
+  // The loop back to gate_open does not run away.
+  CHECK(g.Columns() <= static_cast<int>(g.nodes.size()));
+  // Edges: a start, a condition and a set per link (the "message" action is
+  // only text).
+  int starts = 0, conditions = 0, sets = 0;
+  for (const auto& e : g.edges) {
+    starts += e.kind == editor::GraphEdgeKind::kStarts;
+    conditions += e.kind == editor::GraphEdgeKind::kCondition;
+    sets += e.kind == editor::GraphEdgeKind::kSets;
+  }
+  CHECK(starts == 3 && conditions == 1 && sets == 3);
+  // Rows in one column do not repeat.
+  for (size_t i = 0; i < g.nodes.size(); ++i)
+    for (size_t j = i + 1; j < g.nodes.size(); ++j)
+      CHECK(g.nodes[i].column != g.nodes[j].column ||
+            g.nodes[i].row != g.nodes[j].row);
+  // Rewiring: the room trigger now starts "greet" with the event it emits.
+  CHECK(editor::Connect(doc, editor::GraphNodeKind::kTrigger, "room", "greet"));
+  CHECK(doc.rules[1].event.kind == EventKind::kTrigger &&
+        doc.rules[1].event.id == "room" &&
+        doc.rules[1].event.detail == "enter");
+  CHECK(editor::Connect(doc, editor::GraphNodeKind::kFlag, "met", "greet"));
+  CHECK(doc.rules[1].event.kind == EventKind::kFlag &&
+        doc.rules[1].event.value);
+  CHECK(
+      !editor::Connect(doc, editor::GraphNodeKind::kTrigger, "nope", "greet"));
+  CHECK(!editor::Connect(doc, editor::GraphNodeKind::kTrigger, "room", "nope"));
+  CHECK(!editor::Connect(doc, editor::GraphNodeKind::kRule, "greet", "greet"));
 }
 
 }

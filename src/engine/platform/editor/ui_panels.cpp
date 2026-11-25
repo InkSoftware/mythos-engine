@@ -8,9 +8,11 @@
 #include <map>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include "engine/core/fileio.h"
+#include "engine/editor/event_graph.h"
 #include "engine/editor/prefab.h"
 #include "engine/platform/editor/editor_app.h"
 #include "imgui.h"
@@ -188,6 +190,7 @@ void EditorApp::Frame(const float dt) {
   if (show_console_) DrawConsole();
   if (show_problems_) DrawProblems();
   if (show_cutscene_) DrawCutscenes();
+  if (show_graph_) DrawEventGraph();
   DrawViewportWindow(dt);
   if (show_preview_) DrawPreviewWindow();
   if (show_demo_) ImGui::ShowDemoWindow(&show_demo_);
@@ -281,6 +284,7 @@ void EditorApp::DrawMenuBar() {
     ImGui::MenuItem("Console", nullptr, &show_console_);
     ImGui::MenuItem("Problems", nullptr, &show_problems_);
     ImGui::MenuItem("Cutscene", nullptr, &show_cutscene_);
+    ImGui::MenuItem("Event graph", nullptr, &show_graph_);
     ImGui::MenuItem("Game Preview", nullptr, &show_preview_);
     ImGui::Separator();
     if (ImGui::MenuItem("Frame level", "Home")) FrameLevel();
@@ -1118,6 +1122,177 @@ void EditorApp::DrawAssets() {
 // The cutscene editor: files in `assets/cutscenes`, their camera keys, cues,
 // value tracks and animation keys as tables, a button that takes a camera key
 // from the viewport, the problems, and Save. The format is world/cutscene.h's.
+// The level's triggers, rules and flags as a graph: columns from what starts a
+// chain to what it sets. Drag a node to move it (positions are kept for the
+// session), click a rule to edit it in the Rules section, and drag from the
+// dot on the right of a trigger, timer or flag onto a rule to make that the
+// event that starts it.
+void EditorApp::DrawEventGraph() {
+  if (!ImGui::Begin("Event graph", &show_graph_)) {
+    ImGui::End();
+    return;
+  }
+  LevelDoc* doc = project_.Level(level_);
+  if (doc == nullptr) {
+    ImGui::TextDisabled("No level open.");
+    ImGui::End();
+    return;
+  }
+  const EventGraph graph = BuildEventGraph(*doc);
+  if (ImGui::SmallButton("Reset layout")) graph_pos_.clear();
+  ImGui::SameLine();
+  ImGui::TextDisabled(
+      "%zu triggers, %zu rules. Drag a dot onto a rule to wire it; click a "
+      "rule to edit it.",
+      doc->triggers.size(), doc->rules.size());
+
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  ImVec2 avail = ImGui::GetContentRegionAvail();
+  avail.y = std::max(avail.y, 200.0f);
+  ImGui::InvisibleButton("##graph_canvas", avail,
+                         ImGuiButtonFlags_MouseButtonLeft);
+  ImDrawList* dl = ImGui::GetWindowDrawList();
+  dl->AddRectFilled(origin, {origin.x + avail.x, origin.y + avail.y},
+                    IM_COL32(24, 26, 32, 255));
+  dl->PushClipRect(origin, {origin.x + avail.x, origin.y + avail.y}, true);
+
+  constexpr float kW = 150.0f, kColumnGap = 70.0f, kRowGap = 14.0f,
+                  kPad = 12.0f, kLine = 13.0f, kHead = 22.0f;
+  const auto key_of = [](const GraphNode& n) {
+    return std::to_string(static_cast<int>(n.kind)) + ":" + n.id;
+  };
+  const auto height_of = [&](const GraphNode& n) {
+    return kHead + kLine * static_cast<float>(n.lines.size());
+  };
+  // The layout position of every node: column by column, rows stacked.
+  std::vector<ImVec2> pos(graph.nodes.size());
+  std::map<int, float> column_y;
+  for (size_t i = 0; i < graph.nodes.size(); ++i) {
+    const GraphNode& n = graph.nodes[i];
+    float& y = column_y[n.column];
+    pos[i] = {
+        origin.x + kPad + static_cast<float>(n.column) * (kW + kColumnGap),
+        origin.y + kPad + y};
+    y += height_of(n) + kRowGap;
+    if (const auto it = graph_pos_.find(key_of(n)); it != graph_pos_.end()) {
+      pos[i] = {origin.x + it->second[0], origin.y + it->second[1]};
+    }
+  }
+  const auto rect_min = [&](const size_t i) { return pos[i]; };
+  const auto rect_max = [&](const size_t i) {
+    return ImVec2{pos[i].x + kW, pos[i].y + height_of(graph.nodes[i])};
+  };
+  const auto out_pin = [&](const size_t i) {
+    return ImVec2{pos[i].x + kW, pos[i].y + kHead / 2};
+  };
+  const auto in_pin = [&](const size_t i) {
+    return ImVec2{pos[i].x, pos[i].y + kHead / 2};
+  };
+
+  // Wires first, under the nodes.
+  for (const GraphEdge& e : graph.edges) {
+    const ImU32 color =
+        e.kind == GraphEdgeKind::kSets        ? IM_COL32(120, 220, 130, 220)
+        : e.kind == GraphEdgeKind::kCondition ? IM_COL32(230, 120, 200, 220)
+                                              : IM_COL32(255, 200, 80, 220);
+    const ImVec2 a = out_pin(e.from), b = in_pin(e.to);
+    const float bend = std::max(30.0f, std::fabs(b.x - a.x) * 0.4f);
+    dl->AddBezierCubic(a, {a.x + bend, a.y}, {b.x - bend, b.y}, b, color, 1.6f);
+    if (!e.label.empty()) {
+      dl->AddText({(a.x + b.x) / 2 - 6, (a.y + b.y) / 2 - 14},
+                  IM_COL32(200, 200, 210, 255), e.label.c_str());
+    }
+  }
+
+  // Nodes: draggable, a rule selectable, and a dot to wire from.
+  const ImVec2 mouse = ImGui::GetIO().MousePos;
+  const bool mouse_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+  const bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+  const bool over_canvas = ImGui::IsItemHovered();
+  int wire_target = -1;
+  for (size_t i = 0; i < graph.nodes.size(); ++i) {
+    const GraphNode& n = graph.nodes[i];
+    const ImVec2 lo = rect_min(i), hi = rect_max(i);
+    const bool hovered = mouse.x >= lo.x && mouse.x <= hi.x &&
+                         mouse.y >= lo.y && mouse.y <= hi.y;
+    const bool selected = n.kind == GraphNodeKind::kRule && n.id == rule_sel_;
+    const ImU32 fill =
+        n.kind == GraphNodeKind::kTrigger ? IM_COL32(40, 70, 110, 255)
+        : n.kind == GraphNodeKind::kTimer ? IM_COL32(90, 70, 40, 255)
+        : n.kind == GraphNodeKind::kFlag  ? IM_COL32(70, 50, 80, 255)
+                                          : IM_COL32(40, 80, 55, 255);
+    dl->AddRectFilled(lo, hi, fill, 4.0f);
+    dl->AddRect(lo, hi,
+                selected  ? IM_COL32(255, 255, 255, 255)
+                : hovered ? IM_COL32(180, 180, 200, 255)
+                          : IM_COL32(90, 90, 110, 255),
+                4.0f, selected ? 2.5f : 1.0f);
+    const char* kind = n.kind == GraphNodeKind::kTrigger ? "trigger"
+                       : n.kind == GraphNodeKind::kTimer ? "timer"
+                       : n.kind == GraphNodeKind::kFlag  ? "flag"
+                                                         : "rule";
+    dl->AddText({lo.x + 6, lo.y + 4}, IM_COL32(235, 235, 240, 255),
+                (std::string(kind) + " " + n.id).c_str());
+    for (size_t l = 0; l < n.lines.size(); ++l) {
+      dl->AddText({lo.x + 10, lo.y + kHead + kLine * static_cast<float>(l) - 2},
+                  IM_COL32(190, 200, 190, 255), n.lines[l].c_str());
+    }
+    if (n.kind != GraphNodeKind::kRule) {
+      const ImVec2 pin = out_pin(i);
+      const bool pin_hot = (mouse.x - pin.x) * (mouse.x - pin.x) +
+                               (mouse.y - pin.y) * (mouse.y - pin.y) <
+                           64.0f;
+      dl->AddCircleFilled(pin, 5.0f,
+                          pin_hot || std::cmp_equal(graph_wire_, i)
+                              ? IM_COL32(255, 255, 255, 255)
+                              : IM_COL32(200, 200, 215, 255));
+      if (over_canvas && mouse_clicked && pin_hot) {
+        graph_wire_ = static_cast<int>(i);
+        graph_drag_.clear();
+        continue;
+      }
+    }
+    if (graph_wire_ >= 0 && n.kind == GraphNodeKind::kRule && hovered)
+      wire_target = static_cast<int>(i);
+    if (over_canvas && mouse_clicked && hovered && graph_wire_ < 0) {
+      graph_drag_ = key_of(n);
+      if (n.kind == GraphNodeKind::kRule) {
+        const auto rule = std::ranges::find_if(
+            doc->rules, [&](const EventRule& r) { return r.id == n.id; });
+        if (rule != doc->rules.end()) {
+          rule_sel_ = n.id;
+          rule_draft_ = *rule;
+        }
+      }
+    }
+    if (graph_drag_ == key_of(n) && mouse_down) {
+      const ImVec2 delta = ImGui::GetIO().MouseDelta;
+      graph_pos_[graph_drag_] = {lo.x + delta.x - origin.x,
+                                 lo.y + delta.y - origin.y};
+    }
+  }
+  if (graph_wire_ >= 0) {
+    const ImVec2 a = out_pin(static_cast<size_t>(graph_wire_));
+    dl->AddLine(a, mouse, IM_COL32(255, 255, 255, 200), 2.0f);
+    if (!mouse_down) {
+      const GraphNode& source = graph.nodes[static_cast<size_t>(graph_wire_)];
+      if (wire_target >= 0 &&
+          Connect(*doc, source.kind, source.id,
+                  graph.nodes[static_cast<size_t>(wire_target)].id)) {
+        project_.Touch(level_);
+        rule_sel_ = graph.nodes[static_cast<size_t>(wire_target)].id;
+        const auto rule = std::ranges::find_if(
+            doc->rules, [&](const EventRule& r) { return r.id == rule_sel_; });
+        if (rule != doc->rules.end()) rule_draft_ = *rule;
+      }
+      graph_wire_ = -1;
+    }
+  }
+  if (!mouse_down) graph_drag_.clear();
+  dl->PopClipRect();
+  ImGui::End();
+}
+
 void EditorApp::DrawCutscenes() {
   if (!ImGui::Begin("Cutscene", &show_cutscene_)) {
     ImGui::End();

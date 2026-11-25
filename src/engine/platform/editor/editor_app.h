@@ -1,6 +1,7 @@
 #ifndef MYTHOS_ENGINE_PLATFORM_EDITOR_EDITOR_APP_H_
 #define MYTHOS_ENGINE_PLATFORM_EDITOR_EDITOR_APP_H_
 
+#include <array>
 #include <deque>
 #include <future>
 #include <map>
@@ -225,6 +226,7 @@ class EditorApp {
   void DrawPrefabs(LevelDoc& doc);
 
   void DrawCutscenes();
+  void DrawEventGraph();
 
   // The Prefab tool: click a cell to place the prefab chosen in the
   // Inspector's Prefabs section there (R turns it).
@@ -280,6 +282,11 @@ class EditorApp {
   bool cut_loaded_ = false;
   // The timeline: where the playhead is, whether the viewport shows the
   // cutscene's camera there, and the camera to go back to.
+  // The event graph panel: where the player moved nodes (by kind and id), the
+  // node being dragged and the wire being drawn from a source node.
+  std::map<std::string, std::array<float, 2>> graph_pos_;
+  std::string graph_drag_;
+  int graph_wire_ = -1;
   float cut_scrub_ = 0.0f;
   KeyRef cut_drag_;  // the timeline key being dragged
   bool cut_dragging_ = false;
@@ -345,7 +352,7 @@ class EditorApp {
   bool show_levels_ = true, show_outliner_ = true, show_inspector_ = true,
        show_palette_ = true, show_assets_ = true, show_console_ = true,
        show_problems_ = true, show_preview_ = true, show_demo_ = false,
-       show_cutscene_ = false;
+       show_cutscene_ = false, show_graph_ = false;
   bool layout_reset_ = false, layout_built_ = false;
   int focus_viewport_ = 0, focus_preview_ = 0;
   bool preview_started_ = false;

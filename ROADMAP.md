@@ -97,7 +97,7 @@ more than was built.
 
 ## Phase 2: Game logic (makes the editor useful for designers)
 
-### 2.1 Triggers and event graph (M to L) - done (no visual graph)
+### 2.1 Triggers and event graph (M to L) - done (a first visual graph: View > Event graph)
 - **Progress:** `world/trigger.h` provides a headless, single-subject trigger
   runtime with box/cell volumes, ordered enter/exit/stay/use events and once
   flags. A headless event-rule runtime dispatches generic actions for trigger,
@@ -107,8 +107,8 @@ more than was built.
   callbacks. The editor can add, edit, delete and display trigger volumes;
   renaming a trigger rewrites the rules it drives and deleting it deletes them
   (`RenameTrigger`, `RemoveTrigger`). A Rules section in the Inspector adds,
-  edits (as a draft, applied when valid) and deletes rules. A visual graph
-  remains. Rule strings use a hex-encoded line
+  edits (as a draft, applied when valid) and deletes rules. An Event graph panel
+  (`editor/event_graph.h`) shows the triggers, rules and flags as a graph and rewires a rule's starting event by dragging. Rule strings use a hex-encoded line
   format (documented in `core/events.h`).
 - **Why:** UnityEvents and Blueprints. Today a game hand-writes every rule.
 - **Where:** `world/trigger.h` (box and cell trigger volumes: enter, exit,
@@ -322,7 +322,7 @@ Gaps named in the Progress lines, by area:
 - **Rendering:** lightmaps are done (`BakeLightmap`, per-cell tiles addressed by position; not for thin walls, doors, models or stacked floors, no file format yet); the far set joins flat quads (`SimplifyBatches`) and drops window frames and decals (`BuildFarGeometry`); thin walls are not simplified further.
 - **Animation and AI:** morph targets are applied on the CPU (a GPU path for many morphing models is not done), and only skinned mesh nodes are read.
 - **Audio:** nothing named.
-- **Editor:** a visual event graph.
+- **Editor:** the event graph panel only shows, selects and rewires a rule's starting event (no creating or deleting nodes by dragging, no editing conditions or actions in it, no saved node positions).
 - **Tools and data:** nothing named.
 
 ## Out of scope for now

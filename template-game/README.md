@@ -58,7 +58,7 @@ Each flag shows one engine feature. (zsh does not split a quoted string into wor
 | `assets/levels/hall.lamps`, `hall.probes` | the static lamps and the light probes the engine's `mythos_bake_probes` made from them (`--baked` loads the file; a ctest re-bakes it) |
 | `assets/data/` | `tiles.json` (the tile legend), `en.json` and `el.json` (strings, looked up with `Tr`) |
 | `assets/cutscenes/intro.cutscene` | the opening: a camera glide, a fade, a line of text, the guide's wave (`Game::StartCutscene`); the editor's View > Cutscene panel edits it |
-| `assets/prefabs/dining.prefab` | a prefab: a table, two chairs and a bowl in the level's own line format; the editor's Inspector > Prefabs saves and places them (a prefab may hold decals, triggers and rules, and be placed as a link that updates when the file changes) |
+| `assets/prefabs/dining.prefab` | a prefab: a table, two chairs and a bowl in the level's own line format; the editor's View > Event graph shows its triggers, rules and flags as a graph; the Inspector > Prefabs saves and places them (a prefab may hold decals, triggers and rules, and be placed as a link that updates when the file changes) |
 | `tests/game_test.cpp` | headless tests of the rules: loading, walls, a door and its trigger, the patrol and the wave, the intro and skipping it, saving, a prefab placed into the hall |
 
 The engine's own assets (models, textures, sounds, fonts, the character) are laid under this game's `assets/`; a file of
