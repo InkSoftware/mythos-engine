@@ -288,6 +288,15 @@ int RemoveTrigger(LevelDoc& doc, const std::string& id) {
   return static_cast<int>(before - doc.rules.size());
 }
 
+std::string NewTriggerId(const LevelDoc& doc) {
+  for (size_t n = 1;; ++n) {
+    std::string id = "trigger_" + std::to_string(n);
+    if (std::ranges::none_of(doc.triggers,
+                             [&](const Trigger& t) { return t.id == id; }))
+      return id;
+  }
+}
+
 std::string NewRuleId(const LevelDoc& doc) {
   for (size_t n = 1;; ++n) {
     const std::string id = "rule_" + std::to_string(n);

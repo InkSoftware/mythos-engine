@@ -105,6 +105,9 @@ int RemoveTrigger(LevelDoc& doc, const std::string& id);
 // A rule id not used yet, "rule_1", "rule_2", ...
 std::string NewRuleId(const LevelDoc& doc);
 
+// A trigger id not used yet, "trigger_1", "trigger_2", ...
+std::string NewTriggerId(const LevelDoc& doc);
+
 // Formats a number with at most four decimals and no trailing zeros, so saved
 // files stay stable and readable.
 std::string FormatNumber(double v);

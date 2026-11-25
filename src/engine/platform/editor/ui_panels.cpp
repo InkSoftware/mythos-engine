@@ -535,11 +535,7 @@ void EditorApp::DrawTriggers(LevelDoc& doc) {
     return;
   if (ImGui::SmallButton("Add trigger")) {
     Trigger t;
-    size_t suffix = 1;
-    do {
-      t.id = "trigger_" + std::to_string(suffix++);
-    } while (std::ranges::any_of(
-        doc.triggers, [&](const Trigger& other) { return other.id == t.id; }));
+    t.id = NewTriggerId(doc);
     t.shape = TriggerShape::kBox;
     t.min = {0, FloorY(), 0};
     t.max = {1, FloorY() + 2.5, 1};
@@ -1150,8 +1146,10 @@ std::string EditorApp::Summary() const {
   for (const CameraKey& k : cut_.camera) {
     cam_times += (cam_times.empty() ? "" : ",") + FormatNumber(k.time);
   }
-  return "level=" + level_ + " cam_times=" + cam_times + " conditions=" + std::to_string(conditions) +
-         " actions=" + std::to_string(actions) + " rules=" + std::to_string(doc->rules.size()) +
+  return "level=" + level_ + " cam_times=" + cam_times +
+         " conditions=" + std::to_string(conditions) +
+         " actions=" + std::to_string(actions) +
+         " rules=" + std::to_string(doc->rules.size()) +
          " triggers=" + std::to_string(doc->triggers.size()) +
          " links=" + std::to_string(doc->links.size()) +
          " furniture=" + std::to_string(doc->furniture.size()) +
@@ -1201,6 +1199,22 @@ void EditorApp::DrawEventGraph() {
     save_layout();
   }
   ImGui::SameLine();
+  if (ImGui::SmallButton("New trigger")) {
+    // A one-metre box at the floor's origin, to move in the viewport.
+    Trigger t;
+    t.id = NewTriggerId(*doc);
+    t.shape = TriggerShape::kBox;
+    t.min = {0, FloorY(), 0};
+    t.max = {1, FloorY() + 2.5, 1};
+    t.floor = project_.Info(level_).floor;
+    doc->triggers.push_back(t);
+    project_.Touch(level_);
+    trigger_sel_ = t.id;
+    trigger_draft_ = t;
+    graph_sel_ =
+        std::to_string(static_cast<int>(GraphNodeKind::kTrigger)) + ":" + t.id;
+  }
+  ImGui::SameLine();
   {
     // The selected trigger, timer or flag starts a new rule.
     const bool have = !graph_sel_.empty();
@@ -1227,7 +1241,9 @@ void EditorApp::DrawEventGraph() {
 
   const ImVec2 origin = ImGui::GetCursorScreenPos();
   ImVec2 avail = ImGui::GetContentRegionAvail();
-  avail.y = std::max(avail.y, 200.0f);
+  const bool editing_rule = std::ranges::any_of(
+      doc->rules, [&](const EventRule& r) { return r.id == rule_sel_; });
+  avail.y = std::max(avail.y - (editing_rule ? 150.0f : 0.0f), 200.0f);
   ImGui::InvisibleButton("##graph_canvas", avail,
                          ImGuiButtonFlags_MouseButtonLeft);
   ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1399,6 +1415,62 @@ void EditorApp::DrawEventGraph() {
     rule_sel_.clear();
   }
   dl->PopClipRect();
+
+  // The selected rule's conditions and actions, edited in place.
+  if (const auto rule = std::ranges::find_if(
+          doc->rules, [&](const EventRule& r) { return r.id == rule_sel_; });
+      rule != doc->rules.end()) {
+    bool changed = false;
+    ImGui::SeparatorText(("Rule " + rule->id).c_str());
+    for (size_t i = 0; i < rule->conditions.size(); ++i) {
+      EventCondition& c = rule->conditions[i];
+      ImGui::PushID(static_cast<int>(i));
+      ImGui::SetNextItemWidth(160);
+      changed |= InputStr("##flag", &c.flag);
+      ImGui::SameLine();
+      changed |= ImGui::Checkbox("must be on", &c.value);
+      ImGui::SameLine();
+      if (ImGui::SmallButton("x")) {
+        rule->conditions.erase(rule->conditions.begin() +
+                               static_cast<std::ptrdiff_t>(i));
+        changed = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::PopID();
+    }
+    if (ImGui::SmallButton("Add condition")) {
+      rule->conditions.push_back({"flag", true});
+      changed = true;
+    }
+    for (size_t i = 0; i < rule->actions.size(); ++i) {
+      EventAction& a = rule->actions[i];
+      ImGui::PushID(1000 + static_cast<int>(i));
+      ImGui::SetNextItemWidth(130);
+      changed |= InputStr("##type", &a.type);
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(300);
+      changed |= InputStr("##arg", &a.argument);
+      ImGui::SameLine();
+      if (ImGui::SmallButton("x")) {
+        rule->actions.erase(rule->actions.begin() +
+                            static_cast<std::ptrdiff_t>(i));
+        changed = true;
+        ImGui::PopID();
+        break;
+      }
+      ImGui::PopID();
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Add action")) {
+      rule->actions.push_back({"message", ""});
+      changed = true;
+    }
+    if (changed) {
+      project_.Touch(level_);
+      rule_draft_ = *rule;
+    }
+  }
   ImGui::End();
 }
 

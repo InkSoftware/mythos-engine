@@ -6778,6 +6778,21 @@ TEST(reflection_probe_blend_never_pops) {
   CHECK(worst < 0.1f);
 }
 
+TEST(new_trigger_ids_skip_used_ones) {
+  mythos::editor::LevelDoc doc;
+  CHECK(mythos::editor::NewTriggerId(doc) == "trigger_1");
+  mythos::Trigger a;
+  a.id = "trigger_1";
+  mythos::Trigger b;
+  b.id = "trigger_3";
+  doc.triggers = {a, b};
+  CHECK(mythos::editor::NewTriggerId(doc) == "trigger_2");
+  mythos::Trigger c;
+  c.id = "trigger_2";
+  doc.triggers.push_back(c);
+  CHECK(mythos::editor::NewTriggerId(doc) == "trigger_4");
+}
+
 }
 
 // Runs the registered tests whose name contains argv[1] (all by default);

@@ -323,7 +323,7 @@ Gaps named in the Progress lines, by area:
 - **Animation and AI:** morph targets blend on the GPU (up to 8 per skinned batch, weights per instance; not instanced, and static batches cannot use it); only skinned mesh nodes are read.
 - **Audio:** nothing named.
 - **Checks:** the editor's panels have scripts (`tools/editor-scripts/`, `--script`); the template game has no script driver (its Quit row, steering and music sync are unit-tested only).
-- **Editor:** the event graph panel edits a rule's starting event, conditions and `set_flag` actions and creates and deletes rules, but not other actions or triggers.
+- **Editor:** nothing named (the event graph creates triggers and rules and edits every condition and action).
 - **Tools and data:** nothing named.
 
 ## Out of scope for now

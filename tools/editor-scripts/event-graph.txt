@@ -19,7 +19,7 @@ frames 5
 click
 mouse 378 235
 click
-mouse 462 99
+mouse 547 99
 click
 frames 5
 expect rules=2
@@ -36,3 +36,19 @@ drag 908 135 608 150
 alt off
 frames 3
 expect conditions=0
+# New trigger (a box at the origin), then select the rule and add an action
+# from the rule editor under the graph.
+mouse 432 99
+frames 2
+click
+frames 3
+expect triggers=2
+mouse 610 150
+frames 2
+click
+frames 4
+mouse 818 417
+frames 2
+click
+frames 3
+expect actions=3
