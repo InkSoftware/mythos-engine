@@ -30,6 +30,10 @@ struct Placement {
   bool solid = true;
   // Optional unique id; RemovePlacement needs one.
   std::string id;
+  // A footprint (half sizes in metres along the piece's own x and z; 0 = the
+  // whole cell): a solid piece then blocks only that box of its cell
+  // (BoxBlocked). Passable stays a whole-cell test.
+  double half_x = 0, half_z = 0;
 };
 
 // A rectangular map of glyphs plus placements and decals. Revision() changes

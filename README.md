@@ -104,7 +104,7 @@ The engine gives mechanisms; a game gives meaning.
 
 - **Rules**: a class like `Game` that owns a `Level`, a `Player`, a `PlayerWalker`, `RoomDoors`, an
   `Interactor` and a `Progress`-derived state, and turns `Use` outcomes into text, sounds and plot.
-- **Data**: levels (`[map]` + `[furniture]` (a line may end with `offX offZ lift`), and `[decor]` for pieces that block nothing), a tile legend, props, sounds, translations.
+- **Data**: levels (`[map]` + `[furniture]` (a line may end with `offX offZ lift` and then `halfX halfZ`, the piece's footprint: only that box of its cell blocks movement, `Placement::half_x/half_z`; `Passable` stays whole-cell), and `[decor]` for pieces that block nothing), a tile legend, props, sounds, translations.
   The engine reads the shared formats for you: `LoadSoundBank`, `LoadTranslation`, `LoadAchievementDefs`,
   `LoadCredits`, `LoadPlayerParams`, `LoadFontFiles`, `ParseTileSet`.
 - **Settings**: `GameSettings` with its pages (`UpdateSettingsPage`), `DrawSettingsPage` (give it a `MenuTheme`),

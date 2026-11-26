@@ -22,6 +22,7 @@ struct Item {
   // The id of the prefab link that placed it (`[links]`; written as a trailing
   // `@id` token the game's loader ignores); empty for an ordinary item.
   std::string link;
+  double half_x = 0, half_z = 0;  // a solid piece's footprint (0: the cell)
 
   bool operator==(const Item&) const = default;
 };

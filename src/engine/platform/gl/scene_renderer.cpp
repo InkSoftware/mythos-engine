@@ -1433,6 +1433,10 @@ void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
   };
   blend_pass_ = false;
   draw_all();
+  // The decals and the blended pass sit a polygon offset in front of (or are
+  // not part of) the surface the ssao_ambient pre-pass left, so they cannot use
+  // its EQUAL depth test: they use LEQUAL and the test goes back after.
+  DepthFunc(kLequal);
   if (bind_normals_ && (!decals_.empty() || !cab_decals_.empty())) {
     Enable(kBlend);
     BlendFunc(kSrcAlpha, kOneMinusSrcAlpha);
@@ -1460,6 +1464,7 @@ void SceneRenderer::DrawScene(const CameraState& cam, const Frustum& cull,
     Disable(kBlend);
     blend_pass_ = false;
   }
+  DepthFunc(ao_world_ > 0.0f ? gl::kEqual : kLequal);
 }
 
 void SceneRenderer::DrawDoors(const CameraState& cam, const Frustum& cull,

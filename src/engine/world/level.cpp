@@ -285,6 +285,11 @@ bool Level::ParseText(const std::string& text, std::string* const error) {
       // Optional: the offsets from the cell centre and the lift, as decor has
       // them (a piece pushed against the wall behind it).
       fields >> placement.off_x >> placement.off_z >> placement.lift;
+      // Optional: the footprint's half sizes (see Placement); a solid piece
+      // then blocks only that box of its cell.
+      if (!(fields >> placement.half_x >> placement.half_z) ||
+          placement.half_x <= 0 || placement.half_z <= 0)
+        placement.half_x = placement.half_z = 0;
       furniture.push_back(placement);
     } else if (section == "[decor]") {
       std::istringstream fields(line);
@@ -416,6 +421,23 @@ bool Level::BoxBlocked(const double min_x, const double min_z,
       if (Passable(cx, cy)) continue;
       // Thin walls are the only blocked cells with sub-cell shape; anything
       // else blocks the whole cell.
+      if (InBounds(cx, cy) && solid_[static_cast<size_t>(cy) * w_ + cx] != 0 &&
+          !tiles_->Solid(At(cx, cy))) {
+        const Placement* p = FurnitureAt(cx, cy);
+        if (p && p->half_x > 0 &&
+            p->half_z > 0) {  // a footprint: only its box blocks
+          const bool turned =
+              std::fmod(std::fabs(p->yaw_deg) + 45.0, 180.0) >= 90.0;
+          const double hx = turned ? p->half_z : p->half_x;
+          const double hz = turned ? p->half_x : p->half_z;
+          const double cxm = cx + 0.5 + p->off_x, czm = cy + 0.5 + p->off_z;
+          if (min_x < cxm + hx && max_x > cxm - hx && min_z < czm + hz &&
+              max_z > czm - hz)
+            return true;
+          continue;
+        }
+        return true;
+      }
       if (!InBounds(cx, cy) || solid_[static_cast<size_t>(cy) * w_ + cx] != 0 ||
           !tiles_->Thin(At(cx, cy))) {
         return true;

@@ -365,6 +365,34 @@ TEST(FurnitureCanBePushedAgainstAWallWithOffsets) {
   CHECK(out.find("1 1 bed 0\n") != std::string::npos);  // none: not written
 }
 
+// A solid piece may carry a footprint (halfX halfZ after the lift): it then
+// blocks only that box of its cell, turned with the piece, while Passable stays
+// a whole-cell test. The editor's level document keeps the fields.
+TEST(AFurnitureFootprintBlocksOnlyItsBoxOfTheCell) {
+  Level l;
+  std::string err;
+  CHECK(
+      l.ParseText("[map]\n...\n...\n[furniture]\n1 0 stool 0 0 0 0 0.2 0.1\n"
+                  "1 1 stool 90 0 0 0 0.2 0.1\n",
+                  &err));
+  const Placement* a = l.FurnitureAt(1, 0);
+  CHECK(a && a->half_x == 0.2 && a->half_z == 0.1);
+  CHECK(!l.Passable(1, 0));  // the cell test is whole
+  CHECK(
+      l.BoxBlocked(1.4, 0.45, 1.6, 0.55));  // its box (x 1.3..1.7, z 0.4..0.6)
+  CHECK(!l.BoxBlocked(1.05, 0.05, 1.2, 0.2));  // a corner of the cell is free
+  CHECK(!l.BoxBlocked(1.4, 0.8, 1.6, 0.95));
+  CHECK(l.BoxBlocked(1.45, 1.35, 1.55, 1.65));  // turned 90: long along z
+  CHECK(!l.BoxBlocked(1.05, 1.45, 1.25, 1.55));
+  editor::LevelDoc doc;
+  CHECK(editor::ParseLevelDoc(
+      "[map]\n..\n..\n[furniture]\n0 0 stool 0 0 0 0 0.2 0.1\n[decor]\n", &doc,
+      &err));
+  CHECK(doc.furniture[0].half_x == 0.2 && doc.furniture[0].half_z == 0.1);
+  CHECK(editor::SerializeLevelDoc(doc).find("0 0 stool 0 0 0 0 0.2 0.1\n") !=
+        std::string::npos);
+}
+
 // [decor] lines are non-solid placements: they never block a cell, are not
 // found by FurnitureAt, and carry an optional offset and lift.
 TEST(ADecorSectionPlacesNonSolidPieces) {

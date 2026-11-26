@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <set>
 #include <sstream>
 
@@ -96,8 +97,17 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
         doc.decor.push_back(it);
       } else {
         ls >> it.off_x >> it.off_z >> it.lift;  // optional on furniture
-        if (std::string tag; ls >> tag && tag[0] == '@')
-          it.link = tag.substr(1);
+        // then optionally the footprint's half sizes, then a link tag
+        for (std::string tok; ls >> tok;) {
+          if (tok[0] == '@') {
+            it.link = tok.substr(1);
+          } else if (it.half_x == 0) {
+            it.half_x = std::strtod(tok.c_str(), nullptr);
+          } else if (it.half_z == 0) {
+            it.half_z = std::strtod(tok.c_str(), nullptr);
+          }
+        }
+        if (it.half_x <= 0 || it.half_z <= 0) it.half_x = it.half_z = 0;
         doc.furniture.push_back(it);
       }
     } else if (section == "[decals]") {
@@ -193,9 +203,12 @@ std::string SerializeLevelDoc(const LevelDoc& doc) {
     s += std::to_string(i.x) + " " + std::to_string(i.y) + " " + i.model + " " +
          FormatNumber(i.yaw);
     // Offsets when pushed against a wall, or always before a link tag.
-    if (i.off_x != 0 || i.off_z != 0 || i.lift != 0 || !i.link.empty())
+    if (i.off_x != 0 || i.off_z != 0 || i.lift != 0 || i.half_x > 0 ||
+        !i.link.empty())
       s += " " + FormatNumber(i.off_x) + " " + FormatNumber(i.off_z) + " " +
            FormatNumber(i.lift);
+    if (i.half_x > 0 && i.half_z > 0)
+      s += " " + FormatNumber(i.half_x) + " " + FormatNumber(i.half_z);
     if (!i.link.empty()) s += " @" + i.link;
     s += '\n';
   }
