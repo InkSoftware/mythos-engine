@@ -112,7 +112,7 @@ EventGraph BuildEventGraph(const LevelDoc& doc) {
   }
   // Rows: the order of appearance inside a column.
   std::map<int, int> next_row;
-  for (GraphNode& n : g.nodes) n.row = next_row[n.column]++;
+  for (GraphNode& node : g.nodes) node.row = next_row[node.column]++;
   return g;
 }
 

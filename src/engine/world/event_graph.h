@@ -72,6 +72,8 @@ class EventGraphRuntime {
         !std::isfinite(position.y) || !std::isfinite(position.z))
       return false;
     const Guard guard(busy_);
+    // A copy on purpose: the callback may change the original.
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     const Flags snapshot = flags;
     const Callback dispatch = callback;
     const Callback forward = [&dispatch](const EventAction& action) {
@@ -110,7 +112,11 @@ class EventGraphRuntime {
         (event.kind != EventKind::kFlag && event.kind != EventKind::kTimer))
       return false;
     const Guard guard(busy_);
+    // A copy on purpose: the callback may change the original.
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     const Event event_copy = event;
+    // A copy on purpose: the callback may change the original.
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
     const Flags snapshot = flags;
     const Callback dispatch = callback;
     return rules_.Dispatch(event_copy, snapshot, dispatch);

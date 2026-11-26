@@ -117,7 +117,7 @@ inline bool ReadCount(std::istream& in, size_t& count) {
   count = 0;
   for (const char c : token) {
     if (c < '0' || c > '9') return false;
-    const size_t digit = static_cast<size_t>(c - '0');
+    const auto digit = static_cast<size_t>(c - '0');
     if (count > (std::numeric_limits<size_t>::max() - digit) / 10) return false;
     count = count * 10 + digit;
   }

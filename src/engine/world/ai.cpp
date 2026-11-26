@@ -119,7 +119,6 @@ bool CanSee(const Level& level, const Sight& sight, const Vec2& target) {
   // Standing on the spot is seen.
   if (dist > 1e-9) {
     double diff = std::atan2(dy, dx) - sight.angle;
-    constexpr double kPi = std::numbers::pi;
     diff = std::remainder(diff, 2 * kPi);
     if (std::fabs(diff) > sight.fov / 2) return false;
   }

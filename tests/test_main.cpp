@@ -15,6 +15,7 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <queue>
 #include <set>
 #include <string>
@@ -977,10 +978,13 @@ TEST(EngineEventRulesPersistAndValidate) {
   EventRule parsed = flag;
   CHECK(!ParseEventRuleLine("not a rule", &parsed));
   CHECK(parsed == flag);
-  CHECK(!level.ParseText("[map]\n.\n[rules]\n" + line + "\n" + line + "\n",
-                         &error));
-  CHECK(!editor::ParseLevelDoc(
-      "[map]\n.\n[rules]\n" + line + "\n" + line + "\n", &loaded, &error));
+  const std::string rules_text = std::string("[map]\n.\n[rules]\n")
+                                     .append(line)
+                                     .append("\n")
+                                     .append(line)
+                                     .append("\n");
+  CHECK(!level.ParseText(rules_text, &error));
+  CHECK(!editor::ParseLevelDoc(rules_text, &loaded, &error));
   doc.rules.push_back(trigger);
   CHECK(editor::SerializeLevelDoc(doc).empty());
   doc.rules.pop_back();
@@ -1079,6 +1083,8 @@ TEST(EngineEventRulesDispatchAndValidate) {
   invalid.conditions = {{"", true}};
   CHECK(!runtime.Add(invalid));
   invalid.conditions.clear();
+  // An invalid kind, on purpose.
+  // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   invalid.event.kind = static_cast<EventKind>(99);
   CHECK(!runtime.Add(invalid));
 
@@ -2834,6 +2840,7 @@ TEST(grade_sanitize_clamps_and_replaces_nan) {
   g.lut_amount = 3.0f;
   g.tint[1] = -1.0f;
   // Invalid on purpose.
+  // An invalid kind, on purpose.
   // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
   g.tonemap = static_cast<mythos::Tonemap>(77);
   const mythos::ColorGrade s = mythos::Sanitize(g);
@@ -4006,7 +4013,7 @@ TEST(input_map_parses_and_prints_bindings) {
   CHECK(k && k->kind == mythos::BindKind::kKey && k->code == "W");
   const auto a = mythos::ParseBinding("axis:LeftX-");
   CHECK(a && a->code == "LeftX" && a->sign == -1);
-  CHECK(mythos::BindingToText(*a) == "axis:LeftX-");
+  if (a) CHECK(mythos::BindingToText(*a) == "axis:LeftX-");
   CHECK(!mythos::ParseBinding("axis:LeftX"));
   CHECK(!mythos::ParseBinding("bogus:W"));
   CHECK(!mythos::ParseBinding("key:"));
@@ -4125,7 +4132,7 @@ TEST(ai_sight_and_hearing) {
   eye.range = 6;
   CHECK(mythos::ai::CanSee(l, eye, {4.5, 3.5}));
   // Behind, out of range, and behind the wall.
-  eye.angle = 3.14159;
+  eye.angle = std::numbers::pi;
   CHECK(!mythos::ai::CanSee(l, eye, {4.5, 3.5}));
   eye.angle = 0;
   eye.range = 2;
@@ -4600,12 +4607,14 @@ TEST(sky_follows_the_day_and_matches_the_old_night) {
   // Wraps, and every direction is a unit vector.
   CHECK(mythos::SkyAt(25).light_color == mythos::SkyAt(1).light_color);
   CHECK(mythos::SkyAt(-1).light_color == mythos::SkyAt(23).light_color);
-  for (double h = 0; h < 24; h += 0.25) {
+  for (int step = 0; step < 96; ++step) {
+    const double h = step * 0.25;
     const auto d = mythos::SkyAt(h).light_dir;
     CHECK(std::fabs(d[0] * d[0] + d[1] * d[1] + d[2] * d[2] - 1.0f) < 1e-3f);
   }
   // Continuous: no frame-to-frame jump in light across the whole day.
-  for (double h = 0; h < 24; h += 0.01) {
+  for (int step = 0; step < 2400; ++step) {
+    const double h = step * 0.01;
     const auto a = mythos::SkyAt(h).light_color;
     const auto b = mythos::SkyAt(h + 0.01).light_color;
     for (size_t i = 0; i < 3; ++i) CHECK(std::fabs(a[i] - b[i]) < 0.05f);
@@ -5017,7 +5026,7 @@ TEST(reverb_adds_a_decaying_tail_and_does_nothing_when_off) {
     mythos::Reverb r;
     r.Prepare(kRate);
     r.Set(send, decay);
-    std::vector<float> block(2 * 480, 0.0f);
+    std::vector<float> block(size_t{2} * 480, 0.0f);
     tail_energy.clear();
     // An impulse in the first block, then silence, in 10 ms blocks.
     for (int b = 0; b < seconds_listened * 100; ++b) {
@@ -5055,7 +5064,7 @@ TEST(reverb_adds_a_decaying_tail_and_does_nothing_when_off) {
   mythos::Reverb r;
   r.Prepare(kRate);
   r.Set(1.0, 10.0);
-  std::vector<float> noise(2 * 480);
+  std::vector<float> noise(size_t{2} * 480);
   uint32_t seed = 1;
   for (int b = 0; b < 300; ++b) {
     for (float& v : noise) {
@@ -5125,7 +5134,8 @@ TEST(probes_bake_light_with_walls_and_sample_smoothly) {
   // wall's face is not black.
   CHECK(g.Sample(4.1, 1.5)[0] > 0.0f);
   // Sampling is continuous: no jump between close points.
-  for (double x = 1.1; x < 3.9; x += 0.05) {
+  for (int i = 0; i < 56; ++i) {
+    const double x = 1.1 + i * 0.05;
     CHECK(std::fabs(g.Sample(x, 1.5)[0] - g.Sample(x + 0.05, 1.5)[0]) < 0.1f);
   }
   CHECK(mythos::ProbeGrid{}.Sample(1, 1)[0] == 0.0f);
@@ -5489,7 +5499,7 @@ TEST(settings_keep_the_key_bindings_on_one_line) {
   GameSettings old;
   ApplyKeyValues(old, {{"filmGrain", "0"}});
   CHECK(old.bindings.empty());
-  s.bindings = "{\"forward\":[\"key:I\"]}";
+  s.bindings = R"({"forward":["key:I"]})";
   GameSettings back;
   ApplyKeyValues(back, ToKeyValues(s));
   CHECK(back.bindings == s.bindings);
@@ -5910,7 +5920,7 @@ TEST(reverb_send_bus_feeds_from_its_own_block) {
   mythos::Reverb r;
   r.Prepare(kRate);
   r.Set(0.5, 1.0);
-  std::vector<float> dry(2 * 480, 0.0f), bus(2 * 480, 0.0f);
+  std::vector<float> dry(size_t{2} * 480, 0.0f), bus(size_t{2} * 480, 0.0f);
   dry[0] = dry[1] = 1.0f;  // a loud dry impulse, but nothing sent to the reverb
   r.ProcessSend(bus.data(), dry.data(), 480);
   CHECK_EQ(dry[0], 1.0f);  // the dry sound is as it was
@@ -6053,7 +6063,7 @@ TEST(probes_are_ambient_cubes_with_direction) {
   mythos::ProbeGrid old;
   CHECK(mythos::ParseProbes("probes 0.5 2 1\n0.5 0.25 0.125 1 2 3\n", &old,
                             &error));
-  CHECK(old.rgb.size() == 2 * 1 * 6 * 3);
+  CHECK(old.rgb.size() == size_t{2} * 1 * 6 * 3);
   CHECK(old.Face(0, 0, 3)[1] == 0.25f && old.Face(1, 0, 5)[2] == 3.0f);
   CHECK(!mythos::ParseProbes("probes6 0.5 1 1\n1 2 3\n", &old, &error));
 }
@@ -6580,9 +6590,9 @@ TEST(event_graph_lays_out_chains_and_rewires_rules) {
 TEST(lightmap_is_continuous_across_tiles_and_round_trips) {
   mythos::Level l;
   std::vector<std::string> rows;
-  rows.push_back(std::string(14, '#'));
+  rows.emplace_back(14, '#');
   for (int i = 0; i < 12; ++i) rows.push_back("#" + std::string(12, '.') + "#");
-  rows.push_back(std::string(14, '#'));
+  rows.emplace_back(14, '#');
   CHECK(l.Parse(rows));
   mythos::ProbeLamp lamp;
   lamp.x = 7.0;
@@ -6595,12 +6605,14 @@ TEST(lightmap_is_continuous_across_tiles_and_round_trips) {
   // Across a cell boundary the floor changes by about a texel's worth, not a
   // jump (the tiles are clamped to texel centres, so nothing bleeds).
   float worst_floor = 0, worst_wall = 0;
-  for (double x = 2.0; x < 12.0; x += 1.0) {
+  for (int xi = 2; xi < 12; ++xi) {
+    const double x = xi;
     const float a = m.Sample(x - 0.03, 0, 5.5, 0, 1, 0)[0];
     const float b = m.Sample(x + 0.03, 0, 5.5, 0, 1, 0)[0];
     worst_floor = std::max(worst_floor, std::fabs(a - b));
   }
-  for (double z = 2.0; z < 12.0; z += 1.0) {  // the west wall, face +x
+  for (int zi = 2; zi < 12; ++zi) {
+    const double z = zi;  // the west wall, face +x
     const float a = m.Sample(1.0, 1.2, z - 0.03, 1, 0, 0)[0];
     const float b = m.Sample(1.0, 1.2, z + 0.03, 1, 0, 0)[0];
     worst_wall = std::max(worst_wall, std::fabs(a - b));
@@ -6788,12 +6800,15 @@ TEST(reflection_probe_blend_never_pops) {
     return w;
   };
   float worst = 0;
-  for (float x = -2; x < 18; x += 0.02f) {
-    for (float z = -2; z < 12; z += 0.5f) {
+  for (int xi = 0; xi < 1000; ++xi) {
+    const float x = -2 + static_cast<float>(xi) * 0.02f;
+    for (int zi = 0; zi < 28; ++zi) {
+      const float z = -2 + static_cast<float>(zi) * 0.5f;
       // Three probes nearly as far as each other (the middle of the triangle)
       // are the one place two weights cannot settle: the blend there swings
       // by the tiny differences, so leave that neighbourhood out.
       std::vector<float> d;
+      d.reserve(tri.size());
       for (const P& p : tri) d.push_back(std::hypot(p[0] - x, p[2] - z));
       std::ranges::sort(d);
       if (d[2] - d[0] < 0.6f) continue;

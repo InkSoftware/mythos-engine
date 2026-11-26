@@ -322,8 +322,8 @@ class SceneBuilder {
     Batch batch;
     batch.texture = d.texture;
     const auto push = [&](const DecalPoint& p) {
-      const float along = static_cast<float>(0.5 + sign * p.x);
-      const float y = static_cast<float>(kWallHeight / 2 + p.y);
+      const auto along = static_cast<float>(0.5 + sign * p.x);
+      const auto y = static_cast<float>(kWallHeight / 2 + p.y);
       const P3 pos = horizontal ? P3{d.x + along, y, d.y + 0.5f}
                                 : P3{d.x + 0.5f, y, d.y + along};
       PushVertex(batch, pos, normal.x, normal.y, normal.z,
@@ -332,11 +332,12 @@ class SceneBuilder {
     for (size_t i = 1; i + 1 < poly.size(); ++i) {
       const DecalPoint& a = poly[0];
       const DecalPoint& b = poly[i];
-      const DecalPoint& c = poly[i + 1];
-      if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
+      const DecalPoint& third = poly[i + 1];
+      if ((b.x - a.x) * (third.y - a.y) == (b.y - a.y) * (third.x - a.x))
+        continue;
       push(a);
       push(b);
-      push(c);
+      push(third);
     }
     if (!batch.verts.empty()) geometry_.decals.push_back(std::move(batch));
   }
@@ -470,8 +471,8 @@ class SceneBuilder {
           regions = std::move(remaining);
         }
       const auto push = [&](const Point& p) {
-        const float along = static_cast<float>(0.5 + sign * p.x);
-        const float y = static_cast<float>(kWallHeight / 2 + p.y);
+        const auto along = static_cast<float>(0.5 + sign * p.x);
+        const auto y = static_cast<float>(kWallHeight / 2 + p.y);
         const P3 pos = horizontal ? P3{d.x + along, y, d.y + plane}
                                   : P3{d.x + plane, y, d.y + along};
         PushVertex(batch, pos, normal.x, normal.y, normal.z,
@@ -486,11 +487,12 @@ class SceneBuilder {
         for (size_t i = 1; i + 1 < poly.size(); ++i) {
           const Point& a = poly[0];
           const Point& b = poly[i];
-          const Point& c = poly[i + 1];
-          if ((b.x - a.x) * (c.y - a.y) == (b.y - a.y) * (c.x - a.x)) continue;
+          const Point& third = poly[i + 1];
+          if ((b.x - a.x) * (third.y - a.y) == (b.y - a.y) * (third.x - a.x))
+            continue;
           push(a);
           push(b);
-          push(c);
+          push(third);
         }
       }
     }
@@ -545,7 +547,7 @@ class SceneBuilder {
             tiles_.IsDoor(receiver) || !WallFaceOpen(nx, ny, d.x, d.y))
           continue;
       }
-      const float x = static_cast<float>(d.x), z = static_cast<float>(d.y);
+      const auto x = static_cast<float>(d.x), z = static_cast<float>(d.y);
       P3 center{}, u{}, v{}, normal{};
       switch (d.face) {
         case DecalFace::kNorth:
@@ -615,7 +617,7 @@ class SceneBuilder {
       Batch batch;
       batch.texture = d.texture;
       const auto push = [&](const DecalPoint& p) {
-        const float du = static_cast<float>(p.x), dv = static_cast<float>(p.y);
+        const auto du = static_cast<float>(p.x), dv = static_cast<float>(p.y);
         PushVertex(
             batch,
             {center.x + u.x * du + v.x * dv, center.y + u.y * du + v.y * dv,
@@ -1048,8 +1050,12 @@ std::optional<Batch> BuildModelDecal(const Placement& placement,
     const auto& a = vertices[i];
     const auto& q = vertices[i + 1];
     const auto& r = vertices[i + 2];
-    const Vec ab{double(q.px) - a.px, double(q.py) - a.py, double(q.pz) - a.pz};
-    const Vec ac{double(r.px) - a.px, double(r.py) - a.py, double(r.pz) - a.pz};
+    const Vec ab{static_cast<double>(q.px) - a.px,
+                 static_cast<double>(q.py) - a.py,
+                 static_cast<double>(q.pz) - a.pz};
+    const Vec ac{static_cast<double>(r.px) - a.px,
+                 static_cast<double>(r.py) - a.py,
+                 static_cast<double>(r.pz) - a.pz};
     const Vec area = cross(ab, ac);
     if (dot(area, area) == 0) return std::nullopt;
   }

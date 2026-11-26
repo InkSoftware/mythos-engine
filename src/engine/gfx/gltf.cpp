@@ -345,10 +345,10 @@ void Build(const Doc& doc, GltfModel& out) {
   std::vector<Bone> bones;
   std::map<int, int> bone_of_node;
   if (have_ancestors) {
-    Bone root;
-    root.name = "armature";
-    root.bind = FromMatrix(ancestors);
-    bones.push_back(root);
+    Bone armature_bone;
+    armature_bone.name = "armature";
+    armature_bone.bind = FromMatrix(ancestors);
+    bones.push_back(armature_bone);
   }
   std::vector<bool> placed(joint_nodes.size(), false);
   size_t remaining = joint_nodes.size();

@@ -136,19 +136,19 @@ bool ParseLevelDoc(const std::string& text, LevelDoc* const out,
       const size_t sp = line.find(' ');
       if (sp == std::string::npos) return fail("bad link base line: " + line);
       const std::string id = line.substr(0, sp);
-      std::string text;
+      std::string base_text;
       for (size_t i = sp + 1; i < line.size(); ++i) {
         if (line[i] == '\\' && i + 1 < line.size()) {
           ++i;
-          text += line[i] == 'n' ? '\n' : line[i];
+          base_text += line[i] == 'n' ? '\n' : line[i];
         } else {
-          text += line[i];
+          base_text += line[i];
         }
       }
       const auto link = std::ranges::find_if(
           doc.links, [&](const PrefabLink& l) { return l.id == id; });
       if (link == doc.links.end()) return fail("a base for no link: " + id);
-      link->base = text;
+      link->base = base_text;
     } else if (section == "[link_decals]") {
       // `<index into [decals]> <link id>`: which decals a link placed.
       std::istringstream ls(line);

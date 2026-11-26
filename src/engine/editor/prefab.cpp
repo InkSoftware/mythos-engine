@@ -298,7 +298,7 @@ Prefab Rotated(const Prefab& prefab, const int quarter_turns) {
     for (Item& i : next.furniture) i = Turned(i, p.height);
     for (Item& i : next.decor) i = Turned(i, p.height);
     for (Decal& d : next.decals) d = TurnedDecal(d, p.height);
-    for (Trigger& t : next.triggers) t = TurnedTrigger(t, p.height);
+    for (Trigger& trig : next.triggers) trig = TurnedTrigger(trig, p.height);
     p = std::move(next);
   }
   return p;

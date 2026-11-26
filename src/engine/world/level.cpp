@@ -46,8 +46,8 @@ bool ValidDecal(const Decal& d) {
       d.face == DecalFace::kGlassNorth || d.face == DecalFace::kGlassSouth ||
       d.face == DecalFace::kGlassWest || d.face == DecalFace::kGlassEast;
   return face && !d.texture.empty() &&
-         std::none_of(d.texture.begin(), d.texture.end(),
-                      [](unsigned char c) { return std::isspace(c) != 0; }) &&
+         std::ranges::none_of(
+             d.texture, [](unsigned char c) { return std::isspace(c) != 0; }) &&
          std::isfinite(d.offset_u) && std::isfinite(d.offset_v) &&
          std::isfinite(d.width) && d.width > 0 && std::isfinite(d.height) &&
          d.height > 0 && std::isfinite(d.rotation);
@@ -100,6 +100,8 @@ bool ParseDecalLine(const std::string& line, Decal* const out) {
 
 std::string SerializeDecalLine(const Decal& d) {
   if (!ValidDecal(d)) return {};
+  // A safe value for an enum outside its range.
+  // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
   const char* face = "";
   switch (d.face) {
     case DecalFace::kNorth:
@@ -192,10 +194,12 @@ bool ParseTriggerLine(const std::string& line, Trigger* const out) {
 
 std::string SerializeTriggerLine(const Trigger& t) {
   if (!ValidTrigger(t) || t.id.front() == '[' || t.id.front() == ';' ||
-      std::any_of(t.id.begin(), t.id.end(), [](unsigned char c) {
+      std::ranges::any_of(t.id, [](unsigned char c) {
         return std::isspace(c) != 0 || std::iscntrl(c) != 0;
       }))
     return {};
+  // A safe value for an enum outside its range.
+  // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
   const char* event = "";
   switch (t.event) {
     case TriggerEvent::kEnter:
