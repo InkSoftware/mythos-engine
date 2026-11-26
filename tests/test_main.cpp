@@ -1928,7 +1928,8 @@ TEST(RuntimeSettingsRoundTripThroughKeyValues) {
   CHECK_EQ(b.anti_alias, 4);
   CHECK_EQ(b.shadows, 5);
   CHECK_EQ(b.materials, 1);
-  CHECK_EQ(GameSettings{}.materials, 2);
+  const GameSettings defaults;
+  CHECK_EQ(defaults.materials, 2);
   CHECK(b.motion_blur == 4 && b.camera_effect && !b.visual_fx && !b.vsync);
   {
     GameSettings old;
