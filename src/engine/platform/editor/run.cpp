@@ -145,9 +145,11 @@ struct Script {
   };
   std::vector<Step> steps;
   size_t next = 0;
-  int wait = 0;  // frames left before the next step
+  int wait = 0;                            // frames left before the next step
   std::vector<std::pair<int, int>> queue;  // pending mouse moves for a drag
-  bool done() const { return next >= steps.size() && queue.empty() && wait <= 0; }
+  bool done() const {
+    return next >= steps.size() && queue.empty() && wait <= 0;
+  }
 
   bool Load(const std::string& text) {
     std::istringstream in(text);
@@ -264,9 +266,10 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
   io.ConfigFlags |=
       ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_DockingEnable;
   static std::string ini =
-      shot.empty() && !scripted ? mythos::PrefFilePath(adapter->PrefsOrg(),
-                                          adapter->PrefsApp(), "layout.ini")
-                   : "";
+      shot.empty() && !scripted
+          ? mythos::PrefFilePath(adapter->PrefsOrg(), adapter->PrefsApp(),
+                                 "layout.ini")
+          : "";
   io.IniFilename = ini.empty() ? nullptr : ini.c_str();
   float scale =
       SDL_GetDisplayContentScale(SDL_GetDisplayForWindow(window.Sdl()));
@@ -303,8 +306,8 @@ int RunEditor(const int argc, char** const argv, const EditorConfig& config) {
       float mouse_x = 0, mouse_y = 0;
       Uint64 last = SDL_GetPerformanceCounter();
       int settle = 0;
-      for (int frame = 0; !app.WantsQuit() && exit_code == 0 &&
-                          !(scripted && script.done());
+      for (int frame = 0;
+           !app.WantsQuit() && exit_code == 0 && !(scripted && script.done());
            ++frame) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
