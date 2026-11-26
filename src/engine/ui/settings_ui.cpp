@@ -51,7 +51,7 @@ Row RowFor(const int item, const GameSettings& s,
               .meter = -1,
               .link = true};
     case kSetQuit:
-      return {.label = Tr("settings.quit"), .meter = -1};
+      return {.label = Tr("settings.quit"), .value = "", .meter = -1};
     case kSetControls:
       return {.label = Tr("settings.controls"),
               .value = "›",
